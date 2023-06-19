@@ -1,4 +1,4 @@
-# Soroban Rust Client Library
+# Rust Soroban Client Library
 
 ![Soroban Logo](rust-soroban-client-logo.png)
 
