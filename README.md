@@ -1,6 +1,6 @@
 # Rust Soroban Client Library
 
-![Soroban Logo](logo/rust-soroban-client-logo.png)
+![Soroban Logo](img/rust-soroban-client-logo.png)
 
 A Rust client library for interacting with Soroban smart contracts on the Stellar blockchain
 
