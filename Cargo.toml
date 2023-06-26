@@ -12,3 +12,4 @@ authors = ["Rahul Soshte <rahul.soshte47@gmail.com>"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+stellar-baselib = "0.1.0"
