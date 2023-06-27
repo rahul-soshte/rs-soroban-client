@@ -4,6 +4,23 @@
 
 A Rust client library for interacting with Soroban smart contracts on the Stellar blockchain
 
+**This project is currently in early development and is not yet functional. It is a work in progress and is subject to significant changes, including the addition or removal of features and modifications to its functionality.**
+
+## Quickstart
+
+Add this to your Cargo.toml:
+
+```toml
+[dependencies]
+soroban-client = "0.1.1"
+```
+
+And this to your code:
+
+```rust
+use soroban_client::*;
+```
+
 ## Description
 
 **The library is composed of 3 components**:
