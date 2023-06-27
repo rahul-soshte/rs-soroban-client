@@ -1,5 +1,9 @@
 # Rust Soroban Client Library
 
+![Crates.io](https://img.shields.io/crates/v/soroban-client)
+![Crates.io](https://img.shields.io/crates/l/soroban-client)
+![Crates.io](https://img.shields.io/crates/d/soroban-client)
+
 ![Soroban Logo](img/rust-soroban-client-logo.png)
 
 A Rust client library for interacting with Soroban smart contracts on the Stellar blockchain
