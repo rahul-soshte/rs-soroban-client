@@ -1,6 +1,6 @@
 [package]
 name = "soroban-client"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 description = "A high-level library Rust client library for interacting with Soroban smart contracts on the Stellar blockchain"
 license = "Apache-2.0"
@@ -12,4 +12,4 @@ authors = ["Rahul Soshte <rahul.soshte47@gmail.com>"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-stellar-baselib = "0.1.5"
+stellar-baselib = "0.1.7"
