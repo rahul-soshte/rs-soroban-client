@@ -17,6 +17,8 @@ pub mod soroban_rpc {
         pub smart: String,
     }
 
+    #[derive(Clone, Debug)]
+
     pub struct Cost {
         pub cpu_insns: String,
         pub mem_bytes: String,
@@ -153,10 +155,13 @@ pub mod soroban_rpc {
         pub latest_ledger_close_time: i32,
     }
 
+    #[derive(Clone, Debug)]
     pub struct SimulateHostFunctionResult {
         pub auth: Vec<stellar_xdr::next::SorobanAuthorizationEntry>,
         pub retval: stellar_xdr::next::ScVal,
     }
+
+    #[derive(Clone, Debug)]
 
     pub enum SimulateTransactionResponse {
         Success(SimulateTransactionSuccessResponse),
@@ -164,12 +169,16 @@ pub mod soroban_rpc {
         Error(SimulateTransactionErrorResponse),
     }
 
+    #[derive(Clone, Debug)]
+
     pub struct BaseSimulateTransactionResponse {
         pub id: String,
         pub latest_ledger: i32,
         pub events: Vec<stellar_xdr::next::DiagnosticEvent>,
+        pub _parsed: bool,
     }
 
+    #[derive(Clone, Debug)]
     pub struct SimulateTransactionSuccessResponse {
         pub base: BaseSimulateTransactionResponse,
         pub transaction_data: SorobanDataBuilder,
@@ -178,27 +187,35 @@ pub mod soroban_rpc {
         pub result: Option<SimulateHostFunctionResult>,
     }
 
+    #[derive(Clone, Debug)]
+
     pub struct SimulateTransactionErrorResponse {
         pub base: BaseSimulateTransactionResponse,
         pub error: String,
     }
+    #[derive(Clone, Debug)]
 
     pub struct SimulateTransactionRestoreResponse {
         pub base: SimulateTransactionSuccessResponse,
-        pub result: SimulateHostFunctionResult,
+        // pub result: SimulateHostFunctionResult,
         pub restore_preamble: RestorePreamble,
+        pub(crate) result: Option<SimulateHostFunctionResult>,
     }
+
+    #[derive(Clone, Debug)]
 
     pub struct RestorePreamble {
         pub min_resource_fee: String,
         pub transaction_data: SorobanDataBuilder,
     }
-
+    
+    #[derive(Clone)]
     pub struct RawSimulateHostFunctionResult {
         pub auth: Option<Vec<String>>,
-        pub xdr: String,
+        pub xdr: Option<String>,
     }
 
+    #[derive(Clone)]
     pub struct RawSimulateTransactionResponse {
         pub id: String,
         pub latest_ledger: i32,
