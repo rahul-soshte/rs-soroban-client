@@ -2,6 +2,8 @@ use stellar_baselib::soroban_data_builder::SorobanDataBuilder;
 use std::collections::HashMap;
 
 pub mod soroban_rpc {
+    use serde::Deserialize;
+
     use super::*;
 
     pub enum AssetTypeEnum {
@@ -24,9 +26,12 @@ pub mod soroban_rpc {
         pub mem_bytes: String,
     }
 
+    #[derive(Deserialize)]
     pub struct GetHealthResponse {
-        pub status: &'static str, // Can be an enum if the number of statuses is known
+        pub status: String, // Can be an enum if the number of statuses is known
     }
+
+    #[derive(Deserialize)]
 
     pub struct LedgerEntryResult {
         pub last_modified_ledger_seq: Option<i32>,
@@ -34,6 +39,7 @@ pub mod soroban_rpc {
         pub xdr: String,
     }
 
+    #[derive(Deserialize)]
     pub struct GetLedgerEntriesResponse {
         pub entries: Option<Vec<LedgerEntryResult>>,
         pub latest_ledger: i32,

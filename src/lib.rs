@@ -7,3 +7,4 @@ pub mod jsonrpc;
 pub use stellar_baselib::*;
 pub use http_client::{HTTPClient, VERSION};
 pub mod transaction;
+pub mod server;
