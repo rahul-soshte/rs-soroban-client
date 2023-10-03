@@ -76,7 +76,7 @@ pub fn assemble_transaction(
 
 }
 
-fn parse_raw_simulation(sim: Either<SimulateTransactionResponse, RawSimulateTransactionResponse>) -> SimulateTransactionResponse {
+pub fn parse_raw_simulation(sim: Either<SimulateTransactionResponse, RawSimulateTransactionResponse>) -> SimulateTransactionResponse {
     if !is_simulation_raw(sim.clone()) {
         match sim {
             Either::Left(x) => return x.clone(),

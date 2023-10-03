@@ -19,7 +19,7 @@ pub mod soroban_rpc {
         pub smart: String,
     }
 
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, Deserialize)]
 
     pub struct Cost {
         pub cpu_insns: String,
@@ -45,12 +45,14 @@ pub mod soroban_rpc {
         pub latest_ledger: i32,
     }
 
+    #[derive(Deserialize)]
     pub struct GetNetworkResponse {
         pub friendbot_url: Option<String>,
         pub passphrase: String,
         pub protocol_version: String,
     }
 
+    #[derive(Deserialize)]
     pub struct GetLatestLedgerResponse {
         pub id: String,
         pub sequence: i32,
@@ -209,19 +211,20 @@ pub mod soroban_rpc {
     }
 
     #[derive(Clone, Debug)]
+    #[derive(Deserialize)]
 
     pub struct RestorePreamble {
         pub min_resource_fee: String,
         pub transaction_data: SorobanDataBuilder,
     }
     
-    #[derive(Clone)]
+    #[derive(Clone, Deserialize)]
     pub struct RawSimulateHostFunctionResult {
         pub auth: Option<Vec<String>>,
         pub xdr: Option<String>,
     }
 
-    #[derive(Clone)]
+    #[derive(Clone, Deserialize)]
     pub struct RawSimulateTransactionResponse {
         pub id: String,
         pub latest_ledger: i32,

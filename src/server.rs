@@ -1,13 +1,15 @@
 use std::{collections::HashMap, str::FromStr};
 use std::option::Option;
 use http::Uri;
+use stellar_baselib::transaction::Transaction;
 use stellar_baselib::{op_list::create_account::create_account, account::Account};
 use stellar_xdr::{next::{LedgerKey, LedgerKeyAccount, LedgerEntryData, ReadXdr, WriteXdr}, curr::{PublicKey}};
 use serde::{Serialize, Deserialize};
 use std::error::Error;
 
 use crate::http_client::create_client;
-use crate::soroban_rpc::soroban_rpc::{self, GetHealthResponse};
+use crate::soroban_rpc::soroban_rpc::{self, GetHealthResponse, GetNetworkResponse, GetLatestLedgerResponse, SimulateTransactionResponse, RawSimulateTransactionResponse};
+use crate::transaction::{parse_raw_simulation, Either};
 use crate::{soroban_rpc::soroban_rpc::EventFilter, jsonrpc::post};
 
 // Assuming you'll need to convert other parts of your TypeScript program,
@@ -110,7 +112,38 @@ impl Server {
             .await
     }
 
+    pub async fn get_network(&self) -> Result<GetNetworkResponse, reqwest::Error> {
+        post::<soroban_rpc::GetNetworkResponse>(&self.server_url.to_string(), "getNetwork", HashMap::new()).await
+    }
+
+    pub async fn get_latest_ledger(&self) -> Result<GetLatestLedgerResponse, reqwest::Error> {
+        post::<soroban_rpc::GetLatestLedgerResponse>(&self.server_url.to_string(), "getLatestLedger", HashMap::new()).await
+    }
     
-    
+    pub async fn simulate_transaction(
+        &self,
+        transaction: Transaction,
+    ) -> Result<SimulateTransactionResponse, reqwest::Error> {
+
+        let mut data: Vec<(String, serde_json::Value)> = vec![];
+
+        data.push((transaction.to_envelope().unwrap().to_xdr_base64().unwrap(), serde_json::Value::String(transaction.to_envelope().unwrap().to_xdr_base64().unwrap())));
+
+        let map: std::collections::HashMap<String, serde_json::Value> = data.into_iter()
+        .map(|(key, value)| (key, value))
+        .collect();
+
+
+        let raw_response = Either::Right(
+            post::<RawSimulateTransactionResponse>(
+                &self.server_url.to_string(),
+                "simulateTransaction",
+                map
+            ).await?
+        );
+            
+
+        Ok(parse_raw_simulation(raw_response))
+    }
 }
 
