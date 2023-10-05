@@ -1,5 +1,5 @@
-use stellar_baselib::soroban_data_builder::SorobanDataBuilder;
 use std::collections::HashMap;
+use stellar_baselib::soroban_data_builder::SorobanDataBuilder;
 
 pub mod soroban_rpc {
     use serde::Deserialize;
@@ -66,13 +66,13 @@ pub mod soroban_rpc {
         NOT_FOUND,
         FAILED,
     }
-    
+
     pub enum GetTransactionResponse {
         Successful(GetSuccessfulTransactionResponse),
         Failed(GetFailedTransactionResponse),
         Missing(GetMissingTransactionResponse),
     }
-    
+
     #[derive(Clone, Debug, Deserialize)]
     pub struct GetAnyTransactionResponse {
         pub status: GetTransactionStatus,
@@ -102,7 +102,6 @@ pub mod soroban_rpc {
         pub result_meta_xdr: Option<stellar_xdr::next::TransactionMeta>,
         pub return_value: Option<stellar_xdr::next::ScVal>,
     }
-
 
     #[derive(Clone, Debug, Deserialize)]
     pub struct RawGetTransactionResponse {
@@ -218,14 +217,13 @@ pub mod soroban_rpc {
         pub(crate) result: Option<SimulateHostFunctionResult>,
     }
 
-    #[derive(Clone, Debug)]
-    #[derive(Deserialize)]
+    #[derive(Clone, Debug, Deserialize)]
 
     pub struct RestorePreamble {
         pub min_resource_fee: String,
         pub transaction_data: SorobanDataBuilder,
     }
-    
+
     #[derive(Clone, Deserialize)]
     pub struct RawSimulateHostFunctionResult {
         pub auth: Option<Vec<String>>,
@@ -256,5 +254,4 @@ pub mod soroban_rpc {
     pub fn is_simulation_restore(sim: &SimulateTransactionResponse) -> bool {
         matches!(sim, SimulateTransactionResponse::Restore(_))
     }
-
 }

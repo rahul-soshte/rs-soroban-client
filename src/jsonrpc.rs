@@ -1,4 +1,3 @@
-
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -48,7 +47,6 @@ pub enum Response<T, E = serde_json::Value> {
     },
 }
 
-
 #[derive(Debug, Deserialize)]
 pub struct Error<E = serde_json::Value> {
     #[allow(dead_code)]
@@ -74,15 +72,12 @@ pub async fn post<T: for<'a> Deserialize<'a>>(
 
     let res = client.post(url).json(&request).send().await?;
 
-    
     let data: T = res.json().await?;
 
     // Here we ensure that the response status is not an error.
     // If it's an error, it will convert the response into an error type
     // let dc = res.error_for_status_ref()?;
     // TODO: Add Error Check
-
-
 
     Ok(data)
 }
@@ -94,4 +89,3 @@ pub async fn post_object<T: for<'a> Deserialize<'a>>(
 ) -> Result<T, reqwest::Error> {
     post(url, method, hashmap! { "param".to_string() => param }).await
 }
-
