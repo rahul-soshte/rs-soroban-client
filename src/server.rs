@@ -1,15 +1,17 @@
+use core::panic;
 use std::{collections::HashMap, str::FromStr};
 use std::option::Option;
 use http::Uri;
 use stellar_baselib::transaction::Transaction;
 use stellar_baselib::{op_list::create_account::create_account, account::Account};
-use stellar_xdr::{next::{LedgerKey, LedgerKeyAccount, LedgerEntryData, ReadXdr, WriteXdr}, curr::{PublicKey}};
+use stellar_xdr::next::{TransactionMeta, LedgerEntryChangeType, LedgerEntryType, ScAddress, Hash, LedgerKeyContractData, ContractDataDurability, ScVal, ContractEntryBodyType, TransactionEnvelope, TransactionResult};
+use stellar_xdr::{next::{LedgerKey, LedgerKeyAccount, LedgerEntryData, ReadXdr, WriteXdr}, curr::PublicKey};
 use serde::{Serialize, Deserialize};
 use std::error::Error;
-
+use crate::transaction::SimulationResponse::Normal;
 use crate::http_client::create_client;
-use crate::soroban_rpc::soroban_rpc::{self, GetHealthResponse, GetNetworkResponse, GetLatestLedgerResponse, SimulateTransactionResponse, RawSimulateTransactionResponse};
-use crate::transaction::{parse_raw_simulation, Either};
+use crate::soroban_rpc::soroban_rpc::{self, GetHealthResponse, GetNetworkResponse, GetLatestLedgerResponse, SimulateTransactionResponse, RawSimulateTransactionResponse, SendTransactionResponse, LedgerEntryResult, GetTransactionResponse, RawGetTransactionResponse, GetSuccessfulTransactionResponse, GetTransactionStatus, GetAnyTransactionResponse};
+use crate::transaction::{parse_raw_simulation, Either, assemble_transaction};
 use crate::{soroban_rpc::soroban_rpc::EventFilter, jsonrpc::post};
 
 // Assuming you'll need to convert other parts of your TypeScript program,
@@ -21,6 +23,15 @@ const SUBMIT_TRANSACTION_TIMEOUT: u32 = 60 * 1000;
 pub enum Durability {
     Temporary,
     Persistent,
+}
+
+impl Durability {
+    fn to_xdr(&self) -> ContractDataDurability {
+        match self {
+            Durability::Temporary => ContractDataDurability::Temporary,
+            Durability::Persistent => ContractDataDurability::Persistent,
+        }
+    }
 }
 
 pub struct GetEventsRequest {
@@ -39,6 +50,23 @@ pub struct Options {
 pub struct Server {
     server_url: Uri,
     client: reqwest::Client
+}
+
+
+impl Default for GetSuccessfulTransactionResponse {
+    fn default() -> Self {
+        Self {
+            base: None,
+            ledger: None,
+            created_at: None,
+            application_order: None,
+            fee_bump: None,
+            envelope_xdr: None,
+            result_xdr: None,
+            result_meta_xdr: None,
+            return_value: None,
+        }
+    }
 }
 
 impl Server {
@@ -145,5 +173,167 @@ impl Server {
 
         Ok(parse_raw_simulation(raw_response))
     }
+
+    pub async fn get_contract_data(
+        &self,
+        contract: &str,
+        key: ScVal,
+        durability: Durability,
+    ) -> Result<LedgerEntryResult, Box<dyn std::error::Error>> {
+        let sc_address = ScAddress::Contract(Hash::from_str(contract).unwrap());
+      
+        let contract_key = LedgerKey::ContractData(LedgerKeyContractData {
+            key: key.clone(),
+            contract: sc_address.clone(),
+            durability: durability.to_xdr(),
+            body_type: ContractEntryBodyType::DataEntry,
+        });
+
+        let val = vec![contract_key];
+    
+        let response = self.get_ledger_entries(val).await?;
+    
+        match response.entries.unwrap().get(0) {
+            Some(entry) => Ok(entry.clone()),
+            None => Err(format!(
+                "Contract data not found. Contract: {}, Key: {:?}, Durability: {:?}",
+                sc_address.clone().to_xdr_base64().unwrap(),
+                key,
+                durability
+            )
+            .into()),
+        }
+    }
+    
+    pub async fn get_transaction(
+        &self,
+        hash: &str,
+    ) -> Result<GetTransactionResponse, reqwest::Error> {
+        let mut data: Vec<(String, serde_json::Value)> = vec![];
+
+        data.push((hash.to_string(), serde_json::Value::String(hash.to_string())));
+
+        let map: std::collections::HashMap<String, serde_json::Value> = data.into_iter()
+        .map(|(key, value)| (key, value))
+        .collect();
+
+        let raw = post::<RawGetTransactionResponse>(
+            &self.server_url.to_string(),
+            "getTransaction",
+            map,
+        ).await?; 
+        
+        let mut success_info = GetSuccessfulTransactionResponse {
+            base: None,
+            ledger: None,
+            created_at: None,
+            application_order: None,
+            fee_bump: None,
+            envelope_xdr: None,
+            result_xdr: None,
+            result_meta_xdr: None,
+            return_value: None,
+        };
+
+        if let GetTransactionStatus::SUCCESS = raw.status {
+            let meta = TransactionMeta::from_xdr_base64(&raw.result_meta_xdr.unwrap()).unwrap();
+
+            success_info.ledger = raw.ledger;
+            success_info.created_at = raw.created_at;
+            success_info.application_order = raw.application_order;
+            success_info.fee_bump = raw.fee_bump;
+            success_info.envelope_xdr = TransactionEnvelope::from_xdr_base64(&raw.envelope_xdr.unwrap()).ok();
+            success_info.result_xdr = TransactionResult::from_xdr_base64(&raw.result_xdr.unwrap()).ok();
+            success_info.result_meta_xdr = Some(meta.clone());
+            
+            let f = GetAnyTransactionResponse {
+                status: raw.status,
+                latest_ledger: raw.latest_ledger,
+                latest_ledger_close_time: raw.latest_ledger,
+                oldest_ledger: raw.oldest_ledger,
+                oldest_ledger_close_time:  raw.oldest_ledger_close_time,
+            };
+    
+            success_info.base = Some(f);
+
+            if let TransactionMeta::V3(v3) = meta {
+                if let Some(soroban_meta) = v3.soroban_meta {
+                    success_info.return_value = Some(soroban_meta.return_value);
+                }
+            }
+        }
+        
+        let val = GetTransactionResponse::Successful(success_info);
+        
+        Ok(val)
+    }
+    
+    pub async fn prepare_transaction(
+        &self,
+        transaction: Transaction,
+        network_passphrase: Option<&str>,
+    ) -> Result<Transaction, Box<dyn std::error::Error>> {
+        
+        let sim_response = self.simulate_transaction(transaction.clone()).await.unwrap();
+        
+        //TODO: Error Handling
+
+        Ok(assemble_transaction(transaction, &network_passphrase.unwrap(), Normal(sim_response)).unwrap().build())
+    }
+
+    pub async fn send_transaction(
+        &self, 
+        transaction: Transaction, 
+        // Assuming you have an enum or similar to differentiate Transaction from FeeBumpTransaction
+    ) -> Result<SendTransactionResponse,  Box<dyn std::error::Error>> {
+        let mut data: Vec<(String, serde_json::Value)> = vec![];
+
+        data.push((transaction.to_envelope().unwrap().to_xdr_base64().unwrap(), serde_json::Value::String(transaction.to_envelope().unwrap().to_xdr_base64().unwrap())));
+
+        let map: std::collections::HashMap<String, serde_json::Value> = data.into_iter()
+        .map(|(key, value)| (key, value))
+        .collect();
+
+        // Assuming `jsonrpc` and `SendTransactionResponse` types are defined somewhere
+        let response = post::<SendTransactionResponse>(
+            &self.server_url.to_string(),
+            "sendTransaction",
+            map
+        ).await;
+    
+        Ok(response?)
+    }
+    //TODO: getEvents
+    //TODO: request airdrop
+    fn find_created_account_sequence_in_transaction_meta(
+        meta: TransactionMeta,
+    ) -> Result<String, &'static str> {
+        let operations = match meta {
+            TransactionMeta::V0(ops) => ops,
+            TransactionMeta::V1(v3_meta) => v3_meta.operations,
+            TransactionMeta::V2(v3_meta) => v3_meta.operations,
+            TransactionMeta::V3(v3_meta) => v3_meta.operations,
+        };
+        
+
+        let operations = operations.to_vec();
+
+        for op in operations {
+            
+            for change in op.changes.0.to_vec() {
+
+                match change {
+                    stellar_xdr::next::LedgerEntryChange::Created(x) => match x.data {
+                        LedgerEntryData::Account(ae) => return Ok(ae.seq_num.0.to_string()),
+                        _ => ()
+                    },
+                    _ => (),
+                }
+            }
+        }
+    
+        Err("No account created in transaction")
+    }
+
 }
 

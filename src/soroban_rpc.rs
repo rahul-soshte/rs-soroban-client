@@ -31,7 +31,7 @@ pub mod soroban_rpc {
         pub status: String, // Can be an enum if the number of statuses is known
     }
 
-    #[derive(Deserialize)]
+    #[derive(Clone, Debug, Deserialize)]
 
     pub struct LedgerEntryResult {
         pub last_modified_ledger_seq: Option<i32>,
@@ -58,19 +58,22 @@ pub mod soroban_rpc {
         pub sequence: i32,
         pub protocol_version: String,
     }
+
+    #[derive(Clone, Debug, Deserialize)]
     #[allow(non_camel_case_types)]
     pub enum GetTransactionStatus {
         SUCCESS,
         NOT_FOUND,
         FAILED,
     }
-
+    
     pub enum GetTransactionResponse {
         Successful(GetSuccessfulTransactionResponse),
         Failed(GetFailedTransactionResponse),
         Missing(GetMissingTransactionResponse),
     }
-
+    
+    #[derive(Clone, Debug, Deserialize)]
     pub struct GetAnyTransactionResponse {
         pub status: GetTransactionStatus,
         pub latest_ledger: i32,
@@ -87,18 +90,21 @@ pub mod soroban_rpc {
         pub base: GetAnyTransactionResponse,
     }
 
+    #[derive(Clone, Deserialize)]
     pub struct GetSuccessfulTransactionResponse {
-        pub base: GetAnyTransactionResponse,
-        pub ledger: i32,
-        pub created_at: i32,
-        pub application_order: i32,
-        pub fee_bump: bool,
-        pub envelope_xdr: stellar_xdr::curr::TransactionEnvelope,
-        pub result_xdr: stellar_xdr::curr::TransactionResult,
-        pub result_meta_xdr: stellar_xdr::curr::TransactionMeta,
+        pub base: Option<GetAnyTransactionResponse>,
+        pub ledger: Option<i32>,
+        pub created_at: Option<i32>,
+        pub application_order: Option<i32>,
+        pub fee_bump: Option<bool>,
+        pub envelope_xdr: Option<stellar_xdr::next::TransactionEnvelope>,
+        pub result_xdr: Option<stellar_xdr::next::TransactionResult>,
+        pub result_meta_xdr: Option<stellar_xdr::next::TransactionMeta>,
         pub return_value: Option<stellar_xdr::next::ScVal>,
     }
 
+
+    #[derive(Clone, Debug, Deserialize)]
     pub struct RawGetTransactionResponse {
         pub status: GetTransactionStatus,
         pub latest_ledger: i32,
@@ -147,6 +153,7 @@ pub mod soroban_rpc {
         pub transaction_id: String,
     }
 
+    #[derive(Clone, Debug, Deserialize)]
     #[allow(non_camel_case_types)]
     pub enum SendTransactionStatus {
         PENDING,
@@ -155,6 +162,7 @@ pub mod soroban_rpc {
         ERROR,
     }
 
+    #[derive(Clone, Debug, Deserialize)]
     pub struct SendTransactionResponse {
         pub status: SendTransactionStatus,
         pub error_result_xdr: Option<String>,
@@ -248,4 +256,5 @@ pub mod soroban_rpc {
     pub fn is_simulation_restore(sim: &SimulateTransactionResponse) -> bool {
         matches!(sim, SimulateTransactionResponse::Restore(_))
     }
+
 }
