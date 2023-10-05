@@ -1,6 +1,6 @@
 use core::panic;
 
-use stellar_baselib::{transaction::Transaction, transaction::TransactionBuilder, soroban_data_builder::{self, SorobanDataBuilder}, operation, account::Account};
+use stellar_baselib::{transaction::Transaction, transaction::TransactionBuilder, soroban_data_builder::{self, SorobanDataBuilder}, account::Account};
 use stellar_xdr::next::{SorobanAuthorizationEntry, ScVal, ReadXdr, DiagnosticEvent};
 use crate::soroban_rpc::{soroban_rpc::{SimulateTransactionResponse, RawSimulateTransactionResponse, BaseSimulateTransactionResponse, SimulateTransactionSuccessResponse, RestorePreamble, SimulateTransactionRestoreResponse, SimulateHostFunctionResult, SimulateTransactionErrorResponse, is_simulation_success}};
 
@@ -41,7 +41,7 @@ pub fn assemble_transaction(
         SimulateTransactionResponse::Error(_) => todo!(),
     };
 
-    let ss = soroban_tx_data.transaction_data.build();
+    let _ss = soroban_tx_data.transaction_data.build();
 
     let source = raw.source;
     let txn_builder = TransactionBuilder::new(Account::new(&source, "0").unwrap(), network_passphrase)
@@ -52,7 +52,7 @@ pub fn assemble_transaction(
 
         InvokeHostFunctionOp => {
             // txn_builder.clear_operations();
-            let invoke_op = val;
+            let _invoke_op = val;
             // let existing_auth = match &invoke_op. {
             //     // Some(auth) => auth,
             //     // None => &Vec::new(),
@@ -178,9 +178,9 @@ fn is_soroban_transaction(tx: &Transaction) -> bool {
     }
     
     match tx.operations.clone().unwrap()[0].clone() {
-            InvokeHostFunctionOp => true,
-            BumpFootprintExpirationOp => true,
-            RestoreFootprintOp => true,
+            _InvokeHostFunctionOp => true,
+            _BumpFootprintExpirationOp => true,
+            _RestoreFootprintOp => true,
             _ => false,
     }
 }

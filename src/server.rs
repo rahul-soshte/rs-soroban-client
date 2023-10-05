@@ -3,10 +3,10 @@ use std::{collections::HashMap, str::FromStr};
 use std::option::Option;
 use http::Uri;
 use stellar_baselib::transaction::Transaction;
-use stellar_baselib::{op_list::create_account::create_account, account::Account};
-use stellar_xdr::next::{TransactionMeta, LedgerEntryChangeType, LedgerEntryType, ScAddress, Hash, LedgerKeyContractData, ContractDataDurability, ScVal, ContractEntryBodyType, TransactionEnvelope, TransactionResult};
-use stellar_xdr::{next::{LedgerKey, LedgerKeyAccount, LedgerEntryData, ReadXdr, WriteXdr}, curr::PublicKey};
-use serde::{Serialize, Deserialize};
+use stellar_baselib::{account::Account};
+use stellar_xdr::next::{TransactionMeta, ScAddress, Hash, LedgerKeyContractData, ContractDataDurability, ScVal, ContractEntryBodyType, TransactionEnvelope, TransactionResult};
+use stellar_xdr::{next::{LedgerKey, LedgerKeyAccount, LedgerEntryData, ReadXdr, WriteXdr}};
+
 use std::error::Error;
 use crate::transaction::SimulationResponse::Normal;
 use crate::http_client::create_client;
