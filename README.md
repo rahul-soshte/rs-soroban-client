@@ -16,7 +16,7 @@ Add this to your Cargo.toml:
 
 ```toml
 [dependencies]
-soroban-client = "0.1.9"
+soroban-client = "0.1.10"
 ```
 
 And this to your code:

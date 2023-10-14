@@ -6,7 +6,7 @@ use crate::soroban_rpc::soroban_rpc::{
     SimulateTransactionResponse, SimulateTransactionRestoreResponse,
     SimulateTransactionSuccessResponse,
 };
-use stellar_baselib::{
+pub use stellar_baselib::{
     account::Account,
     soroban_data_builder::{self, SorobanDataBuilder},
     transaction::Transaction,
