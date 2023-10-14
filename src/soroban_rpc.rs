@@ -196,6 +196,7 @@ pub mod soroban_rpc {
     #[derive(Clone, Debug)]
     pub struct SimulateTransactionSuccessResponse {
         pub base: BaseSimulateTransactionResponse,
+        pub latest_ledger: u32,
         pub transaction_data: SorobanDataBuilder,
         pub min_resource_fee: String,
         pub cost: Cost,

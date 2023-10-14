@@ -146,6 +146,7 @@ fn parse_successful(
             cost: sim.cost.unwrap(),
             result: None,
             base: partial,
+            latest_ledger: 3,
         };
 
         if let Some(results) = &sim.results {
