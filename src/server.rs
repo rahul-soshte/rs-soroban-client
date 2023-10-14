@@ -5,7 +5,7 @@ use std::{collections::HashMap, str::FromStr};
 use stellar_baselib::account::Account;
 use stellar_baselib::transaction::Transaction;
 use stellar_xdr::next::{
-    ContractDataDurability, ContractEntryBodyType, Hash, LedgerKeyContractData, ScAddress, ScVal,
+    ContractDataDurability, Hash, LedgerKeyContractData, ScAddress, ScVal,
     TransactionEnvelope, TransactionMeta, TransactionResult,
 };
 use stellar_xdr::next::{LedgerEntryData, LedgerKey, LedgerKeyAccount, ReadXdr, WriteXdr};
@@ -212,7 +212,7 @@ impl Server {
             key: key.clone(),
             contract: sc_address.clone(),
             durability: durability.to_xdr(),
-            body_type: ContractEntryBodyType::DataEntry,
+            // body_type: ContractEntryBodyType::DataEntry,
         });
 
         let val = vec![contract_key];
