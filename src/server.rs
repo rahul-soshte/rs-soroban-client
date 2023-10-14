@@ -50,9 +50,9 @@ pub struct GetEventsRequest {
 }
 
 pub struct Options {
-    allow_http: Option<bool>,
-    timeout: Option<u32>,
-    headers: Option<HashMap<String, String>>,
+    pub allow_http: Option<bool>,
+    pub timeout: Option<u32>,
+    pub headers: Option<HashMap<String, String>>,
 }
 
 pub struct Server {
