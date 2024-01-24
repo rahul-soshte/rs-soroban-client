@@ -3,10 +3,10 @@ use http::Uri;
 use std::option::Option;
 use std::{collections::HashMap, str::FromStr};
 use stellar_baselib::account::Account;
-use stellar_baselib::transaction::Transaction;
+use stellar_baselib::transaction::{Transaction, TransactionBehavior};
 use stellar_xdr::next::{
     ContractDataDurability, Hash, LedgerKeyContractData, ScAddress, ScVal,
-    TransactionEnvelope, TransactionMeta, TransactionResult,
+    TransactionEnvelope, TransactionMeta, TransactionResult, Limits,
 };
 use stellar_xdr::next::{LedgerEntryData, LedgerKey, LedgerKeyAccount, ReadXdr, WriteXdr};
 
@@ -17,13 +17,15 @@ use crate::soroban_rpc::soroban_rpc::{
     GetTransactionStatus, LedgerEntryResult, RawGetTransactionResponse,
     RawSimulateTransactionResponse, SendTransactionResponse, SimulateTransactionResponse,
 };
+use stellar_baselib::account::AccountBehavior;
 use crate::transaction::SimulationResponse::Normal;
 use crate::transaction::{assemble_transaction, parse_raw_simulation, Either};
 use crate::{jsonrpc::post, soroban_rpc::soroban_rpc::EventFilter};
 use std::error::Error;
-
+use stellar_baselib::keypair::KeypairBehavior;
 // Assuming you'll need to convert other parts of your TypeScript program,
 // you might need libraries like `reqwest` for making HTTP requests and `serde` for serialization/deserialization.
+use stellar_baselib::transaction_builder::TransactionBuilderBehavior;
 
 const SUBMIT_TRANSACTION_TIMEOUT: u32 = 60 * 1000;
 
@@ -102,13 +104,13 @@ impl Server {
         for i in 0..keys.len() {
             data.push((
                 keys[i].clone(),
-                serde_json::Value::String(keys[i].clone().to_xdr_base64().unwrap()),
+                serde_json::Value::String(keys[i].clone().to_xdr_base64(Limits::none()).unwrap()),
             ))
         }
 
         let map: std::collections::HashMap<String, serde_json::Value> = data
             .into_iter()
-            .map(|(key, value)| (key.to_xdr_base64().unwrap(), value))
+            .map(|(key, value)| (key.to_xdr_base64(Limits::none()).unwrap(), value))
             .collect();
 
         let dd = self.server_url.clone().to_string();
@@ -139,7 +141,7 @@ impl Server {
         }
 
         let ledger_entry_data = &entries[0].xdr;
-        let account_entry = match LedgerEntryData::from_xdr_base64(ledger_entry_data).unwrap() {
+        let account_entry = match LedgerEntryData::from_xdr_base64(ledger_entry_data, Limits::none()).unwrap() {
             LedgerEntryData::Account(x) => x,
             _ => panic!("Invalid"),
         };
@@ -181,8 +183,8 @@ impl Server {
         let mut data: Vec<(String, serde_json::Value)> = vec![];
 
         data.push((
-            transaction.to_envelope().unwrap().to_xdr_base64().unwrap(),
-            serde_json::Value::String(transaction.to_envelope().unwrap().to_xdr_base64().unwrap()),
+            transaction.to_envelope().unwrap().to_xdr_base64(Limits::none()).unwrap(),
+            serde_json::Value::String(transaction.to_envelope().unwrap().to_xdr_base64(Limits::none()).unwrap()),
         ));
 
         let map: std::collections::HashMap<String, serde_json::Value> =
@@ -223,7 +225,7 @@ impl Server {
             Some(entry) => Ok(entry.clone()),
             None => Err(format!(
                 "Contract data not found. Contract: {}, Key: {:?}, Durability: {:?}",
-                sc_address.clone().to_xdr_base64().unwrap(),
+                sc_address.clone().to_xdr_base64(Limits::none()).unwrap(),
                 key,
                 durability
             )
@@ -262,16 +264,16 @@ impl Server {
         };
 
         if let GetTransactionStatus::SUCCESS = raw.status {
-            let meta = TransactionMeta::from_xdr_base64(&raw.result_meta_xdr.unwrap()).unwrap();
+            let meta = TransactionMeta::from_xdr_base64(&raw.result_meta_xdr.unwrap(), Limits::none()).unwrap();
 
             success_info.ledger = raw.ledger;
             success_info.created_at = raw.created_at;
             success_info.application_order = raw.application_order;
             success_info.fee_bump = raw.fee_bump;
             success_info.envelope_xdr =
-                TransactionEnvelope::from_xdr_base64(&raw.envelope_xdr.unwrap()).ok();
+                TransactionEnvelope::from_xdr_base64(&raw.envelope_xdr.unwrap(), Limits::none()).ok();
             success_info.result_xdr =
-                TransactionResult::from_xdr_base64(&raw.result_xdr.unwrap()).ok();
+                TransactionResult::from_xdr_base64(&raw.result_xdr.unwrap(), Limits::none()).ok();
             success_info.result_meta_xdr = Some(meta.clone());
 
             let f = GetAnyTransactionResponse {
@@ -325,8 +327,8 @@ impl Server {
         let mut data: Vec<(String, serde_json::Value)> = vec![];
 
         data.push((
-            transaction.to_envelope().unwrap().to_xdr_base64().unwrap(),
-            serde_json::Value::String(transaction.to_envelope().unwrap().to_xdr_base64().unwrap()),
+            transaction.to_envelope().unwrap().to_xdr_base64(Limits::none()).unwrap(),
+            serde_json::Value::String(transaction.to_envelope().unwrap().to_xdr_base64(Limits::none()).unwrap()),
         ));
 
         let map: std::collections::HashMap<String, serde_json::Value> =

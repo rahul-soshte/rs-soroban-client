@@ -6,13 +6,17 @@ use crate::soroban_rpc::soroban_rpc::{
     SimulateTransactionResponse, SimulateTransactionRestoreResponse,
     SimulateTransactionSuccessResponse,
 };
+use stellar_baselib::transaction_builder::TransactionBuilderBehavior;
 pub use stellar_baselib::{
     account::Account,
     soroban_data_builder::{self, SorobanDataBuilder},
     transaction::Transaction,
-    transaction::TransactionBuilder,
+    transaction_builder::TransactionBuilder,
 };
-use stellar_xdr::next::{DiagnosticEvent, ReadXdr, ScVal, SorobanAuthorizationEntry};
+use stellar_baselib::account::AccountBehavior;
+
+use stellar_xdr::next::{DiagnosticEvent, ReadXdr, ScVal, SorobanAuthorizationEntry, Limits};
+use stellar_baselib::soroban_data_builder::SorobanDataBuilderBehavior;
 
 pub enum SimulationResponse {
     Normal(SimulateTransactionResponse),
@@ -112,7 +116,7 @@ pub fn parse_raw_simulation(
                 .as_ref()
                 .unwrap_or(&vec![])
                 .iter()
-                .map(|evt| DiagnosticEvent::from_xdr_base64(evt).unwrap())
+                .map(|evt| DiagnosticEvent::from_xdr_base64(evt, Limits::none()).unwrap())
                 .collect(),
             _ => vec![],
         },
@@ -157,10 +161,10 @@ fn parse_successful(
                         .as_ref()
                         .unwrap_or(&vec![])
                         .iter()
-                        .map(|entry| SorobanAuthorizationEntry::from_xdr_base64(entry).unwrap())
+                        .map(|entry| SorobanAuthorizationEntry::from_xdr_base64(entry, Limits::none()).unwrap())
                         .collect(),
                     retval: if let Some(xdr) = &results[0].xdr {
-                        ScVal::from_xdr_base64(xdr).unwrap() // assuming ScVal is defined elsewhere
+                        ScVal::from_xdr_base64(xdr, Limits::none()).unwrap() // assuming ScVal is defined elsewhere
                     } else {
                         ScVal::Void
                     },
