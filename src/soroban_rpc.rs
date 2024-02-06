@@ -39,10 +39,24 @@ pub mod soroban_rpc {
         pub xdr: String,
     }
 
-    #[derive(Deserialize)]
+    #[derive(Deserialize, Debug)]
     pub struct GetLedgerEntriesResponse {
         pub entries: Option<Vec<LedgerEntryResult>>,
-        pub latest_ledger: i32,
+        // pub latest_ledger: i32,
+    }
+
+    #[derive(Debug, Clone, Deserialize)]
+    pub struct RawLedgerEntryResult {
+        pub last_modified_ledger_seq: Option<i64>,
+        pub key: String,
+        pub xdr: String,
+        pub live_until_ledger_seq: Option<i64>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    pub struct RawGetLedgerEntriesResponse {
+        pub entries: Option<Vec<RawLedgerEntryResult>>
+        // pub latest_ledger: i32,
     }
 
     #[derive(Deserialize)]

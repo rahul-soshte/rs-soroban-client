@@ -15,7 +15,7 @@ use crate::soroban_rpc::soroban_rpc::{
     self, GetAnyTransactionResponse, GetHealthResponse, GetLatestLedgerResponse,
     GetNetworkResponse, GetSuccessfulTransactionResponse, GetTransactionResponse,
     GetTransactionStatus, LedgerEntryResult, RawGetTransactionResponse,
-    RawSimulateTransactionResponse, SendTransactionResponse, SimulateTransactionResponse,
+    RawSimulateTransactionResponse, SendTransactionResponse, SimulateTransactionResponse, RawLedgerEntryResult,
 };
 use stellar_baselib::account::AccountBehavior;
 use crate::transaction::SimulationResponse::Normal;
@@ -101,37 +101,52 @@ impl Server {
     ) -> Result<soroban_rpc::GetLedgerEntriesResponse, reqwest::Error> {
         let mut data: Vec<(LedgerKey, serde_json::Value)> = vec![];
 
+        println!("Hello World 2");
+
         for i in 0..keys.len() {
             data.push((
                 keys[i].clone(),
                 serde_json::Value::String(keys[i].clone().to_xdr_base64(Limits::none()).unwrap()),
             ))
         }
+        println!("Hello World 3");
 
         let map: std::collections::HashMap<String, serde_json::Value> = data
             .into_iter()
             .map(|(key, value)| (key.to_xdr_base64(Limits::none()).unwrap(), value))
             .collect();
+        println!("Hello World 4");
 
         let dd = self.server_url.clone().to_string();
+        println!("Hello World 5");
 
         let val = post::<soroban_rpc::GetLedgerEntriesResponse>(&dd, "getLedgerEntries", map);
+
+        println!("Hello World 6");
 
         val.await
     }
 
     pub async fn get_account(&self, address: &str) -> Result<Account, Box<dyn Error>> {
+        println!("Hello World");
+        
         let ledger_key = LedgerKey::Account(LedgerKeyAccount {
             account_id: stellar_baselib::keypair::Keypair::from_public_key(address)
                 .unwrap()
                 .xdr_account_id(),
         });
+        println!("Hello World 1");
 
         let resp = self.get_ledger_entries(vec![ledger_key]).await?;
+
+        println!("Response {:?}", resp);
+
         let entries = match resp.entries {
             Some(e) => e,
             None => Vec::new(),
         };
+
+        println!("Entries {:?}", entries);
 
         if entries.is_empty() {
             return Err(Box::new(std::io::Error::new(
@@ -220,6 +235,7 @@ impl Server {
         let val = vec![contract_key];
 
         let response = self.get_ledger_entries(val).await?;
+
 
         match response.entries.unwrap().get(0) {
             Some(entry) => Ok(entry.clone()),
