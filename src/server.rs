@@ -1,5 +1,6 @@
 use core::panic;
 use http::Uri;
+use serde_json::json;
 use std::option::Option;
 use std::{collections::HashMap, str::FromStr};
 use stellar_baselib::account::Account;
@@ -15,7 +16,7 @@ use crate::soroban_rpc::soroban_rpc::{
     self, GetAnyTransactionResponse, GetHealthResponse, GetLatestLedgerResponse,
     GetNetworkResponse, GetSuccessfulTransactionResponse, GetTransactionResponse,
     GetTransactionStatus, LedgerEntryResult, RawGetTransactionResponse,
-    RawSimulateTransactionResponse, SendTransactionResponse, SimulateTransactionResponse, RawLedgerEntryResult,
+    RawSimulateTransactionResponse, SendTransactionResponse, SimulateTransactionResponse, RawLedgerEntryResult, GetHealtWrapperResponse,
 };
 use stellar_baselib::account::AccountBehavior;
 use crate::transaction::SimulationResponse::Normal;
@@ -164,12 +165,21 @@ impl Server {
         Ok(Account::new(address, &account_entry.seq_num.0.to_string()).unwrap())
     }
 
-    pub async fn get_health(&self) -> Result<GetHealthResponse, reqwest::Error> {
+    pub async fn get_health(&self) -> Result<GetHealtWrapperResponse, reqwest::Error> {
+        
+        let payload = json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "getHealth"
+        });
+        
         self.client
-            .get(&format!("{}/getHealth", &self.server_url))
+            .post(&format!("{}", &self.server_url))
+            .header("Content-Type", "application/json")
+            .json(&payload)
             .send()
             .await?
-            .json::<GetHealthResponse>()
+            .json::<GetHealtWrapperResponse>()
             .await
     }
 

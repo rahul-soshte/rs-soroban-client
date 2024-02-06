@@ -26,7 +26,15 @@ pub mod soroban_rpc {
         pub mem_bytes: String,
     }
 
-    #[derive(Deserialize)]
+    #[derive(Debug, Deserialize)]
+    pub struct GetHealtWrapperResponse {
+        jsonrpc: String,
+        id: u32,
+        result: GetHealthResponse,
+    }
+
+
+    #[derive(Debug, Deserialize)]
     pub struct GetHealthResponse {
         pub status: String, // Can be an enum if the number of statuses is known
     }
