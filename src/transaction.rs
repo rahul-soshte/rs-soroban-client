@@ -66,6 +66,7 @@ pub fn assemble_transaction(
     // .build();
     let val = raw.operations.unwrap()[0].clone();
     match val.clone() {
+        #[allow(non_snake_case)]
         InvokeHostFunctionOp => {
             // txn_builder.clear_operations();
             let _invoke_op = val;
@@ -209,8 +210,11 @@ fn is_soroban_transaction(tx: &Transaction) -> bool {
     }
 
     match tx.operations.clone().unwrap()[0].clone() {
+        #[allow(non_snake_case)]
         _InvokeHostFunctionOp => true,
+        #[allow(non_snake_case)]
         _BumpFootprintExpirationOp => true,
+        #[allow(non_snake_case)]
         _RestoreFootprintOp => true,
         _ => false,
     }

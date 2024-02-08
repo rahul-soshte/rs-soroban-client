@@ -16,7 +16,7 @@ use crate::soroban_rpc::soroban_rpc::{
     self, GetAnyTransactionResponse, GetHealthResponse, GetLatestLedgerResponse,
     GetNetworkResponse, GetSuccessfulTransactionResponse, GetTransactionResponse,
     GetTransactionStatus, LedgerEntryResult, RawGetTransactionResponse,
-    RawSimulateTransactionResponse, SendTransactionResponse, SimulateTransactionResponse, RawLedgerEntryResult, GetHealtWrapperResponse,
+    RawSimulateTransactionResponse, SendTransactionResponse, SimulateTransactionResponse, RawLedgerEntryResult, GetHealtWrapperResponse, GetNetworkResponseWrapper,
 };
 use stellar_baselib::account::AccountBehavior;
 use crate::transaction::SimulationResponse::Normal;
@@ -44,7 +44,6 @@ impl Durability {
         }
     }
 }
-
 pub struct GetEventsRequest {
     filters: Vec<EventFilter>, // placeholder for actual type
     start_ledger: Option<u32>,
@@ -183,13 +182,26 @@ impl Server {
             .await
     }
 
-    pub async fn get_network(&self) -> Result<GetNetworkResponse, reqwest::Error> {
-        post::<soroban_rpc::GetNetworkResponse>(
-            &self.server_url.to_string(),
-            "getNetwork",
-            HashMap::new(),
-        )
-        .await
+    pub async fn get_network(&self) -> Result<GetNetworkResponseWrapper, reqwest::Error> {
+
+        let payload = json!({
+            "jsonrpc": "2.0",
+            "id": 8675309,
+            "method": "getNetwork"
+        });
+
+        let val = self.client
+            .post(&format!("{}", &self.server_url))
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await?
+            .json::<GetNetworkResponseWrapper>()
+            .await;
+        // println!("{:?}", val);
+        
+        val
+    
     }
 
     pub async fn get_latest_ledger(&self) -> Result<GetLatestLedgerResponse, reqwest::Error> {
@@ -369,6 +381,7 @@ impl Server {
     }
     //TODO: getEvents
     //TODO: request airdrop
+    #[allow(unused)]
     fn find_created_account_sequence_in_transaction_meta(
         meta: TransactionMeta,
     ) -> Result<String, &'static str> {

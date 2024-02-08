@@ -67,11 +67,21 @@ pub mod soroban_rpc {
         // pub latest_ledger: i32,
     }
 
-    #[derive(Deserialize)]
+
+    #[derive(Debug, Deserialize)]
+    pub struct GetNetworkResponseWrapper {
+        pub jsonrpc: String,
+        pub id: u32,
+        pub result: GetNetworkResponse,
+    }
+
+
+    #[derive(Deserialize, Debug)]
+    #[allow(non_snake_case)]
     pub struct GetNetworkResponse {
-        pub friendbot_url: Option<String>,
-        pub passphrase: String,
-        pub protocol_version: String,
+        pub friendbotUrl: Option<String>,
+        pub passphrase: Option<String>,
+        pub protocolVersion: Option<i32>,
     }
 
     #[derive(Deserialize)]
