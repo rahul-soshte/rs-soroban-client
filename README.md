@@ -3,6 +3,7 @@
 ![Crates.io](https://img.shields.io/crates/v/soroban-client)
 ![Crates.io](https://img.shields.io/crates/l/soroban-client)
 ![Crates.io](https://img.shields.io/crates/d/soroban-client)
+![publish workflow](https://github.com/rahul-soshte/rs-soroban-client/actions/workflows/publish.yml/badge.svg)
 
 <img src="img/rust-soroban-client-logo.png" alt="drawing" width="300"/>
 
@@ -16,7 +17,7 @@ Add this to your Cargo.toml:
 
 ```toml
 [dependencies]
-soroban-client = "0.2.5"
+soroban-client = "0.2.6"
 ```
 
 And this to your code:
