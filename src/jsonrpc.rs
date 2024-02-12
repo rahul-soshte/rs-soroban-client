@@ -71,9 +71,10 @@ pub async fn post<T: for<'a> Deserialize<'a>>(
     };
 
     let res = client.post(url).json(&request).send().await?;
+    println!("Ress {:?}", res);
 
     let data: T = res.json().await?;
-
+    // println!("Data {:?}", data);
     // Here we ensure that the response status is not an error.
     // If it's an error, it will convert the response into an error type
     // let dc = res.error_for_status_ref()?;

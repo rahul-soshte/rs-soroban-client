@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 use std::collections::HashMap;
 use stellar_baselib::soroban_data_builder::SorobanDataBuilder;
 
@@ -99,6 +100,7 @@ pub mod soroban_rpc {
         FAILED,
     }
 
+    #[derive(Debug)]
     pub enum GetTransactionResponse {
         Successful(GetSuccessfulTransactionResponse),
         Failed(GetFailedTransactionResponse),
@@ -108,47 +110,56 @@ pub mod soroban_rpc {
     #[derive(Clone, Debug, Deserialize)]
     pub struct GetAnyTransactionResponse {
         pub status: GetTransactionStatus,
-        pub latest_ledger: i32,
-        pub latest_ledger_close_time: i32,
-        pub oldest_ledger: i32,
-        pub oldest_ledger_close_time: i32,
+        pub latestLedger: i32,
+        pub latestLedgerCloseTime: i32,
+        pub oldestLedger: i32,
+        pub oldestLedgerCloseTime: i32,
     }
 
+    #[derive(Debug)]
     pub struct GetMissingTransactionResponse {
         pub base: GetAnyTransactionResponse,
     }
 
+    #[derive(Debug)]
     pub struct GetFailedTransactionResponse {
         pub base: GetAnyTransactionResponse,
     }
 
-    #[derive(Clone, Deserialize)]
+    #[derive(Clone, Deserialize, Debug)]
     pub struct GetSuccessfulTransactionResponse {
         pub base: Option<GetAnyTransactionResponse>,
         pub ledger: Option<i32>,
-        pub created_at: Option<i32>,
-        pub application_order: Option<i32>,
-        pub fee_bump: Option<bool>,
-        pub envelope_xdr: Option<stellar_xdr::next::TransactionEnvelope>,
-        pub result_xdr: Option<stellar_xdr::next::TransactionResult>,
-        pub result_meta_xdr: Option<stellar_xdr::next::TransactionMeta>,
-        pub return_value: Option<stellar_xdr::next::ScVal>,
+        pub createdAt: Option<i32>,
+        pub applicationOrder: Option<i32>,
+        pub feeBump: Option<bool>,
+        pub envelopeXdr: Option<stellar_xdr::next::TransactionEnvelope>,
+        pub resultXdr: Option<stellar_xdr::next::TransactionResult>,
+        pub resultMetaXdr: Option<stellar_xdr::next::TransactionMeta>,
+        pub returnValue: Option<stellar_xdr::next::ScVal>,
+    }
+
+    #[derive(Clone, Debug, Deserialize)]
+    pub struct RawGetTransactionResponseWrapper {
+        pub jsonrpc: String,
+        pub id: i32,
+        pub result: RawGetTransactionResponse,
     }
 
     #[derive(Clone, Debug, Deserialize)]
     pub struct RawGetTransactionResponse {
         pub status: GetTransactionStatus,
-        pub latest_ledger: i32,
-        pub latest_ledger_close_time: i32,
-        pub oldest_ledger: i32,
-        pub oldest_ledger_close_time: i32,
-        pub application_order: Option<i32>,
-        pub fee_bump: Option<bool>,
-        pub envelope_xdr: Option<String>,
-        pub result_xdr: Option<String>,
-        pub result_meta_xdr: Option<String>,
+        pub latestLedger: i32,
+        pub latestLedgerCloseTime: String,
+        pub oldestLedger: i32,
+        pub oldestLedgerCloseTime: String,
+        pub applicationOrder: Option<i32>,
+        pub feeBump: Option<bool>,
+        pub envelopeXdr: Option<String>,
+        pub resultXdr: Option<String>,
+        pub resultMetaXdr: Option<String>,
         pub ledger: Option<i32>,
-        pub created_at: Option<i32>,
+        pub createdAt: Option<String>,
     }
 
     pub enum EventType {

@@ -16,7 +16,7 @@ use crate::soroban_rpc::soroban_rpc::{
     self, GetAnyTransactionResponse, GetHealthResponse, GetLatestLedgerResponse,
     GetNetworkResponse, GetSuccessfulTransactionResponse, GetTransactionResponse,
     GetTransactionStatus, LedgerEntryResult, RawGetTransactionResponse,
-    RawSimulateTransactionResponse, SendTransactionResponse, SimulateTransactionResponse, RawLedgerEntryResult, GetHealtWrapperResponse, GetNetworkResponseWrapper,
+    RawSimulateTransactionResponse, SendTransactionResponse, SimulateTransactionResponse, RawLedgerEntryResult, GetHealtWrapperResponse, GetNetworkResponseWrapper, RawGetTransactionResponseWrapper,
 };
 use stellar_baselib::account::AccountBehavior;
 use crate::transaction::SimulationResponse::Normal;
@@ -67,13 +67,13 @@ impl Default for GetSuccessfulTransactionResponse {
         Self {
             base: None,
             ledger: None,
-            created_at: None,
-            application_order: None,
-            fee_bump: None,
-            envelope_xdr: None,
-            result_xdr: None,
-            result_meta_xdr: None,
-            return_value: None,
+            createdAt: None,
+            applicationOrder: None,
+            feeBump: None,
+            envelopeXdr: None,
+            resultXdr: None,
+            resultMetaXdr: None,
+            returnValue: None,
         }
     }
 }
@@ -284,49 +284,63 @@ impl Server {
 
         let map: std::collections::HashMap<String, serde_json::Value> =
             data.into_iter().map(|(key, value)| (key, value)).collect();
+        
+        let payload = json!({
+            "jsonrpc": "2.0",
+            "id": 8675309,
+            "method": "getTransaction",
+            "params": {
+                "hash": hash
+            }
+        });
 
-        let raw =
-            post::<RawGetTransactionResponse>(&self.server_url.to_string(), "getTransaction", map)
-                .await?;
+        let raw = self.client
+            .post(&format!("{}", &self.server_url))
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await?
+            .json::<RawGetTransactionResponseWrapper>()
+            .await?;
 
         let mut success_info = GetSuccessfulTransactionResponse {
             base: None,
             ledger: None,
-            created_at: None,
-            application_order: None,
-            fee_bump: None,
-            envelope_xdr: None,
-            result_xdr: None,
-            result_meta_xdr: None,
-            return_value: None,
+            createdAt: None,
+            applicationOrder: None,
+            feeBump: None,
+            envelopeXdr: None,
+            resultXdr: None,
+            resultMetaXdr: None,
+            returnValue: None,
         };
 
-        if let GetTransactionStatus::SUCCESS = raw.status {
-            let meta = TransactionMeta::from_xdr_base64(&raw.result_meta_xdr.unwrap(), Limits::none()).unwrap();
+        if let GetTransactionStatus::SUCCESS = raw.result.status {
+            let meta = TransactionMeta::from_xdr_base64(&raw.result.resultMetaXdr.unwrap(), Limits::none()).unwrap();
 
-            success_info.ledger = raw.ledger;
-            success_info.created_at = raw.created_at;
-            success_info.application_order = raw.application_order;
-            success_info.fee_bump = raw.fee_bump;
-            success_info.envelope_xdr =
-                TransactionEnvelope::from_xdr_base64(&raw.envelope_xdr.unwrap(), Limits::none()).ok();
-            success_info.result_xdr =
-                TransactionResult::from_xdr_base64(&raw.result_xdr.unwrap(), Limits::none()).ok();
-            success_info.result_meta_xdr = Some(meta.clone());
+            success_info.ledger = raw.result.ledger;
+            success_info.createdAt = Some(i32::from_str(&raw.result.createdAt.unwrap()).unwrap());
+            success_info.applicationOrder = raw.result.applicationOrder;
+            success_info.feeBump = raw.result.feeBump;
+            success_info.envelopeXdr =
+                TransactionEnvelope::from_xdr_base64(&raw.result.envelopeXdr.unwrap(), Limits::none()).ok();
+            success_info.resultXdr =
+                TransactionResult::from_xdr_base64(&raw.result.resultXdr.unwrap(), Limits::none()).ok();
+            success_info.resultMetaXdr = Some(meta.clone());
 
             let f = GetAnyTransactionResponse {
-                status: raw.status,
-                latest_ledger: raw.latest_ledger,
-                latest_ledger_close_time: raw.latest_ledger,
-                oldest_ledger: raw.oldest_ledger,
-                oldest_ledger_close_time: raw.oldest_ledger_close_time,
+                status: raw.result.status,
+                latestLedger: raw.result.latestLedger,
+                latestLedgerCloseTime: i32::from_str(&raw.result.latestLedgerCloseTime).unwrap(),
+                oldestLedger: raw.result.oldestLedger,
+                oldestLedgerCloseTime: i32::from_str(&raw.result.oldestLedgerCloseTime).unwrap(),
             };
 
             success_info.base = Some(f);
 
             if let TransactionMeta::V3(v3) = meta {
                 if let Some(soroban_meta) = v3.soroban_meta {
-                    success_info.return_value = Some(soroban_meta.return_value);
+                    success_info.returnValue = Some(soroban_meta.return_value);
                 }
             }
         }
