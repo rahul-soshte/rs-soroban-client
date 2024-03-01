@@ -16,7 +16,7 @@ use crate::soroban_rpc::soroban_rpc::{
     self, GetAnyTransactionResponse, GetHealthResponse, GetLatestLedgerResponse,
     GetNetworkResponse, GetSuccessfulTransactionResponse, GetTransactionResponse,
     GetTransactionStatus, LedgerEntryResult, RawGetTransactionResponse,
-    RawSimulateTransactionResponse, SendTransactionResponse, SimulateTransactionResponse, RawLedgerEntryResult, GetHealtWrapperResponse, GetNetworkResponseWrapper, RawGetTransactionResponseWrapper,
+    RawSimulateTransactionResponse, SendTransactionResponse, SimulateTransactionResponse, RawLedgerEntryResult, GetHealtWrapperResponse, GetNetworkResponseWrapper, RawGetTransactionResponseWrapper, GetLedgerEntriesResponseWrapper,
 };
 use stellar_baselib::account::AccountBehavior;
 use crate::transaction::SimulationResponse::Normal;
@@ -98,10 +98,8 @@ impl Server {
     pub async fn get_ledger_entries(
         &self,
         keys: Vec<LedgerKey>,
-    ) -> Result<soroban_rpc::GetLedgerEntriesResponse, reqwest::Error> {
+    ) -> Result<soroban_rpc::GetLedgerEntriesResponseWrapper, reqwest::Error> {
         let mut data: Vec<(LedgerKey, serde_json::Value)> = vec![];
-
-        println!("Hello World 2");
 
         for i in 0..keys.len() {
             data.push((
@@ -109,44 +107,50 @@ impl Server {
                 serde_json::Value::String(keys[i].clone().to_xdr_base64(Limits::none()).unwrap()),
             ))
         }
-        println!("Hello World 3");
 
         let map: std::collections::HashMap<String, serde_json::Value> = data
             .into_iter()
             .map(|(key, value)| (key.to_xdr_base64(Limits::none()).unwrap(), value))
             .collect();
-        println!("Hello World 4");
 
-        let dd = self.server_url.clone().to_string();
-        println!("Hello World 5");
+        let keys: Vec<String> = map.keys().cloned().collect();
 
-        let val = post::<soroban_rpc::GetLedgerEntriesResponse>(&dd, "getLedgerEntries", map);
-
-        println!("Hello World 6");
-
-        val.await
+        let payload = json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "getLedgerEntries",
+            "params": {
+                "keys": keys
+            }
+        });
+        
+        self.client
+            .post(&format!("{}", &self.server_url))
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await?
+            .json::<GetLedgerEntriesResponseWrapper>()
+            .await
+        
     }
 
     pub async fn get_account(&self, address: &str) -> Result<Account, Box<dyn Error>> {
-        println!("Hello World");
         
         let ledger_key = LedgerKey::Account(LedgerKeyAccount {
             account_id: stellar_baselib::keypair::Keypair::from_public_key(address)
                 .unwrap()
                 .xdr_account_id(),
         });
-        println!("Hello World 1");
 
         let resp = self.get_ledger_entries(vec![ledger_key]).await?;
 
-        println!("Response {:?}", resp);
 
-        let entries = match resp.entries {
+        let entries = match resp.result.entries {
             Some(e) => e,
             None => Vec::new(),
         };
 
-        println!("Entries {:?}", entries);
 
         if entries.is_empty() {
             return Err(Box::new(std::io::Error::new(
@@ -227,6 +231,8 @@ impl Server {
         let map: std::collections::HashMap<String, serde_json::Value> =
             data.into_iter().map(|(key, value)| (key, value)).collect();
 
+        println!("Hunter");
+        
         let raw_response = Either::Right(
             post::<RawSimulateTransactionResponse>(
                 &self.server_url.to_string(),
@@ -259,7 +265,7 @@ impl Server {
         let response = self.get_ledger_entries(val).await?;
 
 
-        match response.entries.unwrap().get(0) {
+        match response.result.entries.unwrap().get(0) {
             Some(entry) => Ok(entry.clone()),
             None => Err(format!(
                 "Contract data not found. Contract: {}, Key: {:?}, Durability: {:?}",
@@ -360,6 +366,7 @@ impl Server {
             .await
             .unwrap();
 
+        println!("{:?}", sim_response);
         //TODO: Error Handling
 
         Ok(assemble_transaction(

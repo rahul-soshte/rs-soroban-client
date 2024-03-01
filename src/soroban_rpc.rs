@@ -43,15 +43,23 @@ pub mod soroban_rpc {
     #[derive(Clone, Debug, Deserialize)]
 
     pub struct LedgerEntryResult {
-        pub last_modified_ledger_seq: Option<i32>,
         pub key: String,
         pub xdr: String,
+        pub lastModifiedLedgerSeq: Option<i32>,
     }
 
     #[derive(Deserialize, Debug)]
     pub struct GetLedgerEntriesResponse {
         pub entries: Option<Vec<LedgerEntryResult>>,
-        // pub latest_ledger: i32,
+        pub latestLedger: i32,
+    }
+
+    #[derive(Deserialize, Debug)]
+    pub struct GetLedgerEntriesResponseWrapper {
+        pub jsonrpc: String,
+        pub id: u32,
+        pub result: GetLedgerEntriesResponse,
+
     }
 
     #[derive(Debug, Clone, Deserialize)]
@@ -207,10 +215,10 @@ pub mod soroban_rpc {
     #[derive(Clone, Debug, Deserialize)]
     pub struct SendTransactionResponse {
         pub status: SendTransactionStatus,
-        pub error_result_xdr: Option<String>,
+        pub errorResultXdr: Option<String>,
         pub hash: String,
-        pub latest_ledger: i32,
-        pub latest_ledger_close_time: i32,
+        pub latestLedger: i32,
+        pub latestLedgerCloseTime: i32,
     }
 
     #[derive(Clone, Debug)]
