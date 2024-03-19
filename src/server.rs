@@ -1,6 +1,7 @@
 use core::panic;
 use http::Uri;
 use serde_json::json;
+use stellar_baselib::hashing::Sha256Hasher;
 use std::option::Option;
 use std::{collections::HashMap, str::FromStr};
 use stellar_baselib::account::Account;
@@ -9,8 +10,8 @@ use stellar_xdr::next::{
     ContractDataDurability, Hash, LedgerKeyContractData, ScAddress, ScVal,
     TransactionEnvelope, TransactionMeta, TransactionResult, Limits,
 };
+use stellar_baselib::hashing::HashingBehavior;
 use stellar_xdr::next::{LedgerEntryData, LedgerKey, LedgerKeyAccount, ReadXdr, WriteXdr};
-
 use crate::http_client::create_client;
 use crate::soroban_rpc::soroban_rpc::{
     self, GetAnyTransactionResponse, GetHealthResponse, GetLatestLedgerResponse,
@@ -24,10 +25,7 @@ use crate::transaction::{assemble_transaction, parse_raw_simulation, Either};
 use crate::{jsonrpc::post, soroban_rpc::soroban_rpc::EventFilter};
 use std::error::Error;
 use stellar_baselib::keypair::KeypairBehavior;
-// Assuming you'll need to convert other parts of your TypeScript program,
-// you might need libraries like `reqwest` for making HTTP requests and `serde` for serialization/deserialization.
 use stellar_baselib::transaction_builder::TransactionBuilderBehavior;
-
 const SUBMIT_TRANSACTION_TIMEOUT: u32 = 60 * 1000;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -114,6 +112,8 @@ impl Server {
             .collect();
 
         let keys: Vec<String> = map.keys().cloned().collect();
+
+        println!("{:?}",keys);
 
         let payload = json!({
             "jsonrpc": "2.0",
@@ -251,7 +251,13 @@ impl Server {
         key: ScVal,
         durability: Durability,
     ) -> Result<LedgerEntryResult, Box<dyn std::error::Error>> {
-        let sc_address = ScAddress::Contract(Hash::from_str(contract).unwrap());
+        let hex_contract_val = &hex::encode(Sha256Hasher::hash(contract.as_bytes()));
+        println!("Hex {}", hex_contract_val);
+        let hex_id = hex_contract_val.as_bytes();
+        let mut array = [0u8; 32];
+        array.copy_from_slice(&hex_id[0..32]);
+
+        let sc_address = ScAddress::Contract(Hash::from_str(hex_contract_val).unwrap());
 
         let contract_key = LedgerKey::ContractData(LedgerKeyContractData {
             key: key.clone(),
@@ -264,7 +270,8 @@ impl Server {
 
         let response = self.get_ledger_entries(val).await?;
 
-
+        println!(" Response {:?}",response);
+        
         match response.result.entries.unwrap().get(0) {
             Some(entry) => Ok(entry.clone()),
             None => Err(format!(
