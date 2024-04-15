@@ -1,0 +1,3 @@
+[submodule "stellar-baselib"]
+	path = stellar-baselib
+	url = https://github.com/rahul-soshte/rs-stellar-base.git

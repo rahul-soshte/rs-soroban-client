@@ -368,6 +368,8 @@ impl Server {
         transaction: Transaction,
         network_passphrase: Option<&str>,
     ) -> Result<Transaction, Box<dyn std::error::Error>> {
+
+        
         let sim_response = self
             .simulate_transaction(transaction.clone())
             .await

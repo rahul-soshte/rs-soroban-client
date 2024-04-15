@@ -11,4 +11,4 @@ stellar-strkey = "0.0.7"
 tokio = { version = "1", features = ["full"] }
 stellar-xdr =  { version = "20.0.2", default-features = true, features = ["base64", "std", "next", "serde", "alloc"] }
 hex = "0.4.3"
-stellar-baselib = "0.3.3"
+stellar-baselib =  { path = "../stellar-baselib" }
