@@ -88,9 +88,15 @@ async fn main() {
 }
 ```
 
+## Getting Help
+
+Join the [discord server](https://discord.gg/Dy7BXxUJHC) to chat with the community!
+
 ## Practical Use Case
 
 Suppose someone wants to build a trading bot targeting a DEX built on Soroban itself. This bot executes a large number of trades within a short period, often leveraging market inefficiencies and price discrepancies.  A Rust client library for Soroban would provide the person with a performant toolset to build trading algorithms, interact with the Stellar network, and execute trades with minimal latency.
+
+
 
 ## Authors
 
