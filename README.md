@@ -90,7 +90,7 @@ async fn main() {
 
 ## Getting Help
 
-Join the [discord server](https://discord.gg/Dy7BXxUJHC) to chat with the community!
+Join the [discord server](https://discord.gg/mH9R2mw9tP) to chat with the community!
 
 ## Practical Use Case
 
