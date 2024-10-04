@@ -17,10 +17,14 @@ use stellar_xdr::next::ScAddress::Contract;
 use std::str::FromStr;
 use stellar_baselib::transaction::TransactionBehavior;
 use stellar_baselib::contract::ContractBehavior;
+use soroban_client::transaction_builder::TIMEOUT_INFINITE;
+use soroban_client::operation::PaymentOpts;
+use soroban_client::operation::Operation;
+use soroban_client::asset::Asset;
+use soroban_client::asset::AssetBehavior;
+
 // Testnet -> https://soroban-testnet.stellar.org
 // Futurenet -> https://rpc-futurenet.stellar.org:443
-
-
 
 #[tokio::main]
 async fn main() {
@@ -49,8 +53,35 @@ async fn main() {
             contract.call("increment", None),
         )
         .build();
+    
+    let destination = "GAAOFCNYV2OQUMVONXH2DOOQNNLJO7WRQ7E4INEZ7VH7JNG7IKBQAK5D";
+    let asset = Asset::native();
+    let amount = "2000";
 
-    transaction = server.prepare_transaction(transaction, Some(Networks::testnet())).await.unwrap();
+    let source = Account::new(
+        "GBBM6BKZPEHWYO3E3YKREDPQXMS4VK35YLNU7NFBRI26RAN7GI5POFBB",
+        "20",
+    )
+    .unwrap();
+
+    let tx = TransactionBuilder::new(source.clone(), Networks::testnet())
+        .fee(100_u32)
+        .add_operation(Operation::payment(PaymentOpts {
+            destination: destination.to_owned(),
+            asset,
+            amount: amount.to_owned(),
+            source: None,
+        }).unwrap())
+        .add_memo("Happy birthday!")
+        .set_timeout(TIMEOUT_INFINITE)
+        .unwrap()
+        .build();
 
 
+    // TODO: Extract the Transaction Envelope XDR and check if its a valid XDR
+    println!("{:?}", tx_env);
+
+
+    // TODO: Sign the Transaction
+    // TODO: Send the Transaction    
 }
