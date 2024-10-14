@@ -1,4 +1,5 @@
 use core::panic;
+use std::{cell::RefCell, rc::Rc};
 
 use crate::soroban_rpc::soroban_rpc::{
     is_simulation_success, BaseSimulateTransactionResponse, RawSimulateTransactionResponse,
@@ -59,8 +60,14 @@ pub fn assemble_transaction(
     let _ss = soroban_tx_data.transaction_data.build();
 
     let source = raw.source;
+
+    let source_acc = Rc::new(RefCell::new(Account::new(
+        &source,
+        "0",
+    ).unwrap()));
+
     let txn_builder =
-        TransactionBuilder::new(Account::new(&source, "0").unwrap(), network_passphrase)
+        TransactionBuilder::new(source_acc, network_passphrase, None)
             .fee(classic_fee_num + min_resource_fee_num)
             .clone();
     // .build();
