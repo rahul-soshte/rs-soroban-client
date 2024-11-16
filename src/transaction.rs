@@ -62,7 +62,7 @@ pub fn assemble_transaction(
     let source = raw.source;
 
     let source_acc = Rc::new(RefCell::new(Account::new(
-        &source,
+        &source.unwrap(),
         "0",
     ).unwrap()));
 

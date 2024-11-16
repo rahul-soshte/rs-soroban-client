@@ -1,3 +1,5 @@
+use std::rc::Rc;
+use std::cell::RefCell;
 use soroban_client::network::{Networks, NetworkPassphrase};
 use soroban_client::server::Durability;
 #[allow(warnings)]
@@ -23,65 +25,84 @@ use soroban_client::operation::Operation;
 use soroban_client::asset::Asset;
 use soroban_client::asset::AssetBehavior;
 
-// Testnet -> https://soroban-testnet.stellar.org
-// Futurenet -> https://rpc-futurenet.stellar.org:443
-
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize server connection
+    let server = Server::new(
+        "https://soroban-testnet.stellar.org",
+        Options {
+            allow_http: None,
+            timeout: Some(1000),
+            headers: None,
+        }
+    );
 
-    let server = Server::new("https://soroban-testnet.stellar.org", Options{ allow_http: None, timeout: Some(1000), headers: None });
-    let source_secret_key = "SCCTADNI4B4FEFELEYEYSDUNQXVTXHRAOEXWWJWHJ57EO3VHGXJFL3TC";
+    // Set up source account
+    let source_secret_key = "SBQ2476EDDHYVYPCVRLSOL2XPHF3ALPZ7LN36J54D7CZKNBVZOPO32LP";
     let source_keypair = Keypair::from_secret(source_secret_key).expect("Invalid secret key");
-    let _source_public_key = source_keypair.public_key();
-    let _source_public_key = "GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI";
+    let source_public_key = "GCLLIMRLKE5NXUHAKG5WO5P65KARTB6TYPVGZVFYCJGU7SFUBW7C23KI";
 
-    let public_key = _source_public_key; // Replace with the actual public key
-    // let secret_string: &str = source_secret_key; // Replace with the actual secret key
-    let contract_id = "CDEJ6E4AGUKHNRXQUKFCPLGNB2GGC4LVRR2GVAY3EQTOLM3FPLBAPEIO"; // Replace with the actual contract ID
-    let source_secret_key = "SCCTADNI4B4FEFELEYEYSDUNQXVTXHRAOEXWWJWHJ57EO3VHGXJFL3TC";
-    let source_keypair = Keypair::from_secret(source_secret_key).expect("Invalid secret key");
-    let _source_public_key = source_keypair.public_key();
-    let _source_public_key = "GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI";
+    // Get account information from server
+    let account_data = server.get_account(source_public_key).await?;
+    let source_account = Rc::new(RefCell::new(
+        Account::new(source_public_key, &account_data.sequence_number()).unwrap()
+    ));
 
-    let account = server.get_account(public_key).await.unwrap();
-    let fee = 100_u32;
+    // Contract interaction transaction
+    let contract_id = "CCSE2AN2S4RLMMXJY5FRYQ4YN6UGG54LJT3HPWGGISMJI4OAUYOY6AVR";
     let contract = contract::Contracts::new(contract_id).unwrap();
-
-    let mut transaction = TransactionBuilder::new(account, Networks::testnet())
-        .fee(fee)
-        .add_operation(
-            contract.call("increment", None),
-        )
-        .build();
     
-    let destination = "GAAOFCNYV2OQUMVONXH2DOOQNNLJO7WRQ7E4INEZ7VH7JNG7IKBQAK5D";
-    let asset = Asset::native();
-    let amount = "2000";
-
-    let source = Account::new(
-        "GBBM6BKZPEHWYO3E3YKREDPQXMS4VK35YLNU7NFBRI26RAN7GI5POFBB",
-        "20",
+    let mut contract_tx = TransactionBuilder::new(
+        source_account.clone(),
+        Networks::testnet(),
+        None
     )
-    .unwrap();
+    .fee(100_u32)
+    .add_operation(contract.call("increment", None))
+    .set_timeout(TIMEOUT_INFINITE)?
+    .build();
 
-    let tx = TransactionBuilder::new(source.clone(), Networks::testnet())
-        .fee(100_u32)
-        .add_operation(Operation::payment(PaymentOpts {
+    // Sign the contract transaction
+    contract_tx.sign(&[source_keypair.clone()]);
+    
+    // Payment transaction
+    let destination = "GAAOFCNYV2OQUMVONXH2DOOQNNLJO7WRQ7E4INEZ7VH7JNG7IKBQAK5D";
+    let amount = "2000";
+    
+    let mut payment_tx = TransactionBuilder::new(
+        source_account.clone(),
+        Networks::testnet(),
+        None
+    )
+    .fee(100_u32)
+    .add_operation(
+        Operation::payment(PaymentOpts {
             destination: destination.to_owned(),
-            asset,
+            asset: Asset::native(),
             amount: amount.to_owned(),
             source: None,
-        }).unwrap())
-        .add_memo("Happy birthday!")
-        .set_timeout(TIMEOUT_INFINITE)
-        .unwrap()
-        .build();
+        })?
+    )
+    .add_memo("Happy birthday!")
+    .set_timeout(TIMEOUT_INFINITE)?
+    .build();
 
+    // Sign the payment transaction
+    // payment_tx.sign(&[source_keypair.clone()]);
+  
+    
 
-    // TODO: Extract the Transaction Envelope XDR and check if its a valid XDR
-    println!("{:?}", tx_env);
+    let val = contract_tx.to_envelope().unwrap().to_xdr_base64(Limits::none());
+    println!("{:?}", val);
 
+    // let val = match server.send_transaction(payment_tx).await {
+    //     Ok(transaction_result) => {
+    //         println!("{:?}", transaction_result);
+    //     }
+    //     Err(err) => {
+    //         eprintln!("{:?}", err);
+    //     }
+    // };
 
-    // TODO: Sign the Transaction
-    // TODO: Send the Transaction    
+    Ok(())
 }
