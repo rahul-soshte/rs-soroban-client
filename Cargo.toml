@@ -1,6 +1,6 @@
 [package]
 name = "soroban-client"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 description = "A high-level library Rust client library for interacting with Soroban smart contracts on the Stellar blockchain"
 license = "Apache-2.0"
