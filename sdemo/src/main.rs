@@ -1,8 +1,8 @@
+#![ allow(warnings)] 
 use std::rc::Rc;
 use std::cell::RefCell;
 use soroban_client::network::{Networks, NetworkPassphrase};
 use soroban_client::server::Durability;
-#[allow(warnings)]
 use soroban_client::server::Options;
 use soroban_client::contract_spec::native_to_sc_val;
 use soroban_client::transaction::Account;
@@ -66,43 +66,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     contract_tx.sign(&[source_keypair.clone()]);
     
     // Payment transaction
-    let destination = "GAAOFCNYV2OQUMVONXH2DOOQNNLJO7WRQ7E4INEZ7VH7JNG7IKBQAK5D";
-    let amount = "2000";
-    
-    let mut payment_tx = TransactionBuilder::new(
-        source_account.clone(),
-        Networks::testnet(),
-        None
-    )
-    .fee(100_u32)
-    .add_operation(
-        Operation::payment(PaymentOpts {
-            destination: destination.to_owned(),
-            asset: Asset::native(),
-            amount: amount.to_owned(),
-            source: None,
-        })?
-    )
-    .add_memo("Happy birthday!")
-    .set_timeout(TIMEOUT_INFINITE)?
-    .build();
-
+    // let destination = "GAAOFCNYV2OQUMVONXH2DOOQNNLJO7WRQ7E4INEZ7VH7JNG7IKBQAK5D";
+    // let amount = "2000";
+    // let mut payment_tx = TransactionBuilder::new(
+    //     source_account.clone(),
+    //     Networks::testnet(),
+    //     None
+    // )
+    // .fee(100_u32)
+    // .add_operation(
+    //     Operation::payment(PaymentOpts {
+    //         destination: destination.to_owned(),
+    //         asset: Asset::native(),
+    //         amount: amount.to_owned(),
+    //         source: None,
+    //     })?
+    // )
+    // .add_memo("Happy birthday!")
+    // .set_timeout(TIMEOUT_INFINITE)?
+    // .build();
     // Sign the payment transaction
     // payment_tx.sign(&[source_keypair.clone()]);
   
-    
-
     let val = contract_tx.to_envelope().unwrap().to_xdr_base64(Limits::none());
     println!("{:?}", val);
 
-    // let val = match server.send_transaction(payment_tx).await {
-    //     Ok(transaction_result) => {
-    //         println!("{:?}", transaction_result);
-    //     }
-    //     Err(err) => {
-    //         eprintln!("{:?}", err);
-    //     }
-    // };
+    match server.send_transaction(contract_tx).await {
+        Ok(response) => {
+            println!("Transaction status: {:?}", response.base.status);
+            println!("Transaction hash: {}", response.base.hash);
+            println!("Latest ledger: {}", response.base.latest_ledger);
+            println!("Latest ledger close time: {}", response.base.latest_ledger_close_time);
+            
+            if let Some(error_xdr) = response.error_result {
+                println!("Error result: {}", error_xdr);
+            }
+            
+            if let Some(events) = response.diagnostic_events {
+                println!("Diagnostic events: {:?}", events);
+            }
+        }
+        Err(e) => {
+            eprintln!("Failed to send transaction: {}", e);
+        }
+    }
 
     Ok(())
 }

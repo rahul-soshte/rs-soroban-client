@@ -70,8 +70,8 @@ pub async fn post<T: for<'a> Deserialize<'a>>(
         params,
     };
 
+    
     let res = client.post(url).json(&request).send().await?;
-    println!("Ress {:?}", res);
 
     let data: T = res.json().await?;
     // println!("Data {:?}", data);

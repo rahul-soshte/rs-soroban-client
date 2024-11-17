@@ -23,6 +23,8 @@ pub enum SimulationResponse {
     Normal(SimulateTransactionResponse),
     Raw(RawSimulateTransactionResponse),
 }
+
+//TODO: Assemble Transaction Tests
 pub fn assemble_transaction(
     raw: Transaction,
     network_passphrase: &str,

@@ -1,5 +1,6 @@
 use core::panic;
 use http::Uri;
+use serde::Serialize;
 use serde_json::json;
 use stellar_baselib::hashing::Sha256Hasher;
 use std::option::Option;
@@ -7,17 +8,13 @@ use std::{collections::HashMap, str::FromStr};
 use stellar_baselib::account::Account;
 use stellar_baselib::transaction::{Transaction, TransactionBehavior};
 use stellar_xdr::next::{
-    ContractDataDurability, Hash, LedgerKeyContractData, ScAddress, ScVal,
-    TransactionEnvelope, TransactionMeta, TransactionResult, Limits,
+    ContractDataDurability, DiagnosticEvent, Hash, LedgerKeyContractData, Limits, ScAddress, ScVal, TransactionEnvelope, TransactionMeta, TransactionResult
 };
 use stellar_baselib::hashing::HashingBehavior;
 use stellar_xdr::next::{LedgerEntryData, LedgerKey, LedgerKeyAccount, ReadXdr, WriteXdr};
 use crate::http_client::create_client;
 use crate::soroban_rpc::soroban_rpc::{
-    self, GetAnyTransactionResponse, GetHealthResponse, GetLatestLedgerResponse,
-    GetNetworkResponse, GetSuccessfulTransactionResponse, GetTransactionResponse,
-    GetTransactionStatus, LedgerEntryResult, RawGetTransactionResponse,
-    RawSimulateTransactionResponse, SendTransactionResponse, SimulateTransactionResponse, RawLedgerEntryResult, GetHealtWrapperResponse, GetNetworkResponseWrapper, RawGetTransactionResponseWrapper, GetLedgerEntriesResponseWrapper,
+    self, GetAnyTransactionResponse, GetHealtWrapperResponse, GetHealthResponse, GetLatestLedgerResponse, GetLedgerEntriesResponseWrapper, GetNetworkResponse, GetNetworkResponseWrapper, GetSuccessfulTransactionResponse, GetTransactionResponse, GetTransactionStatus, JsonRpcResponse, LedgerEntryResult, RawGetTransactionResponse, RawGetTransactionResponseWrapper, RawLedgerEntryResult, RawSimulateTransactionResponse, SendTransactionResponse, SimulateTransactionResponse
 };
 use stellar_baselib::account::AccountBehavior;
 use crate::transaction::SimulationResponse::Normal;
@@ -59,6 +56,8 @@ pub struct Server {
     server_url: Uri,
     client: reqwest::Client,
 }
+
+
 
 impl Default for GetSuccessfulTransactionResponse {
     fn default() -> Self {
@@ -390,25 +389,49 @@ impl Server {
     pub async fn send_transaction(
         &self,
         transaction: Transaction,
-        // Assuming you have an enum or similar to differentiate Transaction from FeeBumpTransaction
     ) -> Result<SendTransactionResponse, Box<dyn std::error::Error>> {
-        let mut data: Vec<(String, serde_json::Value)> = vec![];
+        let transaction_xdr = transaction
+            .to_envelope()?
+            .to_xdr_base64(Limits::none())?;
+        
+        let payload = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "sendTransaction",
+            "params": {
+                "transaction": transaction_xdr
+            }
+        });
 
-        data.push((
-            transaction.to_envelope().unwrap().to_xdr_base64(Limits::none()).unwrap(),
-            serde_json::Value::String(transaction.to_envelope().unwrap().to_xdr_base64(Limits::none()).unwrap()),
-        ));
+        let response = self.client
+            .post(&format!("{}", &self.server_url))
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await?;
 
-        let map: std::collections::HashMap<String, serde_json::Value> =
-            data.into_iter().map(|(key, value)| (key, value)).collect();
+        // Debug print the raw response
+        // println!("Raw response: {}", response.clone().text().await?);
 
-        // Assuming `jsonrpc` and `SendTransactionResponse` types are defined somewhere
-        let response =
-            post::<SendTransactionResponse>(&self.server_url.to_string(), "sendTransaction", map)
-                .await;
+        let result: JsonRpcResponse = response.json().await?;
+        
+        // If error result is present, decode it
+        if let Some(error_xdr) = &result.result.error_result {
+            println!("Transaction error: {:?}", 
+                TransactionResult::from_xdr_base64(error_xdr, Limits::none())?);
+        }
 
-        Ok(response?)
+        // If diagnostic events are present, decode them
+        if let Some(events) = &result.result.diagnostic_events {
+            for event_xdr in events {
+                println!("Diagnostic event: {:?}", 
+                    DiagnosticEvent::from_xdr_base64(event_xdr, Limits::none())?);
+            }
+        }
+
+        Ok(result.result)
     }
+    
     //TODO: getEvents
     //TODO: request airdrop
     #[allow(unused)]

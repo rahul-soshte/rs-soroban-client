@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use stellar_baselib::soroban_data_builder::SorobanDataBuilder;
 
 pub mod soroban_rpc {
-    use serde::Deserialize;
+    use serde::{Deserialize, Serialize};
 
     use super::*;
 
@@ -203,22 +203,42 @@ pub mod soroban_rpc {
         pub transaction_id: String,
     }
 
-    #[derive(Clone, Debug, Deserialize)]
-    #[allow(non_camel_case_types)]
+    // #[derive(Clone, Debug, Deserialize)]
+    // #[allow(non_camel_case_types)]
+    // pub enum SendTransactionStatus {
+    //     PENDING,
+    //     DUPLICATE,
+    //     TRY_AGAIN_LATER,
+    //     ERROR,
+    // }
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
     pub enum SendTransactionStatus {
-        PENDING,
-        DUPLICATE,
-        TRY_AGAIN_LATER,
-        ERROR,
+        Pending,
+        Duplicate,
+        Error,
+        Success,
     }
 
-    #[derive(Clone, Debug, Deserialize)]
-    pub struct SendTransactionResponse {
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct BaseSendTransactionResponse {
         pub status: SendTransactionStatus,
-        pub errorResultXdr: Option<String>,
         pub hash: String,
-        pub latestLedger: i32,
-        pub latestLedgerCloseTime: i32,
+        #[serde(rename = "latestLedger")]
+        pub latest_ledger: u32,
+        #[serde(rename = "latestLedgerCloseTime")]
+        pub latest_ledger_close_time: String,
+    }
+
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct SendTransactionResponse {
+        #[serde(flatten)]
+        pub base: BaseSendTransactionResponse,
+        #[serde(rename = "errorResultXdr")]
+        pub error_result: Option<String>,  // Base64 encoded TransactionResult
+        #[serde(rename = "diagnosticEventsXdr")]
+        pub diagnostic_events: Option<Vec<String>>,  // Base64 encoded DiagnosticEvent
     }
 
     #[derive(Clone, Debug)]
@@ -227,6 +247,12 @@ pub mod soroban_rpc {
         pub retval: stellar_xdr::next::ScVal,
     }
 
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct JsonRpcResponse {
+        pub jsonrpc: String,
+        pub id: serde_json::Value,
+        pub result: SendTransactionResponse,
+    }
     #[derive(Clone, Debug)]
 
     pub enum SimulateTransactionResponse {
