@@ -20,7 +20,7 @@ pub mod soroban_rpc {
         pub smart: String,
     }
 
-    #[derive(Clone, Debug, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
 
     pub struct Cost {
         pub cpu_insns: String,
@@ -241,7 +241,7 @@ pub mod soroban_rpc {
         pub diagnostic_events: Option<Vec<String>>,  // Base64 encoded DiagnosticEvent
     }
 
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct SimulateHostFunctionResult {
         pub auth: Vec<stellar_xdr::next::SorobanAuthorizationEntry>,
         pub retval: stellar_xdr::next::ScVal,
@@ -253,7 +253,15 @@ pub mod soroban_rpc {
         pub id: serde_json::Value,
         pub result: SendTransactionResponse,
     }
-    #[derive(Clone, Debug)]
+
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct JsonRpcSimulateResponse {
+        pub jsonrpc: String,
+        pub id: serde_json::Value,
+        pub result: RawSimulateTransactionResponse,
+    }
+
+    #[derive(Clone, Debug, Deserialize, Serialize)]
 
     pub enum SimulateTransactionResponse {
         Success(SimulateTransactionSuccessResponse),
@@ -261,32 +269,32 @@ pub mod soroban_rpc {
         Error(SimulateTransactionErrorResponse),
     }
 
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
 
     pub struct BaseSimulateTransactionResponse {
-        pub id: String,
+        // pub id: String,
         pub latest_ledger: i32,
         pub events: Vec<stellar_xdr::next::DiagnosticEvent>,
         pub _parsed: bool,
     }
 
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct SimulateTransactionSuccessResponse {
         pub base: BaseSimulateTransactionResponse,
         pub latest_ledger: u32,
         pub transaction_data: SorobanDataBuilder,
         pub min_resource_fee: String,
-        pub cost: Cost,
+        // pub cost: Cost,
         pub result: Option<SimulateHostFunctionResult>,
     }
 
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug,Serialize, Deserialize)]
 
     pub struct SimulateTransactionErrorResponse {
         pub base: BaseSimulateTransactionResponse,
         pub error: String,
     }
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
 
     pub struct SimulateTransactionRestoreResponse {
         pub base: SimulateTransactionSuccessResponse,
@@ -295,30 +303,29 @@ pub mod soroban_rpc {
         pub(crate) result: Option<SimulateHostFunctionResult>,
     }
 
-    #[derive(Clone, Debug, Deserialize)]
+    #[derive(Clone, Debug, Serialize ,Deserialize)]
 
     pub struct RestorePreamble {
         pub min_resource_fee: String,
         pub transaction_data: SorobanDataBuilder,
     }
 
-    #[derive(Clone, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct RawSimulateHostFunctionResult {
         pub auth: Option<Vec<String>>,
         pub xdr: Option<String>,
     }
 
-    #[derive(Clone, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct RawSimulateTransactionResponse {
-        pub id: String,
-        pub latest_ledger: i32,
+        pub latestLedger: i32,
         pub error: Option<String>,
-        pub transaction_data: Option<String>,
+        pub transactionData: Option<String>,
         pub events: Option<Vec<String>>,
-        pub min_resource_fee: Option<String>,
+        pub minResourceFee: Option<String>,
         pub results: Option<Vec<RawSimulateHostFunctionResult>>,
         pub cost: Option<Cost>,
-        pub restore_preamble: Option<RestorePreamble>,
+        pub restorePreamble: Option<RestorePreamble>,
     }
 
     pub fn is_simulation_error(sim: &SimulateTransactionResponse) -> bool {

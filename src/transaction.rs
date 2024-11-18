@@ -1,13 +1,13 @@
 use core::panic;
 use std::{cell::RefCell, rc::Rc};
 
-use crate::soroban_rpc::soroban_rpc::{
+use crate::{server::{self, Server}, soroban_rpc::soroban_rpc::{
     is_simulation_success, BaseSimulateTransactionResponse, RawSimulateTransactionResponse,
     RestorePreamble, SimulateHostFunctionResult, SimulateTransactionErrorResponse,
     SimulateTransactionResponse, SimulateTransactionRestoreResponse,
     SimulateTransactionSuccessResponse,
-};
-use stellar_baselib::transaction_builder::TransactionBuilderBehavior;
+}};
+use stellar_baselib::{transaction_builder::TransactionBuilderBehavior};
 pub use stellar_baselib::{
     account::Account,
     soroban_data_builder::{self, SorobanDataBuilder},
@@ -16,8 +16,10 @@ pub use stellar_baselib::{
 };
 use stellar_baselib::account::AccountBehavior;
 
-use stellar_xdr::next::{DiagnosticEvent, ReadXdr, ScVal, SorobanAuthorizationEntry, Limits};
+use stellar_xdr::next::{DiagnosticEvent, InvokeHostFunctionOp, Limits, Operation, ReadXdr, ScVal, SorobanAuthorizationEntry};
 use stellar_baselib::soroban_data_builder::SorobanDataBuilderBehavior;
+ 
+// use stellar_baselib::operation::Operation
 
 pub enum SimulationResponse {
     Normal(SimulateTransactionResponse),
@@ -30,73 +32,77 @@ pub fn assemble_transaction(
     network_passphrase: &str,
     simulation: SimulationResponse,
 ) -> Result<TransactionBuilder, String> {
+    // Ensure the transaction is a valid Soroban transaction
     if !is_soroban_transaction(&raw) {
-        return Err("unsupported transaction: must contain exactly one invokeHostFunction, bumpFootprintExpiration, or restoreFootprint operation".to_string());
+        return Err("unsupported transaction: must contain exactly one invokeHostFunction, extendFootprintTtl, or restoreFootprint operation".to_string());
     }
 
-    let val = match simulation {
-        SimulationResponse::Normal(x) => Either::Left(x),
-        SimulationResponse::Raw(x) => Either::Right(x),
-    };
-
-    let success = parse_raw_simulation(val);
+    // Parse simulation response and ensure it's successful
+    let success = parse_raw_simulation(match simulation {
+        SimulationResponse::Normal(sim) => Either::Left(sim),
+        SimulationResponse::Raw(raw_sim) => Either::Right(raw_sim),
+    });
 
     if !is_simulation_success(&success) {
         return Err(format!("simulation incorrect: {:?}", success));
     }
 
+    // Calculate fees
     let classic_fee_num = raw.fee;
-    let min_resource_fee_num = match success {
-        SimulateTransactionResponse::Success(ref x) => {
-            x.min_resource_fee.parse::<u32>().unwrap_or(0)
-        }
-        _ => panic!("Invalid"),
+    let min_resource_fee_num = match &success {
+        SimulateTransactionResponse::Success(response) => response.min_resource_fee.parse::<u32>().unwrap_or(0),
+        _ => return Err("simulation result does not contain min resource fee".to_string()),
     };
 
-    let soroban_tx_data = match success {
-        SimulateTransactionResponse::Success(x) => x.clone(),
-        SimulateTransactionResponse::Restore(_) => todo!(),
-        SimulateTransactionResponse::Error(_) => todo!(),
+    // Build Soroban transaction data
+    let soroban_tx_data = match &success {
+        SimulateTransactionResponse::Success(response) => response.transaction_data.build(),
+        _ => return Err("simulation result does not contain valid transaction data".to_string()),
     };
 
-    let _ss = soroban_tx_data.transaction_data.build();
-
-    let source = raw.source;
-
+    // Create a transaction builder with updated fees and Soroban data
     let source_acc = Rc::new(RefCell::new(Account::new(
-        &source.unwrap(),
-        "0",
+        &raw.source.ok_or("missing source account")?,
+        &raw.sequence.unwrap(),
     ).unwrap()));
 
-    let txn_builder =
-        TransactionBuilder::new(source_acc, network_passphrase, None)
-            .fee(classic_fee_num + min_resource_fee_num)
-            .clone();
-    // .build();
+    println!("where the fuck are we getting this value {:?}", source_acc);
+
+
+    let mut binding = TransactionBuilder::new(source_acc.clone(), network_passphrase, None);
+    println!("Soroban Data {:?}", soroban_tx_data);
+    
+    let txn_builder = binding
+        .fee(classic_fee_num + min_resource_fee_num)
+        .set_soroban_data(soroban_tx_data);
+
+    // txn_builder.add_operation(stellar_baselib::operation::Operation::invoke_host_function(body.host_function, Some(body.auth), Some(source_acc.clone().borrow().account_id().to_string())).unwrap())
+
+    // Process the operation
+    
     let val = raw.operations.unwrap()[0].clone();
     match val.clone() {
         #[allow(non_snake_case)]
         InvokeHostFunctionOp => {
-            // txn_builder.clear_operations();
-            let _invoke_op = val;
-            // let existing_auth = match &invoke_op. {
-            //     // Some(auth) => auth,
-            //     // None => &Vec::new(),
-            // };
-            txn_builder.clone().add_operation(InvokeHostFunctionOp);
-            // txn_builder.add_operation(Operation::invoke_host_function(
-            //     invoke_op.source.clone(),
-            //     invoke_op.func.clone(),
-            //     if !existing_auth.is_empty() {
-            //         existing_auth.clone()
-            //     } else {
-            //         success.result.unwrap().auth.clone()
-            //     }
-            // ));
-        }
+            
+            txn_builder.clear_operations();
 
+            let invoke_op = val;
+
+            // println!("Invoke OP ji {:?}", invoke_op);
+
+            // let existing_auth = invoke_op.auth
+            let body= match invoke_op.body {
+                stellar_xdr::next::OperationBody::InvokeHostFunction(invoke_host_function_op) => invoke_host_function_op,
+                _ => panic!("Unexpected type"),
+             
+            };
+
+            txn_builder.add_operation(stellar_baselib::operation::Operation::invoke_host_function(body.host_function, Some(body.auth), None).unwrap());
+        },
         _ => panic!("Invalid"),
     }
+
     Ok(txn_builder.clone())
 }
 
@@ -110,14 +116,12 @@ pub fn parse_raw_simulation(
         }
     }
 
+    // println!("Hello ooooooooooooooooooo{:?}", sim);
+
     let base = BaseSimulateTransactionResponse {
         _parsed: true,
-        id: match &sim {
-            Either::Right(raw) => raw.id.clone(),
-            _ => panic!("Unexpected type"), // or return some error
-        },
         latest_ledger: match &sim {
-            Either::Right(raw) => raw.latest_ledger.clone(),
+            Either::Right(raw) => raw.latestLedger.clone(),
             _ => panic!("Unexpected type"), // or return some error
         },
         events: match &sim {
@@ -154,10 +158,10 @@ fn parse_successful(
     let success_data = {
         let mut base = SimulateTransactionSuccessResponse {
             transaction_data: SorobanDataBuilder::new(Some(soroban_data_builder::Either::Left(
-                sim.transaction_data.unwrap(),
+                sim.transactionData.unwrap(),
             ))),
-            min_resource_fee: sim.min_resource_fee.unwrap(),
-            cost: sim.cost.unwrap(),
+            min_resource_fee: sim.minResourceFee.unwrap(),
+            // cost: sim.cost.unwrap(),
             result: None,
             base: partial,
             latest_ledger: 3,
@@ -185,7 +189,7 @@ fn parse_successful(
         base
     };
 
-    match &sim.restore_preamble {
+    match &sim.restorePreamble {
         Some(preamble) => {
             SimulateTransactionResponse::Restore(SimulateTransactionRestoreResponse {
                 restore_preamble: RestorePreamble {
@@ -229,7 +233,7 @@ fn is_soroban_transaction(tx: &Transaction) -> bool {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Either<L, R> {
     Left(L),
     Right(R),

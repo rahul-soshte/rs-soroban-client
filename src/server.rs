@@ -1,24 +1,26 @@
 use core::panic;
 use http::Uri;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use stellar_baselib::hashing::Sha256Hasher;
+use stellar_baselib::network::Networks;
 use std::option::Option;
 use std::{collections::HashMap, str::FromStr};
 use stellar_baselib::account::Account;
 use stellar_baselib::transaction::{Transaction, TransactionBehavior};
 use stellar_xdr::next::{
-    ContractDataDurability, DiagnosticEvent, Hash, LedgerKeyContractData, Limits, ScAddress, ScVal, TransactionEnvelope, TransactionMeta, TransactionResult
+    ContractDataDurability, DiagnosticEvent, Hash, LedgerFootprint, LedgerKeyContractData, Limits, ScAddress, ScVal, TransactionEnvelope, TransactionMeta, TransactionResult
 };
+use crate::transaction::SimulationResponse::Raw;
 use stellar_baselib::hashing::HashingBehavior;
 use stellar_xdr::next::{LedgerEntryData, LedgerKey, LedgerKeyAccount, ReadXdr, WriteXdr};
 use crate::http_client::create_client;
 use crate::soroban_rpc::soroban_rpc::{
-    self, GetAnyTransactionResponse, GetHealtWrapperResponse, GetHealthResponse, GetLatestLedgerResponse, GetLedgerEntriesResponseWrapper, GetNetworkResponse, GetNetworkResponseWrapper, GetSuccessfulTransactionResponse, GetTransactionResponse, GetTransactionStatus, JsonRpcResponse, LedgerEntryResult, RawGetTransactionResponse, RawGetTransactionResponseWrapper, RawLedgerEntryResult, RawSimulateTransactionResponse, SendTransactionResponse, SimulateTransactionResponse
+    self, GetAnyTransactionResponse, GetHealtWrapperResponse, GetHealthResponse, GetLatestLedgerResponse, GetLedgerEntriesResponseWrapper, GetNetworkResponse, GetNetworkResponseWrapper, GetSuccessfulTransactionResponse, GetTransactionResponse, GetTransactionStatus, JsonRpcResponse, JsonRpcSimulateResponse, LedgerEntryResult, RawGetTransactionResponse, RawGetTransactionResponseWrapper, RawLedgerEntryResult, RawSimulateTransactionResponse, SendTransactionResponse, SimulateTransactionResponse
 };
 use stellar_baselib::account::AccountBehavior;
 use crate::transaction::SimulationResponse::Normal;
-use crate::transaction::{assemble_transaction, parse_raw_simulation, Either};
+use crate::transaction::{self, assemble_transaction, parse_raw_simulation, Either};
 use crate::{jsonrpc::post, soroban_rpc::soroban_rpc::EventFilter};
 use std::error::Error;
 use stellar_baselib::keypair::KeypairBehavior;
@@ -57,7 +59,11 @@ pub struct Server {
     client: reqwest::Client,
 }
 
-
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResourceLeeway {
+    #[serde(rename = "cpuInstructions")]
+    pub cpu_instructions: u64,
+}
 
 impl Default for GetSuccessfulTransactionResponse {
     fn default() -> Self {
@@ -219,30 +225,73 @@ impl Server {
     pub async fn simulate_transaction(
         &self,
         transaction: Transaction,
-    ) -> Result<SimulateTransactionResponse, reqwest::Error> {
-        let mut data: Vec<(String, serde_json::Value)> = vec![];
-
-        data.push((
-            transaction.to_envelope().unwrap().to_xdr_base64(Limits::none()).unwrap(),
-            serde_json::Value::String(transaction.to_envelope().unwrap().to_xdr_base64(Limits::none()).unwrap()),
-        ));
-
-        let map: std::collections::HashMap<String, serde_json::Value> =
-            data.into_iter().map(|(key, value)| (key, value)).collect();
-
-        println!("Hunter");
+        addl_resources: Option<ResourceLeeway>,
+    ) -> Result<RawSimulateTransactionResponse, Box<dyn std::error::Error>> {
+        let transaction_xdr = transaction
+            .to_envelope()?
+            .to_xdr_base64(Limits::none())?;
         
-        let raw_response = Either::Right(
-            post::<RawSimulateTransactionResponse>(
-                &self.server_url.to_string(),
-                "simulateTransaction",
-                map,
-            )
-            .await?,
-        );
+        let mut params = json!({
+            "transaction": transaction_xdr
+        });
+    
+        // Add resource config if provided
+        if let Some(resources) = addl_resources {
+            params = json!({
+                "transaction": transaction_xdr,
+                "resourceConfig": {
+                    "instructionLeeway": resources.cpu_instructions
+                }
+            });
+        }
+        
+        let payload = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "simulateTransaction",
+            "params": params
+        });
 
-        Ok(parse_raw_simulation(raw_response))
+        let response = self.client
+            .post(&format!("{}", &self.server_url))
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await?;
+        
+
+        let result: JsonRpcSimulateResponse = response.json().await?;
+        Ok(result.result)
     }
+    
+    // pub async fn simulate_transaction(
+    //     &self,
+    //     transaction: Transaction,
+    // ) -> Result<SimulateTransactionResponse, reqwest::Error> {
+    //     let mut data: Vec<(String, serde_json::Value)> = vec![];
+        
+    //     data.push((
+    //         transaction.to_envelope().unwrap().to_xdr_base64(Limits::none()).unwrap(),
+    //         serde_json::Value::String(transaction.to_envelope().unwrap().to_xdr_base64(Limits::none()).unwrap()),
+    //     ));
+
+    //     let map: std::collections::HashMap<String, serde_json::Value> =
+    //         data.into_iter().map(|(key, value)| (key, value)).collect();
+
+    //     println!("Hunter");
+        
+    //     let raw_response = Either::Right(
+    //         post::<RawSimulateTransactionResponse>(
+    //             &self.server_url.to_string(),
+    //             "simulateTransaction",
+    //             map,
+    //         )
+    //         .await?,
+    //     );
+    //     println!("Hunter 2");
+
+    //     Ok(parse_raw_simulation(raw_response))
+    // }
 
     pub async fn get_contract_data(
         &self,
@@ -370,17 +419,18 @@ impl Server {
 
         
         let sim_response = self
-            .simulate_transaction(transaction.clone())
+            .simulate_transaction(transaction.clone(), None)
             .await
             .unwrap();
 
-        println!("{:?}", sim_response);
+        // println!("{:?}", sim_response);
+        println!("Hunter Debug 4");
         //TODO: Error Handling
 
         Ok(assemble_transaction(
             transaction,
             &network_passphrase.unwrap(),
-            Normal(sim_response),
+            Raw(sim_response),
         )
         .unwrap()
         .build())
@@ -394,6 +444,8 @@ impl Server {
             .to_envelope()?
             .to_xdr_base64(Limits::none())?;
         
+        println!("The Actual Tx XDR that is sent {:?}", transaction_xdr);
+
         let payload = json!({
             "jsonrpc": "2.0",
             "id": 1,
