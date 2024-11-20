@@ -7,18 +7,18 @@ use crate::soroban_rpc::soroban_rpc::{
     SimulateTransactionResponse, SimulateTransactionRestoreResponse,
     SimulateTransactionSuccessResponse,
 };
-use stellar_baselib::{transaction_builder::TransactionBuilderBehavior};
+use stellar_baselib::account::AccountBehavior;
+use stellar_baselib::transaction_builder::TransactionBuilderBehavior;
 pub use stellar_baselib::{
     account::Account,
     soroban_data_builder::{self, SorobanDataBuilder},
     transaction::Transaction,
     transaction_builder::TransactionBuilder,
 };
-use stellar_baselib::account::AccountBehavior;
 
-use stellar_xdr::next::{DiagnosticEvent, Limits, ReadXdr, ScVal, SorobanAuthorizationEntry};
 use stellar_baselib::soroban_data_builder::SorobanDataBuilderBehavior;
- 
+use stellar_xdr::next::{DiagnosticEvent, Limits, ReadXdr, ScVal, SorobanAuthorizationEntry};
+
 // use stellar_baselib::operation::Operation
 
 pub enum SimulationResponse {
@@ -50,7 +50,9 @@ pub fn assemble_transaction(
     // Calculate fees
     let classic_fee_num = raw.fee;
     let min_resource_fee_num = match &success {
-        SimulateTransactionResponse::Success(response) => response.min_resource_fee.parse::<u32>().unwrap_or(0),
+        SimulateTransactionResponse::Success(response) => {
+            response.min_resource_fee.parse::<u32>().unwrap_or(0)
+        }
         _ => return Err("simulation result does not contain min resource fee".to_string()),
     };
 
@@ -61,25 +63,26 @@ pub fn assemble_transaction(
     };
 
     // Create a transaction builder with updated fees and Soroban data
-    let source_acc = Rc::new(RefCell::new(Account::new(
-        &raw.source.ok_or("missing source account")?,
-        &raw.sequence.unwrap(),
-    ).unwrap()));
+    let source_acc = Rc::new(RefCell::new(
+        Account::new(
+            &raw.source.ok_or("missing source account")?,
+            &raw.sequence.unwrap(),
+        )
+        .unwrap(),
+    ));
 
     let mut binding = TransactionBuilder::new(source_acc.clone(), network_passphrase, None);
     // println!("Soroban Data {:?}", soroban_tx_data);
-    
+
     let txn_builder = binding
         .fee(classic_fee_num + min_resource_fee_num)
         .set_soroban_data(soroban_tx_data);
-
 
     // Process the operation
     let val = raw.operations.unwrap()[0].clone();
     match val.clone() {
         #[allow(non_snake_case)]
         InvokeHostFunctionOp => {
-            
             txn_builder.clear_operations();
 
             let invoke_op = val;
@@ -87,14 +90,22 @@ pub fn assemble_transaction(
             // println!("Invoke OP ji {:?}", invoke_op);
 
             // let existing_auth = invoke_op.auth
-            let body= match invoke_op.body {
-                stellar_xdr::next::OperationBody::InvokeHostFunction(invoke_host_function_op) => invoke_host_function_op,
+            let body = match invoke_op.body {
+                stellar_xdr::next::OperationBody::InvokeHostFunction(invoke_host_function_op) => {
+                    invoke_host_function_op
+                }
                 _ => panic!("Unexpected type"),
-             
             };
 
-            txn_builder.add_operation(stellar_baselib::operation::Operation::invoke_host_function(body.host_function, Some(body.auth), None).unwrap());
-        },
+            txn_builder.add_operation(
+                stellar_baselib::operation::Operation::invoke_host_function(
+                    body.host_function,
+                    Some(body.auth),
+                    None,
+                )
+                .unwrap(),
+            );
+        }
         _ => panic!("Invalid"),
     }
 
@@ -170,7 +181,10 @@ fn parse_successful(
                         .as_ref()
                         .unwrap_or(&vec![])
                         .iter()
-                        .map(|entry| SorobanAuthorizationEntry::from_xdr_base64(entry, Limits::none()).unwrap())
+                        .map(|entry| {
+                            SorobanAuthorizationEntry::from_xdr_base64(entry, Limits::none())
+                                .unwrap()
+                        })
                         .collect(),
                     retval: if let Some(xdr) = &results[0].xdr {
                         ScVal::from_xdr_base64(xdr, Limits::none()).unwrap() // assuming ScVal is defined elsewhere

@@ -34,7 +34,6 @@ pub mod soroban_rpc {
         result: GetHealthResponse,
     }
 
-
     #[derive(Debug, Deserialize)]
     pub struct GetHealthResponse {
         pub status: String, // Can be an enum if the number of statuses is known
@@ -59,7 +58,6 @@ pub mod soroban_rpc {
         pub jsonrpc: String,
         pub id: u32,
         pub result: GetLedgerEntriesResponse,
-
     }
 
     #[derive(Debug, Clone, Deserialize)]
@@ -72,10 +70,8 @@ pub mod soroban_rpc {
 
     #[derive(Debug, Deserialize)]
     pub struct RawGetLedgerEntriesResponse {
-        pub entries: Option<Vec<RawLedgerEntryResult>>
-        // pub latest_ledger: i32,
+        pub entries: Option<Vec<RawLedgerEntryResult>>, // pub latest_ledger: i32,
     }
-
 
     #[derive(Debug, Deserialize)]
     pub struct GetNetworkResponseWrapper {
@@ -83,7 +79,6 @@ pub mod soroban_rpc {
         pub id: u32,
         pub result: GetNetworkResponse,
     }
-
 
     #[derive(Deserialize, Debug)]
     #[allow(non_snake_case)]
@@ -236,9 +231,9 @@ pub mod soroban_rpc {
         #[serde(flatten)]
         pub base: BaseSendTransactionResponse,
         #[serde(rename = "errorResultXdr")]
-        pub error_result: Option<String>,  // Base64 encoded TransactionResult
+        pub error_result: Option<String>, // Base64 encoded TransactionResult
         #[serde(rename = "diagnosticEventsXdr")]
-        pub diagnostic_events: Option<Vec<String>>,  // Base64 encoded DiagnosticEvent
+        pub diagnostic_events: Option<Vec<String>>, // Base64 encoded DiagnosticEvent
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -288,7 +283,7 @@ pub mod soroban_rpc {
         pub result: Option<SimulateHostFunctionResult>,
     }
 
-    #[derive(Clone, Debug,Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
 
     pub struct SimulateTransactionErrorResponse {
         pub base: BaseSimulateTransactionResponse,
@@ -303,7 +298,7 @@ pub mod soroban_rpc {
         pub(crate) result: Option<SimulateHostFunctionResult>,
     }
 
-    #[derive(Clone, Debug, Serialize ,Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
 
     pub struct RestorePreamble {
         pub min_resource_fee: String,

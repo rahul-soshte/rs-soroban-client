@@ -1,28 +1,33 @@
+use crate::http_client::create_client;
+use crate::soroban_rpc::soroban_rpc::{
+    self, GetAnyTransactionResponse, GetFailedTransactionResponse, GetHealtWrapperResponse,
+    GetLatestLedgerResponse, GetLedgerEntriesResponseWrapper, GetMissingTransactionResponse,
+    GetNetworkResponseWrapper, GetSuccessfulTransactionResponse, GetTransactionResponse,
+    GetTransactionStatus, JsonRpcResponse, JsonRpcSimulateResponse, LedgerEntryResult,
+    RawGetTransactionResponseWrapper, RawSimulateTransactionResponse, SendTransactionResponse,
+};
+use crate::transaction::assemble_transaction;
+use crate::transaction::SimulationResponse::Raw;
+use crate::{jsonrpc::post, soroban_rpc::soroban_rpc::EventFilter};
 use core::panic;
 use http::Uri;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use stellar_baselib::hashing::Sha256Hasher;
+use std::error::Error;
 use std::option::Option;
 use std::{collections::HashMap, str::FromStr};
 use stellar_baselib::account::Account;
-use stellar_baselib::transaction::{Transaction, TransactionBehavior};
-use stellar_xdr::next::{
-    ContractDataDurability, DiagnosticEvent, Hash, LedgerKeyContractData, Limits, ScAddress, ScVal, TransactionEnvelope, TransactionMeta, TransactionResult
-};
-use crate::transaction::SimulationResponse::Raw;
-use stellar_baselib::hashing::HashingBehavior;
-use stellar_xdr::next::{LedgerEntryData, LedgerKey, LedgerKeyAccount, ReadXdr, WriteXdr};
-use crate::http_client::create_client;
-use crate::soroban_rpc::soroban_rpc::{
-    self, GetAnyTransactionResponse, GetFailedTransactionResponse, GetHealtWrapperResponse, GetLatestLedgerResponse, GetLedgerEntriesResponseWrapper, GetMissingTransactionResponse, GetNetworkResponseWrapper, GetSuccessfulTransactionResponse, GetTransactionResponse, GetTransactionStatus, JsonRpcResponse, JsonRpcSimulateResponse, LedgerEntryResult, RawGetTransactionResponseWrapper, RawSimulateTransactionResponse, SendTransactionResponse
-};
 use stellar_baselib::account::AccountBehavior;
-use crate::transaction::{assemble_transaction};
-use crate::{jsonrpc::post, soroban_rpc::soroban_rpc::EventFilter};
-use std::error::Error;
+use stellar_baselib::hashing::HashingBehavior;
+use stellar_baselib::hashing::Sha256Hasher;
 use stellar_baselib::keypair::KeypairBehavior;
+use stellar_baselib::transaction::{Transaction, TransactionBehavior};
 use stellar_baselib::transaction_builder::TransactionBuilderBehavior;
+use stellar_xdr::next::{
+    ContractDataDurability, DiagnosticEvent, Hash, LedgerKeyContractData, Limits, ScAddress, ScVal,
+    TransactionEnvelope, TransactionMeta, TransactionResult,
+};
+use stellar_xdr::next::{LedgerEntryData, LedgerKey, LedgerKeyAccount, ReadXdr, WriteXdr};
 const SUBMIT_TRANSACTION_TIMEOUT: u32 = 60 * 1000;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -116,7 +121,7 @@ impl Server {
 
         let keys: Vec<String> = map.keys().cloned().collect();
 
-        println!("{:?}",keys);
+        println!("{:?}", keys);
 
         let payload = json!({
             "jsonrpc": "2.0",
@@ -126,7 +131,7 @@ impl Server {
                 "keys": keys
             }
         });
-        
+
         self.client
             .post(&format!("{}", &self.server_url))
             .header("Content-Type", "application/json")
@@ -135,11 +140,9 @@ impl Server {
             .await?
             .json::<GetLedgerEntriesResponseWrapper>()
             .await
-        
     }
 
     pub async fn get_account(&self, address: &str) -> Result<Account, Box<dyn Error>> {
-        
         let ledger_key = LedgerKey::Account(LedgerKeyAccount {
             account_id: stellar_baselib::keypair::Keypair::from_public_key(address)
                 .unwrap()
@@ -148,9 +151,7 @@ impl Server {
 
         let resp = self.get_ledger_entries(vec![ledger_key]).await?;
 
-
         let entries = resp.result.entries.unwrap_or_default();
-
 
         if entries.is_empty() {
             return Err(Box::new(std::io::Error::new(
@@ -160,22 +161,22 @@ impl Server {
         }
 
         let ledger_entry_data = &entries[0].xdr;
-        let account_entry = match LedgerEntryData::from_xdr_base64(ledger_entry_data, Limits::none()).unwrap() {
-            LedgerEntryData::Account(x) => x,
-            _ => panic!("Invalid"),
-        };
+        let account_entry =
+            match LedgerEntryData::from_xdr_base64(ledger_entry_data, Limits::none()).unwrap() {
+                LedgerEntryData::Account(x) => x,
+                _ => panic!("Invalid"),
+            };
 
         Ok(Account::new(address, &account_entry.seq_num.0.to_string()).unwrap())
     }
 
     pub async fn get_health(&self) -> Result<GetHealtWrapperResponse, reqwest::Error> {
-        
         let payload = json!({
             "jsonrpc": "2.0",
             "id": 2,
             "method": "getHealth"
         });
-        
+
         self.client
             .post(&format!("{}", &self.server_url))
             .header("Content-Type", "application/json")
@@ -187,16 +188,14 @@ impl Server {
     }
 
     pub async fn get_network(&self) -> Result<GetNetworkResponseWrapper, reqwest::Error> {
-
         let payload = json!({
             "jsonrpc": "2.0",
             "id": 8675309,
             "method": "getNetwork"
         });
 
-        
         // println!("{:?}", val);
-        
+
         self.client
             .post(&format!("{}", &self.server_url))
             .header("Content-Type", "application/json")
@@ -205,7 +204,6 @@ impl Server {
             .await?
             .json::<GetNetworkResponseWrapper>()
             .await
-    
     }
 
     pub async fn get_latest_ledger(&self) -> Result<GetLatestLedgerResponse, reqwest::Error> {
@@ -222,14 +220,12 @@ impl Server {
         transaction: Transaction,
         addl_resources: Option<ResourceLeeway>,
     ) -> Result<RawSimulateTransactionResponse, Box<dyn std::error::Error>> {
-        let transaction_xdr = transaction
-            .to_envelope()?
-            .to_xdr_base64(Limits::none())?;
-        
+        let transaction_xdr = transaction.to_envelope()?.to_xdr_base64(Limits::none())?;
+
         let mut params = json!({
             "transaction": transaction_xdr
         });
-    
+
         // Add resource config if provided
         if let Some(resources) = addl_resources {
             params = json!({
@@ -239,7 +235,7 @@ impl Server {
                 }
             });
         }
-        
+
         let payload = json!({
             "jsonrpc": "2.0",
             "id": 1,
@@ -247,24 +243,24 @@ impl Server {
             "params": params
         });
 
-        let response = self.client
+        let response = self
+            .client
             .post(&format!("{}", &self.server_url))
             .header("Content-Type", "application/json")
             .json(&payload)
             .send()
             .await?;
-        
 
         let result: JsonRpcSimulateResponse = response.json().await?;
         Ok(result.result)
     }
-    
+
     // pub async fn simulate_transaction(
     //     &self,
     //     transaction: Transaction,
     // ) -> Result<SimulateTransactionResponse, reqwest::Error> {
     //     let mut data: Vec<(String, serde_json::Value)> = vec![];
-        
+
     //     data.push((
     //         transaction.to_envelope().unwrap().to_xdr_base64(Limits::none()).unwrap(),
     //         serde_json::Value::String(transaction.to_envelope().unwrap().to_xdr_base64(Limits::none()).unwrap()),
@@ -274,7 +270,7 @@ impl Server {
     //         data.into_iter().map(|(key, value)| (key, value)).collect();
 
     //     println!("Hunter");
-        
+
     //     let raw_response = Either::Right(
     //         post::<RawSimulateTransactionResponse>(
     //             &self.server_url.to_string(),
@@ -313,8 +309,8 @@ impl Server {
 
         let response = self.get_ledger_entries(val).await?;
 
-        println!(" Response {:?}",response);
-        
+        println!(" Response {:?}", response);
+
         match response.result.entries.unwrap().first() {
             Some(entry) => Ok(entry.clone()),
             None => Err(format!(
@@ -339,8 +335,9 @@ impl Server {
                 "hash": hash
             }
         });
-    
-        let raw = self.client
+
+        let raw = self
+            .client
             .post(&format!("{}", &self.server_url))
             .header("Content-Type", "application/json")
             .json(&payload)
@@ -348,7 +345,7 @@ impl Server {
             .await?
             .json::<RawGetTransactionResponseWrapper>()
             .await?;
-    
+
         let mut success_info = GetSuccessfulTransactionResponse {
             base: None,
             ledger: None,
@@ -360,39 +357,40 @@ impl Server {
             resultMetaXdr: None,
             returnValue: None,
         };
-    
+
         if let GetTransactionStatus::SUCCESS = raw.result.status {
             // println!("Get Transaction {:?}", &raw.result.resultMetaXdr);
-    
+
             // Set the basic fields that don't depend on XDR parsing
             success_info.ledger = raw.result.ledger;
             success_info.applicationOrder = raw.result.applicationOrder;
             success_info.feeBump = raw.result.feeBump;
-    
+
             // Handle optional createdAt
             if let Some(created_at) = raw.result.createdAt {
                 success_info.createdAt = Some(i32::from_str(&created_at).unwrap());
             }
-    
+
             // Handle optional envelopeXdr
             if let Some(envelope_xdr) = &raw.result.envelopeXdr {
-                success_info.envelopeXdr = TransactionEnvelope::from_xdr_base64(envelope_xdr, Limits::none()).ok();
+                success_info.envelopeXdr =
+                    TransactionEnvelope::from_xdr_base64(envelope_xdr, Limits::none()).ok();
             }
-    
+
             // Handle optional resultXdr
             if let Some(result_xdr) = &raw.result.resultXdr {
-                success_info.resultXdr = TransactionResult::from_xdr_base64(result_xdr, Limits::none()).ok();
+                success_info.resultXdr =
+                    TransactionResult::from_xdr_base64(result_xdr, Limits::none()).ok();
             }
-            
+
             println!("Outside resultMetaXdr");
             // Handle optional resultMetaXdr
             if let Some(meta_xdr) = &raw.result.resultMetaXdr {
-
                 // println!("Inside resultMetaXdr {:?}", TransactionMeta::from_xdr(meta_xdr, Limits::none()).unwrap());
 
                 if let Ok(meta) = TransactionMeta::from_xdr_base64(meta_xdr, Limits::none()) {
                     success_info.resultMetaXdr = Some(meta.clone());
-    
+
                     // Extract return value if it's a V3 transaction with Soroban metadata
                     if let TransactionMeta::V3(v3) = meta {
                         if let Some(soroban_meta) = v3.soroban_meta {
@@ -402,7 +400,7 @@ impl Server {
                     }
                 }
             }
-    
+
             // Set the base response info
             let base = GetAnyTransactionResponse {
                 status: raw.result.status,
@@ -412,7 +410,7 @@ impl Server {
                 oldestLedgerCloseTime: i32::from_str(&raw.result.oldestLedgerCloseTime).unwrap(),
             };
             success_info.base = Some(base);
-            
+
             Ok(GetTransactionResponse::Successful(success_info))
         } else if let GetTransactionStatus::NOT_FOUND = raw.result.status {
             let base = GetAnyTransactionResponse {
@@ -422,7 +420,9 @@ impl Server {
                 oldestLedger: raw.result.oldestLedger,
                 oldestLedgerCloseTime: i32::from_str(&raw.result.oldestLedgerCloseTime).unwrap(),
             };
-            Ok(GetTransactionResponse::Missing(GetMissingTransactionResponse { base }))
+            Ok(GetTransactionResponse::Missing(
+                GetMissingTransactionResponse { base },
+            ))
         } else {
             let base = GetAnyTransactionResponse {
                 status: raw.result.status,
@@ -431,7 +431,9 @@ impl Server {
                 oldestLedger: raw.result.oldestLedger,
                 oldestLedgerCloseTime: i32::from_str(&raw.result.oldestLedgerCloseTime).unwrap(),
             };
-            Ok(GetTransactionResponse::Failed(GetFailedTransactionResponse { base }))
+            Ok(GetTransactionResponse::Failed(
+                GetFailedTransactionResponse { base },
+            ))
         }
     }
 
@@ -440,31 +442,25 @@ impl Server {
         transaction: Transaction,
         network_passphrase: Option<&str>,
     ) -> Result<Transaction, Box<dyn std::error::Error>> {
-
-        
         let sim_response = self
             .simulate_transaction(transaction.clone(), None)
             .await
             .unwrap();
 
         //TODO: Error Handling
-        Ok(assemble_transaction(
-            transaction,
-            network_passphrase.unwrap(),
-            Raw(sim_response),
+        Ok(
+            assemble_transaction(transaction, network_passphrase.unwrap(), Raw(sim_response))
+                .unwrap()
+                .build(),
         )
-        .unwrap()
-        .build())
     }
 
     pub async fn send_transaction(
         &self,
         transaction: Transaction,
     ) -> Result<SendTransactionResponse, Box<dyn std::error::Error>> {
-        let transaction_xdr = transaction
-            .to_envelope()?
-            .to_xdr_base64(Limits::none())?;
-        
+        let transaction_xdr = transaction.to_envelope()?.to_xdr_base64(Limits::none())?;
+
         // println!("The Actual Tx XDR that is sent {:?}", transaction_xdr);
 
         let payload = json!({
@@ -476,7 +472,8 @@ impl Server {
             }
         });
 
-        let response = self.client
+        let response = self
+            .client
             .post(&format!("{}", &self.server_url))
             .header("Content-Type", "application/json")
             .json(&payload)
@@ -487,24 +484,28 @@ impl Server {
         // println!("Raw response: {}", response.clone().text().await?);
 
         let result: JsonRpcResponse = response.json().await?;
-        
+
         // If error result is present, decode it
         if let Some(error_xdr) = &result.result.error_result {
-            println!("Transaction error: {:?}", 
-                TransactionResult::from_xdr_base64(error_xdr, Limits::none())?);
+            println!(
+                "Transaction error: {:?}",
+                TransactionResult::from_xdr_base64(error_xdr, Limits::none())?
+            );
         }
 
         // If diagnostic events are present, decode them
         if let Some(events) = &result.result.diagnostic_events {
             for event_xdr in events {
-                println!("Diagnostic event: {:?}", 
-                    DiagnosticEvent::from_xdr_base64(event_xdr, Limits::none())?);
+                println!(
+                    "Diagnostic event: {:?}",
+                    DiagnosticEvent::from_xdr_base64(event_xdr, Limits::none())?
+                );
             }
         }
 
         Ok(result.result)
     }
-    
+
     //TODO: getEvents
     //TODO: request airdrop
     #[allow(unused)]
@@ -522,7 +523,11 @@ impl Server {
 
         for op in operations {
             for change in op.changes.0.to_vec() {
-                if let stellar_xdr::next::LedgerEntryChange::Created(x) = change { if let LedgerEntryData::Account(ae) = x.data { return Ok(ae.seq_num.0.to_string()) } }
+                if let stellar_xdr::next::LedgerEntryChange::Created(x) = change {
+                    if let LedgerEntryData::Account(ae) = x.data {
+                        return Ok(ae.seq_num.0.to_string());
+                    }
+                }
             }
         }
 
