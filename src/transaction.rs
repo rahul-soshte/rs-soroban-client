@@ -66,20 +66,15 @@ pub fn assemble_transaction(
         &raw.sequence.unwrap(),
     ).unwrap()));
 
-    println!("where the fuck are we getting this value {:?}", source_acc);
-
-
     let mut binding = TransactionBuilder::new(source_acc.clone(), network_passphrase, None);
-    println!("Soroban Data {:?}", soroban_tx_data);
+    // println!("Soroban Data {:?}", soroban_tx_data);
     
     let txn_builder = binding
         .fee(classic_fee_num + min_resource_fee_num)
         .set_soroban_data(soroban_tx_data);
 
-    // txn_builder.add_operation(stellar_baselib::operation::Operation::invoke_host_function(body.host_function, Some(body.auth), Some(source_acc.clone().borrow().account_id().to_string())).unwrap())
 
     // Process the operation
-    
     let val = raw.operations.unwrap()[0].clone();
     match val.clone() {
         #[allow(non_snake_case)]

@@ -16,7 +16,7 @@ use stellar_baselib::hashing::HashingBehavior;
 use stellar_xdr::next::{LedgerEntryData, LedgerKey, LedgerKeyAccount, ReadXdr, WriteXdr};
 use crate::http_client::create_client;
 use crate::soroban_rpc::soroban_rpc::{
-    self, GetAnyTransactionResponse, GetHealtWrapperResponse, GetHealthResponse, GetLatestLedgerResponse, GetLedgerEntriesResponseWrapper, GetNetworkResponse, GetNetworkResponseWrapper, GetSuccessfulTransactionResponse, GetTransactionResponse, GetTransactionStatus, JsonRpcResponse, JsonRpcSimulateResponse, LedgerEntryResult, RawGetTransactionResponse, RawGetTransactionResponseWrapper, RawLedgerEntryResult, RawSimulateTransactionResponse, SendTransactionResponse, SimulateTransactionResponse
+    self, GetAnyTransactionResponse, GetFailedTransactionResponse, GetHealtWrapperResponse, GetHealthResponse, GetLatestLedgerResponse, GetLedgerEntriesResponseWrapper, GetMissingTransactionResponse, GetNetworkResponse, GetNetworkResponseWrapper, GetSuccessfulTransactionResponse, GetTransactionResponse, GetTransactionStatus, JsonRpcResponse, JsonRpcSimulateResponse, LedgerEntryResult, RawGetTransactionResponse, RawGetTransactionResponseWrapper, RawLedgerEntryResult, RawSimulateTransactionResponse, SendTransactionResponse, SimulateTransactionResponse
 };
 use stellar_baselib::account::AccountBehavior;
 use crate::transaction::SimulationResponse::Normal;
@@ -336,16 +336,6 @@ impl Server {
         &self,
         hash: &str,
     ) -> Result<GetTransactionResponse, reqwest::Error> {
-        let mut data: Vec<(String, serde_json::Value)> = vec![];
-
-        data.push((
-            hash.to_string(),
-            serde_json::Value::String(hash.to_string()),
-        ));
-
-        let map: std::collections::HashMap<String, serde_json::Value> =
-            data.into_iter().map(|(key, value)| (key, value)).collect();
-        
         let payload = json!({
             "jsonrpc": "2.0",
             "id": 8675309,
@@ -354,7 +344,7 @@ impl Server {
                 "hash": hash
             }
         });
-
+    
         let raw = self.client
             .post(&format!("{}", &self.server_url))
             .header("Content-Type", "application/json")
@@ -363,7 +353,7 @@ impl Server {
             .await?
             .json::<RawGetTransactionResponseWrapper>()
             .await?;
-
+    
         let mut success_info = GetSuccessfulTransactionResponse {
             base: None,
             ledger: None,
@@ -375,40 +365,79 @@ impl Server {
             resultMetaXdr: None,
             returnValue: None,
         };
-
+    
         if let GetTransactionStatus::SUCCESS = raw.result.status {
-            let meta = TransactionMeta::from_xdr_base64(&raw.result.resultMetaXdr.unwrap(), Limits::none()).unwrap();
-
+            // println!("Get Transaction {:?}", &raw.result.resultMetaXdr);
+    
+            // Set the basic fields that don't depend on XDR parsing
             success_info.ledger = raw.result.ledger;
-            success_info.createdAt = Some(i32::from_str(&raw.result.createdAt.unwrap()).unwrap());
             success_info.applicationOrder = raw.result.applicationOrder;
             success_info.feeBump = raw.result.feeBump;
-            success_info.envelopeXdr =
-                TransactionEnvelope::from_xdr_base64(&raw.result.envelopeXdr.unwrap(), Limits::none()).ok();
-            success_info.resultXdr =
-                TransactionResult::from_xdr_base64(&raw.result.resultXdr.unwrap(), Limits::none()).ok();
-            success_info.resultMetaXdr = Some(meta.clone());
+    
+            // Handle optional createdAt
+            if let Some(created_at) = raw.result.createdAt {
+                success_info.createdAt = Some(i32::from_str(&created_at).unwrap());
+            }
+    
+            // Handle optional envelopeXdr
+            if let Some(envelope_xdr) = &raw.result.envelopeXdr {
+                success_info.envelopeXdr = TransactionEnvelope::from_xdr_base64(envelope_xdr, Limits::none()).ok();
+            }
+    
+            // Handle optional resultXdr
+            if let Some(result_xdr) = &raw.result.resultXdr {
+                success_info.resultXdr = TransactionResult::from_xdr_base64(result_xdr, Limits::none()).ok();
+            }
+            
+            println!("Outside resultMetaXdr");
+            // Handle optional resultMetaXdr
+            if let Some(meta_xdr) = &raw.result.resultMetaXdr {
 
-            let f = GetAnyTransactionResponse {
+                println!("Inside resultMetaXdr {:?}", TransactionMeta::from_xdr(meta_xdr, Limits::none()).unwrap());
+
+                if let Ok(meta) = TransactionMeta::from_xdr(meta_xdr, Limits::none()) {
+                    success_info.resultMetaXdr = Some(meta.clone());
+    
+                    // Extract return value if it's a V3 transaction with Soroban metadata
+                    if let TransactionMeta::V3(v3) = meta {
+                        if let Some(soroban_meta) = v3.soroban_meta {
+                            success_info.returnValue = Some(soroban_meta.return_value.clone());
+                            println!("Result Value ====> {:?}", soroban_meta.return_value);
+                        }
+                    }
+                }
+            }
+    
+            // Set the base response info
+            let base = GetAnyTransactionResponse {
                 status: raw.result.status,
                 latestLedger: raw.result.latestLedger,
                 latestLedgerCloseTime: i32::from_str(&raw.result.latestLedgerCloseTime).unwrap(),
                 oldestLedger: raw.result.oldestLedger,
                 oldestLedgerCloseTime: i32::from_str(&raw.result.oldestLedgerCloseTime).unwrap(),
             };
-
-            success_info.base = Some(f);
-
-            if let TransactionMeta::V3(v3) = meta {
-                if let Some(soroban_meta) = v3.soroban_meta {
-                    success_info.returnValue = Some(soroban_meta.return_value);
-                }
-            }
+            success_info.base = Some(base);
+            
+            Ok(GetTransactionResponse::Successful(success_info))
+        } else if let GetTransactionStatus::NOT_FOUND = raw.result.status {
+            let base = GetAnyTransactionResponse {
+                status: raw.result.status,
+                latestLedger: raw.result.latestLedger,
+                latestLedgerCloseTime: i32::from_str(&raw.result.latestLedgerCloseTime).unwrap(),
+                oldestLedger: raw.result.oldestLedger,
+                oldestLedgerCloseTime: i32::from_str(&raw.result.oldestLedgerCloseTime).unwrap(),
+            };
+            Ok(GetTransactionResponse::Missing(GetMissingTransactionResponse { base }))
+        } else {
+            let base = GetAnyTransactionResponse {
+                status: raw.result.status,
+                latestLedger: raw.result.latestLedger,
+                latestLedgerCloseTime: i32::from_str(&raw.result.latestLedgerCloseTime).unwrap(),
+                oldestLedger: raw.result.oldestLedger,
+                oldestLedgerCloseTime: i32::from_str(&raw.result.oldestLedgerCloseTime).unwrap(),
+            };
+            Ok(GetTransactionResponse::Failed(GetFailedTransactionResponse { base }))
         }
-
-        let val = GetTransactionResponse::Successful(success_info);
-
-        Ok(val)
     }
 
     pub async fn prepare_transaction(
@@ -423,10 +452,7 @@ impl Server {
             .await
             .unwrap();
 
-        // println!("{:?}", sim_response);
-        println!("Hunter Debug 4");
         //TODO: Error Handling
-
         Ok(assemble_transaction(
             transaction,
             &network_passphrase.unwrap(),
@@ -444,7 +470,7 @@ impl Server {
             .to_envelope()?
             .to_xdr_base64(Limits::none())?;
         
-        println!("The Actual Tx XDR that is sent {:?}", transaction_xdr);
+        // println!("The Actual Tx XDR that is sent {:?}", transaction_xdr);
 
         let payload = json!({
             "jsonrpc": "2.0",

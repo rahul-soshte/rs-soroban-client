@@ -24,6 +24,9 @@ use soroban_client::operation::PaymentOpts;
 use soroban_client::operation::Operation;
 use soroban_client::asset::Asset;
 use soroban_client::asset::AssetBehavior;
+use soroban_client::soroban_rpc::soroban_rpc::GetTransactionResponse;
+use std::time::Duration;
+use soroban_client::soroban_rpc::soroban_rpc::GetTransactionStatus;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -48,8 +51,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Account::new(source_public_key, &account_data.sequence_number()).unwrap()
     ));
 
-    println!("Source Account {:?}", source_account);
-
     // Contract interaction transaction
     let contract_id = "CCSE2AN2S4RLMMXJY5FRYQ4YN6UGG54LJT3HPWGGISMJI4OAUYOY6AVR";
     let contract = contract::Contracts::new(contract_id).unwrap();
@@ -59,57 +60,78 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Networks::testnet(),
         None
     )
-    .fee(1000000000_u32)
+    .fee(1000000_u32)
     .add_operation(contract.call("increment", None))
     .set_timeout(TIMEOUT_INFINITE)?
     .build();
 
-    
-    // Payment transaction
-    // let destination = "GAAOFCNYV2OQUMVONXH2DOOQNNLJO7WRQ7E4INEZ7VH7JNG7IKBQAK5D";
-    // let amount = "2000";
-    // let mut payment_tx = TransactionBuilder::new(
-    //     source_account.clone(),
-    //     Networks::testnet(),
-    //     None
-    // )
-    // .fee(100_u32)
-    // .add_operation(
-    //     Operation::payment(PaymentOpts {
-    //         destination: destination.to_owned(),
-    //         asset: Asset::native(),
-    //         amount: amount.to_owned(),
-    //         source: None,
-    //     })?
-    // )
-    // .add_memo("Happy birthday!")
-    // .set_timeout(TIMEOUT_INFINITE)?
-    // .build();
-    // Sign the payment transaction
-    // payment_tx.sign(&[source_keypair.clone()]);
-  
-    
     contract_tx = server.prepare_transaction(contract_tx, Some(Networks::testnet())).await.unwrap();
     let before_signing = contract_tx.to_envelope().unwrap().to_xdr_base64(Limits::none());
-    println!("Before Signing {:?}", before_signing);
+    // println!("Before Signing {:?}", before_signing);
+    
     // Sign the contract transaction
     contract_tx.sign(&[source_keypair.clone()]);
     let after_signing = contract_tx.to_envelope().unwrap().to_xdr_base64(Limits::none());
-    println!("After Signing {:?}", after_signing);
+    // println!("After Signing {:?}", after_signing);
 
     match server.send_transaction(contract_tx).await {
         Ok(response) => {
-            println!("Transaction status: {:?}", response.base.status);
+            println!("Transaction sent successfully");
             println!("Transaction hash: {}", response.base.hash);
-            println!("Latest ledger: {}", response.base.latest_ledger);
-            println!("Latest ledger close time: {}", response.base.latest_ledger_close_time);
             
-            if let Some(error_xdr) = response.error_result {
-                println!("Error result: {}", error_xdr);
-            }
+            // Start polling for transaction completion
+            let hash = response.base.hash.clone();
             
-            if let Some(events) = response.diagnostic_events {
-                println!("Diagnostic events: {:?}", events);
+            loop {
+                match server.get_transaction(&hash).await {
+                    Ok(GetTransactionResponse::Successful(success_info)) => {
+                        // Check if we have base information
+                        if let Some(base) = &success_info.base {
+                            match base.status {
+                                GetTransactionStatus::SUCCESS => {
+                                    println!("Transaction successful!");
+                                    if let Some(ledger) = success_info.ledger {
+                                        println!("Confirmed in ledger: {}", ledger);
+                                    }
+                                    if let Some(return_value) = success_info.returnValue {
+                                        println!("Return value: {:?}", return_value);
+                                    }
+                                    if let Some(meta) = success_info.resultMetaXdr {
+                                        println!("Transaction metadata: {:?}", meta);
+                                    }
+                                    break;
+                                }
+                                GetTransactionStatus::FAILED => {
+                                    if let Some(result) = success_info.resultXdr {
+                                        eprintln!("Transaction failed with result: {:?}", result);
+                                    } else {
+                                        eprintln!("Transaction failed without result XDR");
+                                    }
+                                    break;
+                                }
+                                GetTransactionStatus::NOT_FOUND => {
+                                    println!("Waiting for transaction confirmation... Latest ledger: {}", base.latestLedger);
+                                    tokio::time::sleep(Duration::from_secs(1)).await;
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                    Ok(GetTransactionResponse::Failed(failed_info)) => {
+                        eprintln!("Transaction failed. Latest ledger: {}", failed_info.base.latestLedger);
+                        break;
+                    }
+                    Ok(GetTransactionResponse::Missing(missing_info)) => {
+                        println!("Transaction not found. Latest ledger: {}", missing_info.base.latestLedger);
+                        println!("Waiting for transaction confirmation...");
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        continue;
+                    }
+                    Err(e) => {
+                        eprintln!("Error getting transaction status: {}", e);
+                        break;
+                    }
+                }
             }
         }
         Err(e) => {
