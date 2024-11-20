@@ -3,24 +3,22 @@ use http::Uri;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use stellar_baselib::hashing::Sha256Hasher;
-use stellar_baselib::network::Networks;
 use std::option::Option;
 use std::{collections::HashMap, str::FromStr};
 use stellar_baselib::account::Account;
 use stellar_baselib::transaction::{Transaction, TransactionBehavior};
 use stellar_xdr::next::{
-    ContractDataDurability, DiagnosticEvent, Hash, LedgerFootprint, LedgerKeyContractData, Limits, ScAddress, ScVal, TransactionEnvelope, TransactionMeta, TransactionResult
+    ContractDataDurability, DiagnosticEvent, Hash, LedgerKeyContractData, Limits, ScAddress, ScVal, TransactionEnvelope, TransactionMeta, TransactionResult
 };
 use crate::transaction::SimulationResponse::Raw;
 use stellar_baselib::hashing::HashingBehavior;
 use stellar_xdr::next::{LedgerEntryData, LedgerKey, LedgerKeyAccount, ReadXdr, WriteXdr};
 use crate::http_client::create_client;
 use crate::soroban_rpc::soroban_rpc::{
-    self, GetAnyTransactionResponse, GetFailedTransactionResponse, GetHealtWrapperResponse, GetHealthResponse, GetLatestLedgerResponse, GetLedgerEntriesResponseWrapper, GetMissingTransactionResponse, GetNetworkResponse, GetNetworkResponseWrapper, GetSuccessfulTransactionResponse, GetTransactionResponse, GetTransactionStatus, JsonRpcResponse, JsonRpcSimulateResponse, LedgerEntryResult, RawGetTransactionResponse, RawGetTransactionResponseWrapper, RawLedgerEntryResult, RawSimulateTransactionResponse, SendTransactionResponse, SimulateTransactionResponse
+    self, GetAnyTransactionResponse, GetFailedTransactionResponse, GetHealtWrapperResponse, GetLatestLedgerResponse, GetLedgerEntriesResponseWrapper, GetMissingTransactionResponse, GetNetworkResponseWrapper, GetSuccessfulTransactionResponse, GetTransactionResponse, GetTransactionStatus, JsonRpcResponse, JsonRpcSimulateResponse, LedgerEntryResult, RawGetTransactionResponseWrapper, RawSimulateTransactionResponse, SendTransactionResponse
 };
 use stellar_baselib::account::AccountBehavior;
-use crate::transaction::SimulationResponse::Normal;
-use crate::transaction::{self, assemble_transaction, parse_raw_simulation, Either};
+use crate::transaction::{assemble_transaction};
 use crate::{jsonrpc::post, soroban_rpc::soroban_rpc::EventFilter};
 use std::error::Error;
 use stellar_baselib::keypair::KeypairBehavior;
@@ -151,10 +149,7 @@ impl Server {
         let resp = self.get_ledger_entries(vec![ledger_key]).await?;
 
 
-        let entries = match resp.result.entries {
-            Some(e) => e,
-            None => Vec::new(),
-        };
+        let entries = resp.result.entries.unwrap_or_default();
 
 
         if entries.is_empty() {
@@ -199,17 +194,17 @@ impl Server {
             "method": "getNetwork"
         });
 
-        let val = self.client
+        
+        // println!("{:?}", val);
+        
+        self.client
             .post(&format!("{}", &self.server_url))
             .header("Content-Type", "application/json")
             .json(&payload)
             .send()
             .await?
             .json::<GetNetworkResponseWrapper>()
-            .await;
-        // println!("{:?}", val);
-        
-        val
+            .await
     
     }
 
@@ -320,7 +315,7 @@ impl Server {
 
         println!(" Response {:?}",response);
         
-        match response.result.entries.unwrap().get(0) {
+        match response.result.entries.unwrap().first() {
             Some(entry) => Ok(entry.clone()),
             None => Err(format!(
                 "Contract data not found. Contract: {}, Key: {:?}, Durability: {:?}",
@@ -455,7 +450,7 @@ impl Server {
         //TODO: Error Handling
         Ok(assemble_transaction(
             transaction,
-            &network_passphrase.unwrap(),
+            network_passphrase.unwrap(),
             Raw(sim_response),
         )
         .unwrap()
@@ -527,13 +522,7 @@ impl Server {
 
         for op in operations {
             for change in op.changes.0.to_vec() {
-                match change {
-                    stellar_xdr::next::LedgerEntryChange::Created(x) => match x.data {
-                        LedgerEntryData::Account(ae) => return Ok(ae.seq_num.0.to_string()),
-                        _ => (),
-                    },
-                    _ => (),
-                }
+                if let stellar_xdr::next::LedgerEntryChange::Created(x) = change { if let LedgerEntryData::Account(ae) = x.data { return Ok(ae.seq_num.0.to_string()) } }
             }
         }
 

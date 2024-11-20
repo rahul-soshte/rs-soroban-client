@@ -1,12 +1,12 @@
 use core::panic;
 use std::{cell::RefCell, rc::Rc};
 
-use crate::{server::{self, Server}, soroban_rpc::soroban_rpc::{
+use crate::soroban_rpc::soroban_rpc::{
     is_simulation_success, BaseSimulateTransactionResponse, RawSimulateTransactionResponse,
     RestorePreamble, SimulateHostFunctionResult, SimulateTransactionErrorResponse,
     SimulateTransactionResponse, SimulateTransactionRestoreResponse,
     SimulateTransactionSuccessResponse,
-}};
+};
 use stellar_baselib::{transaction_builder::TransactionBuilderBehavior};
 pub use stellar_baselib::{
     account::Account,
@@ -16,7 +16,7 @@ pub use stellar_baselib::{
 };
 use stellar_baselib::account::AccountBehavior;
 
-use stellar_xdr::next::{DiagnosticEvent, InvokeHostFunctionOp, Limits, Operation, ReadXdr, ScVal, SorobanAuthorizationEntry};
+use stellar_xdr::next::{DiagnosticEvent, Limits, ReadXdr, ScVal, SorobanAuthorizationEntry};
 use stellar_baselib::soroban_data_builder::SorobanDataBuilderBehavior;
  
 // use stellar_baselib::operation::Operation
@@ -116,7 +116,7 @@ pub fn parse_raw_simulation(
     let base = BaseSimulateTransactionResponse {
         _parsed: true,
         latest_ledger: match &sim {
-            Either::Right(raw) => raw.latestLedger.clone(),
+            Either::Right(raw) => raw.latestLedger,
             _ => panic!("Unexpected type"), // or return some error
         },
         events: match &sim {
