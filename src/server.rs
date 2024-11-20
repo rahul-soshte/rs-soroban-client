@@ -393,9 +393,9 @@ impl Server {
             // Handle optional resultMetaXdr
             if let Some(meta_xdr) = &raw.result.resultMetaXdr {
 
-                println!("Inside resultMetaXdr {:?}", TransactionMeta::from_xdr(meta_xdr, Limits::none()).unwrap());
+                // println!("Inside resultMetaXdr {:?}", TransactionMeta::from_xdr(meta_xdr, Limits::none()).unwrap());
 
-                if let Ok(meta) = TransactionMeta::from_xdr(meta_xdr, Limits::none()) {
+                if let Ok(meta) = TransactionMeta::from_xdr_base64(meta_xdr, Limits::none()) {
                     success_info.resultMetaXdr = Some(meta.clone());
     
                     // Extract return value if it's a V3 transaction with Soroban metadata
