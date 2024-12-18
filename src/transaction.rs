@@ -13,6 +13,7 @@ pub use stellar_baselib::{
     account::Account,
     soroban_data_builder::{self, SorobanDataBuilder},
     transaction::Transaction,
+    transaction::TransactionBehavior,
     transaction_builder::TransactionBuilder,
 };
 

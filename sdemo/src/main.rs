@@ -1,6 +1,6 @@
-#![ allow(warnings)] 
 use std::rc::Rc;
 use std::cell::RefCell;
+use soroban_client::contract;
 use soroban_client::network::{Networks, NetworkPassphrase};
 use soroban_client::server::Durability;
 use soroban_client::server::Options;
@@ -11,14 +11,13 @@ use soroban_client::{server::Server, keypair::Keypair};
 use soroban_client::keypair::KeypairBehavior;
 use soroban_client::transaction_builder::TransactionBuilderBehavior;
 use soroban_client::account::AccountBehavior;
-use stellar_baselib::{xdr, contract};
 use stellar_xdr::next::{ScVec, WriteXdr, Limits, ScContractInstance};
 use stellar_xdr::next::{HostFunction, ScSymbol, InvokeContractArgs, Hash, StringM, ScString, ScVal, ReadXdr, ScSpecType, ContractDataDurability};
 use stellar_xdr::next::ScAddress;
 use stellar_xdr::next::ScAddress::Contract;
 use std::str::FromStr;
-use stellar_baselib::transaction::TransactionBehavior;
-use stellar_baselib::contract::ContractBehavior;
+use soroban_client::transaction::TransactionBehavior;
+use soroban_client::contract::ContractBehavior;
 use soroban_client::transaction_builder::TIMEOUT_INFINITE;
 use soroban_client::operation::PaymentOpts;
 use soroban_client::operation::Operation;
@@ -41,9 +40,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Set up source account
-    let source_secret_key = "SBUZCKI2CUYAG7DYCLBDQ4BBBL2VJJ5OM6S6QUIVDQPU7CQOJDCUBUQ3";
+    let source_secret_key = "SCZQNYPL4LIZWJBM45R3MBMYX4PXRBZJYJGFI6EPBCRGJTVQW2SEDYO2"; // GDIIRYKAHQJJEGC6DAIWTSDT5TX6OASPT3BE4QO72DXFBR7W43HKUHCL
     let source_keypair = Keypair::from_secret(source_secret_key).expect("Invalid secret key");
-    let source_public_key = "GAJZS4EXLJFRF25VN345LA32KHTK553Q34SAPVXS7FDFVPUIMJ56ICVL";
+    let source_public_key = "GDIIRYKAHQJJEGC6DAIWTSDT5TX6OASPT3BE4QO72DXFBR7W43HKUHCL";
 
     // Get account information from server
     let account_data = server.get_account(source_public_key).await?;
@@ -52,7 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
 
     // Contract interaction transaction
-    let contract_id = "CCSE2AN2S4RLMMXJY5FRYQ4YN6UGG54LJT3HPWGGISMJI4OAUYOY6AVR";
+    let contract_id = "CAZWWALXKM4OC7FIQZNMZXXZM3Y2ENK3IDKQFU5RLG5VORTUU5ZWW5QY";
     let contract = contract::Contracts::new(contract_id).unwrap();
     
     let mut contract_tx = TransactionBuilder::new(
