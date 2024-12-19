@@ -26,6 +26,10 @@ And this to your code:
 use soroban_client::*;
 ```
 
+## Crate Docs
+
+([Link](https://docs.rs/soroban-client/0.3.4/soroban_client/))
+
 ## Description
 
 **The library is composed of 3 components**:
