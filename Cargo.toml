@@ -14,7 +14,6 @@ authors = ["Rahul Soshte <rahul.soshte47@gmail.com>"]
 [dependencies]
 # stellar-baselib = {path = "stellar-baselib"}  # Useful for local development, but not for publishing
 stellar-baselib = "0.4.4"
-stellar-xdr =  { version = "22.0.0", default-features = true, features = ["base64", "std", "next"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.11.20", features = ["json"] }
