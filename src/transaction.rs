@@ -18,7 +18,7 @@ pub use stellar_baselib::{
 };
 
 use stellar_baselib::soroban_data_builder::SorobanDataBuilderBehavior;
-use stellar_xdr::next::{DiagnosticEvent, Limits, ReadXdr, ScVal, SorobanAuthorizationEntry};
+use stellar_baselib::xdr::xdr::next::{DiagnosticEvent, Limits, ReadXdr, ScVal, SorobanAuthorizationEntry};
 
 // use stellar_baselib::operation::Operation
 
@@ -87,12 +87,10 @@ pub fn assemble_transaction(
             txn_builder.clear_operations();
 
             let invoke_op = val;
-
-            // println!("Invoke OP ji {:?}", invoke_op);
-
+            
             // let existing_auth = invoke_op.auth
             let body = match invoke_op.body {
-                stellar_xdr::next::OperationBody::InvokeHostFunction(invoke_host_function_op) => {
+                stellar_baselib::xdr::xdr::next::OperationBody::InvokeHostFunction(invoke_host_function_op) => {
                     invoke_host_function_op
                 }
                 _ => panic!("Unexpected type"),
@@ -123,7 +121,6 @@ pub fn parse_raw_simulation(
         }
     }
 
-    // println!("Hello ooooooooooooooooooo{:?}", sim);
 
     let base = BaseSimulateTransactionResponse {
         _parsed: true,

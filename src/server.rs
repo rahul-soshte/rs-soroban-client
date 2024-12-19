@@ -23,12 +23,13 @@ use stellar_baselib::hashing::Sha256Hasher;
 use stellar_baselib::keypair::KeypairBehavior;
 use stellar_baselib::transaction::{Transaction, TransactionBehavior};
 use stellar_baselib::transaction_builder::TransactionBuilderBehavior;
-use stellar_xdr::next::{
+use stellar_baselib::xdr::xdr::next::{
     ContractDataDurability, DiagnosticEvent, Hash, LedgerKeyContractData, Limits, ScAddress, ScVal,
     TransactionEnvelope, TransactionMeta, TransactionResult,
 };
-use stellar_xdr::next::{LedgerEntryData, LedgerKey, LedgerKeyAccount, ReadXdr, WriteXdr};
-const SUBMIT_TRANSACTION_TIMEOUT: u32 = 60 * 1000;
+use stellar_baselib::xdr::xdr::next::{LedgerEntryData, LedgerKey, LedgerKeyAccount, ReadXdr, WriteXdr};
+pub const SUBMIT_TRANSACTION_TIMEOUT: u32 = 60 * 1000;
+ 
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Durability {
@@ -523,7 +524,7 @@ impl Server {
 
         for op in operations {
             for change in op.changes.0.to_vec() {
-                if let stellar_xdr::next::LedgerEntryChange::Created(x) = change {
+                if let stellar_baselib::xdr::xdr::next::LedgerEntryChange::Created(x) = change {
                     if let LedgerEntryData::Account(ae) = x.data {
                         return Ok(ae.seq_num.0.to_string());
                     }

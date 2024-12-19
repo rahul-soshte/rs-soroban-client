@@ -2,30 +2,19 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use soroban_client::contract;
 use soroban_client::network::{Networks, NetworkPassphrase};
-use soroban_client::server::Durability;
 use soroban_client::server::Options;
-use soroban_client::contract_spec::native_to_sc_val;
 use soroban_client::transaction::Account;
 use soroban_client::transaction_builder::TransactionBuilder;
 use soroban_client::{server::Server, keypair::Keypair};
 use soroban_client::keypair::KeypairBehavior;
 use soroban_client::transaction_builder::TransactionBuilderBehavior;
 use soroban_client::account::AccountBehavior;
-use stellar_xdr::next::{ScVec, WriteXdr, Limits, ScContractInstance};
-use stellar_xdr::next::{HostFunction, ScSymbol, InvokeContractArgs, Hash, StringM, ScString, ScVal, ReadXdr, ScSpecType, ContractDataDurability};
-use stellar_xdr::next::ScAddress;
-use stellar_xdr::next::ScAddress::Contract;
-use std::str::FromStr;
 use soroban_client::transaction::TransactionBehavior;
 use soroban_client::contract::ContractBehavior;
 use soroban_client::transaction_builder::TIMEOUT_INFINITE;
-use soroban_client::operation::PaymentOpts;
-use soroban_client::operation::Operation;
-use soroban_client::asset::Asset;
-use soroban_client::asset::AssetBehavior;
 use soroban_client::soroban_rpc::soroban_rpc::GetTransactionResponse;
-use std::time::Duration;
 use soroban_client::soroban_rpc::soroban_rpc::GetTransactionStatus;
+use std::time::Duration;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -65,12 +54,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .build();
 
     contract_tx = server.prepare_transaction(contract_tx, Some(Networks::testnet())).await.unwrap();
-    let before_signing = contract_tx.to_envelope().unwrap().to_xdr_base64(Limits::none());
+    // let before_signing = contract_tx.to_envelope().unwrap().to_xdr_base64(Limits::none());
     // println!("Before Signing {:?}", before_signing);
     
     // Sign the contract transaction
     contract_tx.sign(&[source_keypair.clone()]);
-    let after_signing = contract_tx.to_envelope().unwrap().to_xdr_base64(Limits::none());
+    // let after_signing = contract_tx.to_envelope().unwrap().to_xdr_base64(Limits::none());
     // println!("After Signing {:?}", after_signing);
 
     match server.send_transaction(contract_tx).await {
