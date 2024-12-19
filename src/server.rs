@@ -27,9 +27,10 @@ use stellar_baselib::xdr::xdr::next::{
     ContractDataDurability, DiagnosticEvent, Hash, LedgerKeyContractData, Limits, ScAddress, ScVal,
     TransactionEnvelope, TransactionMeta, TransactionResult,
 };
-use stellar_baselib::xdr::xdr::next::{LedgerEntryData, LedgerKey, LedgerKeyAccount, ReadXdr, WriteXdr};
+use stellar_baselib::xdr::xdr::next::{
+    LedgerEntryData, LedgerKey, LedgerKeyAccount, ReadXdr, WriteXdr,
+};
 pub const SUBMIT_TRANSACTION_TIMEOUT: u32 = 60 * 1000;
- 
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Durability {
