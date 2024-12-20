@@ -52,17 +52,27 @@ pub fn assemble_transaction(
 
     // Calculate fees
     let classic_fee_num = raw.fee;
-    let min_resource_fee_num = match &success {
-        SimulateTransactionResponse::Success(response) => {
-            response.min_resource_fee.parse::<u32>().unwrap_or(0)
-        }
-        _ => return Err("simulation result does not contain min resource fee".to_string()),
-    };
 
-    // Build Soroban transaction data
-    let soroban_tx_data = match &success {
-        SimulateTransactionResponse::Success(response) => response.transaction_data.build(),
-        _ => return Err("simulation result does not contain valid transaction data".to_string()),
+    let (min_resource_fee, soroban_tx_data, auth): (
+        _,
+        _,
+        Option<stellar_baselib::xdr::xdr::next::VecM<SorobanAuthorizationEntry>>,
+    ) = match &success {
+        SimulateTransactionResponse::Success(response) => {
+            //
+            (
+                response.min_resource_fee.parse::<u32>().unwrap_or(0),
+                response.transaction_data.build(),
+                response.result.as_ref().map(|result| {
+                    result
+                        .auth
+                        .clone()
+                        .try_into()
+                        .expect("Conversion to VecM failed")
+                }),
+            )
+        }
+        _ => return Err("Simulation result is not a success".to_string()),
     };
 
     // Create a transaction builder with updated fees and Soroban data
@@ -71,46 +81,34 @@ pub fn assemble_transaction(
             &raw.source.ok_or("missing source account")?,
             &raw.sequence.unwrap(),
         )
-        .unwrap(),
+        .expect("Failed to copy source account data"),
     ));
 
-    let mut binding = TransactionBuilder::new(source_acc.clone(), network_passphrase, None);
-    // println!("Soroban Data {:?}", soroban_tx_data);
+    let mut tx_builder =
+        TransactionBuilder::new(source_acc.clone(), network_passphrase, raw.time_bounds);
 
-    let txn_builder = binding
-        .fee(classic_fee_num + min_resource_fee_num)
+    tx_builder
+        .fee(classic_fee_num + min_resource_fee)
         .set_soroban_data(soroban_tx_data);
 
     // Process the operation
-    let val = raw.operations.unwrap()[0].clone();
-    match val.clone() {
-        #[allow(non_snake_case)]
-        InvokeHostFunctionOp => {
-            txn_builder.clear_operations();
-
-            let invoke_op = val;
-
-            // let existing_auth = invoke_op.auth
-            let body = match invoke_op.body {
-                stellar_baselib::xdr::xdr::next::OperationBody::InvokeHostFunction(
-                    invoke_host_function_op,
-                ) => invoke_host_function_op,
-                _ => panic!("Unexpected type"),
-            };
-
-            txn_builder.add_operation(
+    if let Some(ops) = raw.operations {
+        if let stellar_baselib::xdr::xdr::next::OperationBody::InvokeHostFunction(
+            invoke_host_function_op,
+        ) = ops[0].clone().body
+        {
+            tx_builder.add_operation(
                 stellar_baselib::operation::Operation::invoke_host_function(
-                    body.host_function,
-                    Some(body.auth),
+                    invoke_host_function_op.host_function,
+                    auth,
                     None,
                 )
                 .unwrap(),
             );
         }
-        _ => panic!("Invalid"),
     }
 
-    Ok(txn_builder.clone())
+    Ok(tx_builder)
 }
 
 pub fn parse_raw_simulation(
