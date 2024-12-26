@@ -224,23 +224,156 @@ pub fn is_simulation_raw(
 }
 
 fn is_soroban_transaction(tx: &Transaction) -> bool {
-    if tx.operations.clone().unwrap().len() != 1 {
-        return false;
+    if let Some(operations) = &tx.operations {
+        if operations.len() == 1 {
+            let op = &operations[0];
+            let valid = matches!(
+                op.body.discriminant(),
+                stellar_baselib::xdr::xdr::next::OperationType::InvokeHostFunction
+                    | stellar_baselib::xdr::xdr::next::OperationType::ExtendFootprintTtl
+                    | stellar_baselib::xdr::xdr::next::OperationType::RestoreFootprint
+            );
+            return valid;
+        }
     }
-
-    match tx.operations.clone().unwrap()[0].clone() {
-        #[allow(non_snake_case)]
-        _InvokeHostFunctionOp => true,
-        #[allow(non_snake_case)]
-        _BumpFootprintExpirationOp => true,
-        #[allow(non_snake_case)]
-        _RestoreFootprintOp => true,
-        _ => false,
-    }
+    false
 }
 
 #[derive(Clone, Debug)]
 pub enum Either<L, R> {
     Left(L),
     Right(R),
+}
+
+#[cfg(test)]
+mod test {
+    use std::{cell::RefCell, rc::Rc, str::FromStr};
+
+    use stellar_baselib::{
+        account::{Account, AccountBehavior},
+        transaction_builder::{TransactionBuilder, TransactionBuilderBehavior},
+        xdr::xdr::next::{
+            AccountId, CreateAccountOp, Hash, HostFunction, InvokeContractArgs,
+            InvokeHostFunctionOp, Operation, OperationBody, PublicKey, ScAddress, ScSymbol, ScVal,
+            SorobanAuthorizationEntry, StringM, Uint256, VecM,
+        },
+    };
+
+    use crate::transaction::is_soroban_transaction;
+
+    #[test]
+    fn is_soroban_transaction_false() {
+        let source_account = Rc::new(RefCell::new(
+            Account::new(
+                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                "0",
+            )
+            .unwrap(),
+        ));
+        let network = "Network for tests";
+
+        let op = Operation {
+            source_account: None,
+            body: OperationBody::CreateAccount(CreateAccountOp {
+                destination: AccountId(PublicKey::PublicKeyTypeEd25519(Uint256([0; 32]))),
+                starting_balance: 10,
+            }),
+        };
+
+        let mut builder = TransactionBuilder::new(source_account, network, None);
+        builder.fee(1000u32).set_timeout(30).unwrap();
+        builder.add_operation(op);
+        let tx = builder.build();
+
+        assert!(
+            !is_soroban_transaction(&tx),
+            "CreateAccountOp is not a soroban op"
+        );
+    }
+
+    #[test]
+    fn is_soroban_transaction_true() {
+        let source_account = Rc::new(RefCell::new(
+            Account::new(
+                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                "0",
+            )
+            .unwrap(),
+        ));
+        let network = "Network for tests";
+
+        let op = Operation {
+            source_account: None,
+            body: OperationBody::InvokeHostFunction(InvokeHostFunctionOp {
+                host_function: HostFunction::InvokeContract(InvokeContractArgs {
+                    contract_address: ScAddress::Contract(Hash([0; 32])),
+                    function_name: ScSymbol::from(StringM::from_str("test").unwrap()),
+                    args: VecM::<ScVal>::try_from(Vec::new()).unwrap(),
+                }),
+                auth: VecM::<SorobanAuthorizationEntry>::try_from(Vec::new()).unwrap(),
+            }),
+        };
+
+        let mut builder = TransactionBuilder::new(source_account, network, None);
+        builder.fee(1000u32).set_timeout(30).unwrap();
+        builder.add_operation(op);
+        let tx = builder.build();
+
+        assert!(
+            is_soroban_transaction(&tx),
+            "InvokeHostFunction is a soroban op"
+        );
+    }
+
+    #[test]
+    fn is_soroban_transaction_2_ops() {
+        let source_account = Rc::new(RefCell::new(
+            Account::new(
+                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                "0",
+            )
+            .unwrap(),
+        ));
+        let network = "Network for tests";
+
+        let op = Operation {
+            source_account: None,
+            body: OperationBody::InvokeHostFunction(InvokeHostFunctionOp {
+                host_function: HostFunction::InvokeContract(InvokeContractArgs {
+                    contract_address: ScAddress::Contract(Hash([0; 32])),
+                    function_name: ScSymbol::from(StringM::from_str("test").unwrap()),
+                    args: VecM::<ScVal>::try_from(Vec::new()).unwrap(),
+                }),
+                auth: VecM::<SorobanAuthorizationEntry>::try_from(Vec::new()).unwrap(),
+            }),
+        };
+
+        let mut builder = TransactionBuilder::new(source_account, network, None);
+        builder.fee(1000u32).set_timeout(30).unwrap();
+        builder.add_operation(op.clone());
+        builder.add_operation(op);
+        let tx = builder.build();
+
+        assert!(
+            !is_soroban_transaction(&tx),
+            "2 operations even InvokeHostFunction is not valid"
+        );
+    }
+    #[test]
+    fn is_soroban_transaction_no_ops() {
+        let source_account = Rc::new(RefCell::new(
+            Account::new(
+                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                "0",
+            )
+            .unwrap(),
+        ));
+        let network = "Network for tests";
+
+        let mut builder = TransactionBuilder::new(source_account, network, None);
+        builder.fee(1000u32).set_timeout(30).unwrap();
+        let tx = builder.build();
+
+        assert!(!is_soroban_transaction(&tx), "no ops is not valid");
+    }
 }
