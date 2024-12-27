@@ -10,10 +10,10 @@ use crate::transaction::assemble_transaction;
 use crate::transaction::SimulationResponse::Raw;
 use crate::{jsonrpc::post, soroban_rpc::soroban_rpc::EventFilter};
 use core::panic;
+use futures::TryFutureExt;
 use http::Uri;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::error::Error;
 use std::option::Option;
 use std::{collections::HashMap, str::FromStr};
 use stellar_baselib::account::Account;
@@ -27,9 +27,7 @@ use stellar_baselib::xdr::next::{
     ContractDataDurability, DiagnosticEvent, Hash, LedgerKeyContractData, Limits, ScAddress, ScVal,
     TransactionEnvelope, TransactionMeta, TransactionResult,
 };
-use stellar_baselib::xdr::next::{
-    LedgerEntryData, LedgerKey, LedgerKeyAccount, ReadXdr, WriteXdr,
-};
+use stellar_baselib::xdr::next::{LedgerEntryData, LedgerKey, LedgerKeyAccount, ReadXdr, WriteXdr};
 pub const SUBMIT_TRANSACTION_TIMEOUT: u32 = 60 * 1000;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -59,6 +57,7 @@ pub struct Options {
     pub headers: Option<HashMap<String, String>>,
 }
 
+#[derive(Debug)]
 pub struct Server {
     server_url: Uri,
     client: reqwest::Client,
@@ -86,45 +85,68 @@ impl Default for GetSuccessfulTransactionResponse {
     }
 }
 
-impl Server {
-    pub fn new(server_url: &str, opts: Options) -> Self {
-        let server_url = Uri::from_str(server_url).unwrap();
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
+pub enum ServerError {
+    InvalidUri,
+    IncompatibleSchemeConfiguration,
+    XdrError,
+    NetworkError,
+    AccountNotFound,
+    ContractDataNotFound,
+    TransactionError, // temporary
+}
 
-        if !server_url.scheme().unwrap().as_str().starts_with("https")
-            && !opts.allow_http.unwrap_or(false)
-        {
-            panic!("Cannot connect to insecure Soroban RPC server if `allow_http` isn't set");
-            // or return a Result with an error
+impl Server {
+    pub fn new(server_url: &str, opts: Options) -> Result<Self, ServerError> {
+        let server_url = Uri::from_str(server_url).map_err(|_| ServerError::InvalidUri)?;
+
+        if !server_url.scheme().is_some_and(|v| {
+            let allow_http = opts.allow_http.unwrap_or(false);
+            if allow_http {
+                v.as_str().starts_with("http")
+            } else {
+                v.as_str().starts_with("https")
+            }
+        }) {
+            return Err(ServerError::IncompatibleSchemeConfiguration);
         }
 
-        Server {
+        Ok(Server {
             server_url,
             client: create_client(),
-        }
+        })
     }
 
     pub async fn get_ledger_entries(
         &self,
         keys: Vec<LedgerKey>,
-    ) -> Result<soroban_rpc::GetLedgerEntriesResponseWrapper, reqwest::Error> {
+    ) -> Result<soroban_rpc::GetLedgerEntriesResponseWrapper, ServerError> {
         let mut data: Vec<(LedgerKey, serde_json::Value)> = vec![];
 
-        for i in 0..keys.len() {
+        (0..keys.len()).for_each(|i| {
             data.push((
                 keys[i].clone(),
-                serde_json::Value::String(keys[i].clone().to_xdr_base64(Limits::none()).unwrap()),
+                serde_json::Value::String(
+                    keys[i]
+                        .clone()
+                        .to_xdr_base64(Limits::none())
+                        .expect("Should be valid from LedgerKey"),
+                ),
             ))
-        }
+        });
 
         let map: std::collections::HashMap<String, serde_json::Value> = data
             .into_iter()
-            .map(|(key, value)| (key.to_xdr_base64(Limits::none()).unwrap(), value))
+            .map(|(key, value)| {
+                (
+                    key.to_xdr_base64(Limits::none())
+                        .expect("Should be valid from LedgerKey"),
+                    value,
+                )
+            })
             .collect();
 
         let keys: Vec<String> = map.keys().cloned().collect();
-
-        println!("{:?}", keys);
-
         let payload = json!({
             "jsonrpc": "2.0",
             "id": 2,
@@ -135,16 +157,18 @@ impl Server {
         });
 
         self.client
-            .post(&format!("{}", &self.server_url))
+            .post(self.server_url.to_string())
             .header("Content-Type", "application/json")
             .json(&payload)
             .send()
-            .await?
+            .await
+            .map_err(|_| ServerError::NetworkError)?
             .json::<GetLedgerEntriesResponseWrapper>()
             .await
+            .map_err(|_| ServerError::NetworkError)
     }
 
-    pub async fn get_account(&self, address: &str) -> Result<Account, Box<dyn Error>> {
+    pub async fn get_account(&self, address: &str) -> Result<Account, ServerError> {
         let ledger_key = LedgerKey::Account(LedgerKeyAccount {
             account_id: stellar_baselib::keypair::Keypair::from_public_key(address)
                 .unwrap()
@@ -156,10 +180,7 @@ impl Server {
         let entries = resp.result.entries.unwrap_or_default();
 
         if entries.is_empty() {
-            return Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("Account not found: {}", address),
-            )));
+            return Err(ServerError::AccountNotFound);
         }
 
         let ledger_entry_data = &entries[0].xdr;
@@ -180,7 +201,7 @@ impl Server {
         });
 
         self.client
-            .post(&format!("{}", &self.server_url))
+            .post(self.server_url.to_string())
             .header("Content-Type", "application/json")
             .json(&payload)
             .send()
@@ -196,10 +217,8 @@ impl Server {
             "method": "getNetwork"
         });
 
-        // println!("{:?}", val);
-
         self.client
-            .post(&format!("{}", &self.server_url))
+            .post(self.server_url.to_string())
             .header("Content-Type", "application/json")
             .json(&payload)
             .send()
@@ -208,12 +227,13 @@ impl Server {
             .await
     }
 
-    pub async fn get_latest_ledger(&self) -> Result<GetLatestLedgerResponse, reqwest::Error> {
+    pub async fn get_latest_ledger(&self) -> Result<GetLatestLedgerResponse, ServerError> {
         post::<soroban_rpc::GetLatestLedgerResponse>(
             &self.server_url.to_string(),
             "getLatestLedger",
             HashMap::new(),
         )
+        .map_err(|_| ServerError::NetworkError)
         .await
     }
 
@@ -221,8 +241,12 @@ impl Server {
         &self,
         transaction: Transaction,
         addl_resources: Option<ResourceLeeway>,
-    ) -> Result<RawSimulateTransactionResponse, Box<dyn std::error::Error>> {
-        let transaction_xdr = transaction.to_envelope()?.to_xdr_base64(Limits::none())?;
+    ) -> Result<RawSimulateTransactionResponse, ServerError> {
+        let transaction_xdr = transaction
+            .to_envelope()
+            .map_err(|_| ServerError::TransactionError)?
+            .to_xdr_base64(Limits::none())
+            .map_err(|_| ServerError::XdrError)?;
 
         let mut params = json!({
             "transaction": transaction_xdr
@@ -247,53 +271,27 @@ impl Server {
 
         let response = self
             .client
-            .post(&format!("{}", &self.server_url))
+            .post(self.server_url.to_string())
             .header("Content-Type", "application/json")
             .json(&payload)
             .send()
+            .map_err(|_| ServerError::NetworkError)
             .await?;
 
-        let result: JsonRpcSimulateResponse = response.json().await?;
+        let result: JsonRpcSimulateResponse = response
+            .json()
+            .map_err(|_| ServerError::NetworkError)
+            .await?;
         Ok(result.result)
     }
-
-    // pub async fn simulate_transaction(
-    //     &self,
-    //     transaction: Transaction,
-    // ) -> Result<SimulateTransactionResponse, reqwest::Error> {
-    //     let mut data: Vec<(String, serde_json::Value)> = vec![];
-
-    //     data.push((
-    //         transaction.to_envelope().unwrap().to_xdr_base64(Limits::none()).unwrap(),
-    //         serde_json::Value::String(transaction.to_envelope().unwrap().to_xdr_base64(Limits::none()).unwrap()),
-    //     ));
-
-    //     let map: std::collections::HashMap<String, serde_json::Value> =
-    //         data.into_iter().map(|(key, value)| (key, value)).collect();
-
-    //     println!("Hunter");
-
-    //     let raw_response = Either::Right(
-    //         post::<RawSimulateTransactionResponse>(
-    //             &self.server_url.to_string(),
-    //             "simulateTransaction",
-    //             map,
-    //         )
-    //         .await?,
-    //     );
-    //     println!("Hunter 2");
-
-    //     Ok(parse_raw_simulation(raw_response))
-    // }
 
     pub async fn get_contract_data(
         &self,
         contract: &str,
         key: ScVal,
         durability: Durability,
-    ) -> Result<LedgerEntryResult, Box<dyn std::error::Error>> {
+    ) -> Result<LedgerEntryResult, ServerError> {
         let hex_contract_val = &hex::encode(Sha256Hasher::hash(contract.as_bytes()));
-        println!("Hex {}", hex_contract_val);
         let hex_id = hex_contract_val.as_bytes();
         let mut array = [0u8; 32];
         array.copy_from_slice(&hex_id[0..32]);
@@ -304,31 +302,19 @@ impl Server {
             key: key.clone(),
             contract: sc_address.clone(),
             durability: durability.to_xdr(),
-            // body_type: ContractEntryBodyType::DataEntry,
         });
 
         let val = vec![contract_key];
 
         let response = self.get_ledger_entries(val).await?;
 
-        println!(" Response {:?}", response);
-
         match response.result.entries.unwrap().first() {
             Some(entry) => Ok(entry.clone()),
-            None => Err(format!(
-                "Contract data not found. Contract: {}, Key: {:?}, Durability: {:?}",
-                sc_address.clone().to_xdr_base64(Limits::none()).unwrap(),
-                key,
-                durability
-            )
-            .into()),
+            None => Err(ServerError::ContractDataNotFound),
         }
     }
 
-    pub async fn get_transaction(
-        &self,
-        hash: &str,
-    ) -> Result<GetTransactionResponse, reqwest::Error> {
+    pub async fn get_transaction(&self, hash: &str) -> Result<GetTransactionResponse, ServerError> {
         let payload = json!({
             "jsonrpc": "2.0",
             "id": 8675309,
@@ -340,12 +326,14 @@ impl Server {
 
         let raw = self
             .client
-            .post(&format!("{}", &self.server_url))
+            .post(self.server_url.to_string())
             .header("Content-Type", "application/json")
             .json(&payload)
             .send()
+            .map_err(|_| ServerError::NetworkError)
             .await?
             .json::<RawGetTransactionResponseWrapper>()
+            .map_err(|_| ServerError::NetworkError)
             .await?;
 
         let mut success_info = GetSuccessfulTransactionResponse {
@@ -361,8 +349,6 @@ impl Server {
         };
 
         if let GetTransactionStatus::SUCCESS = raw.result.status {
-            // println!("Get Transaction {:?}", &raw.result.resultMetaXdr);
-
             // Set the basic fields that don't depend on XDR parsing
             success_info.ledger = raw.result.ledger;
             success_info.applicationOrder = raw.result.applicationOrder;
@@ -385,11 +371,8 @@ impl Server {
                     TransactionResult::from_xdr_base64(result_xdr, Limits::none()).ok();
             }
 
-            println!("Outside resultMetaXdr");
             // Handle optional resultMetaXdr
             if let Some(meta_xdr) = &raw.result.resultMetaXdr {
-                // println!("Inside resultMetaXdr {:?}", TransactionMeta::from_xdr(meta_xdr, Limits::none()).unwrap());
-
                 if let Ok(meta) = TransactionMeta::from_xdr_base64(meta_xdr, Limits::none()) {
                     success_info.resultMetaXdr = Some(meta.clone());
 
@@ -397,7 +380,6 @@ impl Server {
                     if let TransactionMeta::V3(v3) = meta {
                         if let Some(soroban_meta) = v3.soroban_meta {
                             success_info.returnValue = Some(soroban_meta.return_value.clone());
-                            println!("Result Value ====> {:?}", soroban_meta.return_value);
                         }
                     }
                 }
@@ -443,11 +425,8 @@ impl Server {
         &self,
         transaction: Transaction,
         network_passphrase: Option<&str>,
-    ) -> Result<Transaction, Box<dyn std::error::Error>> {
-        let sim_response = self
-            .simulate_transaction(transaction.clone(), None)
-            .await
-            .unwrap();
+    ) -> Result<Transaction, ServerError> {
+        let sim_response = self.simulate_transaction(transaction.clone(), None).await?;
 
         //TODO: Error Handling
         Ok(
@@ -460,10 +439,12 @@ impl Server {
     pub async fn send_transaction(
         &self,
         transaction: Transaction,
-    ) -> Result<SendTransactionResponse, Box<dyn std::error::Error>> {
-        let transaction_xdr = transaction.to_envelope()?.to_xdr_base64(Limits::none())?;
-
-        // println!("The Actual Tx XDR that is sent {:?}", transaction_xdr);
+    ) -> Result<SendTransactionResponse, ServerError> {
+        let transaction_xdr = transaction
+            .to_envelope()
+            .map_err(|_| ServerError::TransactionError)?
+            .to_xdr_base64(Limits::none())
+            .map_err(|_| ServerError::XdrError)?;
 
         let payload = json!({
             "jsonrpc": "2.0",
@@ -476,34 +457,39 @@ impl Server {
 
         let response = self
             .client
-            .post(&format!("{}", &self.server_url))
+            .post(self.server_url.to_string())
             .header("Content-Type", "application/json")
             .json(&payload)
             .send()
+            .map_err(|_| ServerError::NetworkError)
             .await?;
 
-        // Debug print the raw response
-        // println!("Raw response: {}", response.clone().text().await?);
+        let result: JsonRpcResponse = response
+            .json()
+            .map_err(|_| ServerError::NetworkError)
+            .await?;
 
-        let result: JsonRpcResponse = response.json().await?;
+        /*Not sure why this is here
+                // If error result is present, decode it
+                if let Some(error_xdr) = &result.result.error_result {
+                    println!(
+                        "Transaction error: {:?}",
+                        TransactionResult::from_xdr_base64(error_xdr, Limits::none())
+                            .expect("Xdr from RPC should be valid")
+                    );
+                }
 
-        // If error result is present, decode it
-        if let Some(error_xdr) = &result.result.error_result {
-            println!(
-                "Transaction error: {:?}",
-                TransactionResult::from_xdr_base64(error_xdr, Limits::none())?
-            );
-        }
-
-        // If diagnostic events are present, decode them
-        if let Some(events) = &result.result.diagnostic_events {
-            for event_xdr in events {
-                println!(
-                    "Diagnostic event: {:?}",
-                    DiagnosticEvent::from_xdr_base64(event_xdr, Limits::none())?
-                );
-            }
-        }
+                // If diagnostic events are present, decode them
+                if let Some(events) = &result.result.diagnostic_events {
+                    for event_xdr in events {
+                        println!(
+                            "Diagnostic event: {:?}",
+                            DiagnosticEvent::from_xdr_base64(event_xdr, Limits::none())
+                                .expect("Xdr from RPC should be valid")
+                        );
+                    }
+                }
+        */
 
         Ok(result.result)
     }
@@ -534,5 +520,78 @@ impl Server {
         }
 
         Err("No account created in transaction")
+    }
+}
+
+#[cfg(test)]
+mod test {
+
+    use crate::server::ServerError;
+
+    use super::Server;
+
+    #[test]
+    fn server_new() {
+        let s1 = Server::new(
+            "https://rpc",
+            super::Options {
+                allow_http: None,
+                timeout: None,
+                headers: None,
+            },
+        );
+        assert!(s1.is_ok(), "https scheme with allow_http None");
+
+        let s2 = Server::new(
+            "/rpc",
+            super::Options {
+                allow_http: None,
+                timeout: None,
+                headers: None,
+            },
+        );
+        assert_eq!(
+            s2.err(),
+            Some(ServerError::IncompatibleSchemeConfiguration),
+            "Expect an error"
+        );
+
+        let s3 = Server::new(
+            "/rpc",
+            super::Options {
+                allow_http: Some(true),
+                timeout: None,
+                headers: None,
+            },
+        );
+        assert_eq!(
+            s3.err(),
+            Some(ServerError::IncompatibleSchemeConfiguration),
+            "Expect an error"
+        );
+
+        let s4 = Server::new(
+            "http://rpc",
+            super::Options {
+                allow_http: Some(true),
+                timeout: None,
+                headers: None,
+            },
+        );
+        assert!(s4.is_ok(), "http scheme with allow_http true");
+
+        let s5 = Server::new(
+            "",
+            super::Options {
+                allow_http: Some(true),
+                timeout: None,
+                headers: None,
+            },
+        );
+        assert_eq!(
+            s5.err(),
+            Some(ServerError::InvalidUri),
+            "http scheme with allow_http true"
+        );
     }
 }
