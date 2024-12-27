@@ -136,10 +136,10 @@ pub mod soroban_rpc {
         pub createdAt: Option<i32>,
         pub applicationOrder: Option<i32>,
         pub feeBump: Option<bool>,
-        pub envelopeXdr: Option<stellar_baselib::xdr::xdr::next::TransactionEnvelope>,
-        pub resultXdr: Option<stellar_baselib::xdr::xdr::next::TransactionResult>,
-        pub resultMetaXdr: Option<stellar_baselib::xdr::xdr::next::TransactionMeta>,
-        pub returnValue: Option<stellar_baselib::xdr::xdr::next::ScVal>,
+        pub envelopeXdr: Option<stellar_baselib::xdr::next::TransactionEnvelope>,
+        pub resultXdr: Option<stellar_baselib::xdr::next::TransactionResult>,
+        pub resultMetaXdr: Option<stellar_baselib::xdr::next::TransactionMeta>,
+        pub returnValue: Option<stellar_baselib::xdr::next::ScVal>,
     }
 
     #[derive(Clone, Debug, Deserialize)]
@@ -238,8 +238,8 @@ pub mod soroban_rpc {
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct SimulateHostFunctionResult {
-        pub auth: Vec<stellar_baselib::xdr::xdr::next::SorobanAuthorizationEntry>,
-        pub retval: stellar_baselib::xdr::xdr::next::ScVal,
+        pub auth: Vec<stellar_baselib::xdr::next::SorobanAuthorizationEntry>,
+        pub retval: stellar_baselib::xdr::next::ScVal,
     }
 
     #[derive(Debug, Serialize, Deserialize)]
@@ -269,7 +269,7 @@ pub mod soroban_rpc {
     pub struct BaseSimulateTransactionResponse {
         // pub id: String,
         pub latest_ledger: i32,
-        pub events: Vec<stellar_baselib::xdr::xdr::next::DiagnosticEvent>,
+        pub events: Vec<stellar_baselib::xdr::next::DiagnosticEvent>,
         pub _parsed: bool,
     }
 

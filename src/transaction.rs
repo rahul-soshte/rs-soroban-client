@@ -18,7 +18,7 @@ pub use stellar_baselib::{
 };
 
 use stellar_baselib::soroban_data_builder::SorobanDataBuilderBehavior;
-use stellar_baselib::xdr::xdr::next::{
+use stellar_baselib::xdr::next::{
     DiagnosticEvent, Limits, ReadXdr, ScVal, SorobanAuthorizationEntry,
 };
 
@@ -56,7 +56,7 @@ pub fn assemble_transaction(
     let (min_resource_fee, soroban_tx_data, auth): (
         _,
         _,
-        Option<stellar_baselib::xdr::xdr::next::VecM<SorobanAuthorizationEntry>>,
+        Option<stellar_baselib::xdr::next::VecM<SorobanAuthorizationEntry>>,
     ) = match &success {
         SimulateTransactionResponse::Success(response) => {
             //
@@ -93,7 +93,7 @@ pub fn assemble_transaction(
 
     // Process the operation
     if let Some(ops) = raw.operations {
-        if let stellar_baselib::xdr::xdr::next::OperationBody::InvokeHostFunction(
+        if let stellar_baselib::xdr::next::OperationBody::InvokeHostFunction(
             invoke_host_function_op,
         ) = ops[0].clone().body
         {
@@ -229,9 +229,9 @@ fn is_soroban_transaction(tx: &Transaction) -> bool {
             let op = &operations[0];
             let valid = matches!(
                 op.body.discriminant(),
-                stellar_baselib::xdr::xdr::next::OperationType::InvokeHostFunction
-                    | stellar_baselib::xdr::xdr::next::OperationType::ExtendFootprintTtl
-                    | stellar_baselib::xdr::xdr::next::OperationType::RestoreFootprint
+                stellar_baselib::xdr::next::OperationType::InvokeHostFunction
+                    | stellar_baselib::xdr::next::OperationType::ExtendFootprintTtl
+                    | stellar_baselib::xdr::next::OperationType::RestoreFootprint
             );
             return valid;
         }
@@ -252,7 +252,7 @@ mod test {
     use stellar_baselib::{
         account::{Account, AccountBehavior},
         transaction_builder::{TransactionBuilder, TransactionBuilderBehavior},
-        xdr::xdr::next::{
+        xdr::next::{
             AccountId, CreateAccountOp, Hash, HostFunction, InvokeContractArgs,
             InvokeHostFunctionOp, Operation, OperationBody, PublicKey, ScAddress, ScSymbol, ScVal,
             SorobanAuthorizationEntry, StringM, Uint256, VecM,
