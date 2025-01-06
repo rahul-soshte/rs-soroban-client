@@ -1,19 +1,19 @@
-use std::rc::Rc;
-use std::cell::RefCell;
-use soroban_client::contract;
-use soroban_client::network::{Networks, NetworkPassphrase};
-use soroban_client::server::Options;
-use soroban_client::transaction::Account;
-use soroban_client::transaction_builder::TransactionBuilder;
-use soroban_client::{server::Server, keypair::Keypair};
-use soroban_client::keypair::KeypairBehavior;
-use soroban_client::transaction_builder::TransactionBuilderBehavior;
 use soroban_client::account::AccountBehavior;
-use soroban_client::transaction::TransactionBehavior;
+use soroban_client::contract;
 use soroban_client::contract::ContractBehavior;
-use soroban_client::transaction_builder::TIMEOUT_INFINITE;
+use soroban_client::keypair::KeypairBehavior;
+use soroban_client::network::{NetworkPassphrase, Networks};
+use soroban_client::server::Options;
 use soroban_client::soroban_rpc::soroban_rpc::GetTransactionResponse;
 use soroban_client::soroban_rpc::soroban_rpc::GetTransactionStatus;
+use soroban_client::transaction::Account;
+use soroban_client::transaction::TransactionBehavior;
+use soroban_client::transaction_builder::TransactionBuilder;
+use soroban_client::transaction_builder::TransactionBuilderBehavior;
+use soroban_client::transaction_builder::TIMEOUT_INFINITE;
+use soroban_client::{keypair::Keypair, server::Server};
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::time::Duration;
 
 #[tokio::main]
@@ -25,8 +25,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             allow_http: None,
             timeout: Some(1000),
             headers: None,
-        }
-    );
+        },
+    )
+    .expect("Cannot create Server");
 
     // Set up source account
     let source_secret_key = "SCZQNYPL4LIZWJBM45R3MBMYX4PXRBZJYJGFI6EPBCRGJTVQW2SEDYO2"; // GDIIRYKAHQJJEGC6DAIWTSDT5TX6OASPT3BE4QO72DXFBR7W43HKUHCL
@@ -36,27 +37,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get account information from server
     let account_data = server.get_account(source_public_key).await?;
     let source_account = Rc::new(RefCell::new(
-        Account::new(source_public_key, &account_data.sequence_number()).unwrap()
+        Account::new(source_public_key, &account_data.sequence_number()).unwrap(),
     ));
 
     // Contract interaction transaction
     let contract_id = "CAZWWALXKM4OC7FIQZNMZXXZM3Y2ENK3IDKQFU5RLG5VORTUU5ZWW5QY";
     let contract = contract::Contracts::new(contract_id).unwrap();
-    
-    let mut contract_tx = TransactionBuilder::new(
-        source_account.clone(),
-        Networks::testnet(),
-        None
-    )
-    .fee(1000000_u32)
-    .add_operation(contract.call("increment", None))
-    .set_timeout(TIMEOUT_INFINITE)?
-    .build();
 
-    contract_tx = server.prepare_transaction(contract_tx, Some(Networks::testnet())).await.unwrap();
+    let mut contract_tx =
+        TransactionBuilder::new(source_account.clone(), Networks::testnet(), None)
+            .fee(1000000_u32)
+            .add_operation(contract.call("increment", None))
+            .set_timeout(TIMEOUT_INFINITE)?
+            .build();
+
+    contract_tx = server
+        .prepare_transaction(contract_tx, Some(Networks::testnet()))
+        .await
+        .unwrap();
     // let before_signing = contract_tx.to_envelope().unwrap().to_xdr_base64(Limits::none());
     // println!("Before Signing {:?}", before_signing);
-    
+
     // Sign the contract transaction
     contract_tx.sign(&[source_keypair.clone()]);
     // let after_signing = contract_tx.to_envelope().unwrap().to_xdr_base64(Limits::none());
@@ -66,10 +67,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(response) => {
             println!("Transaction sent successfully");
             println!("Transaction hash: {}", response.base.hash);
-            
+
             // Start polling for transaction completion
             let hash = response.base.hash.clone();
-            
+
             loop {
                 match server.get_transaction(&hash).await {
                     Ok(GetTransactionResponse::Successful(success_info)) => {
@@ -98,7 +99,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     break;
                                 }
                                 GetTransactionStatus::NOT_FOUND => {
-                                    println!("Waiting for transaction confirmation... Latest ledger: {}", base.latestLedger);
+                                    println!(
+                                        "Waiting for transaction confirmation... Latest ledger: {}",
+                                        base.latestLedger
+                                    );
                                     tokio::time::sleep(Duration::from_secs(1)).await;
                                     continue;
                                 }
@@ -106,11 +110,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                     Ok(GetTransactionResponse::Failed(failed_info)) => {
-                        eprintln!("Transaction failed. Latest ledger: {}", failed_info.base.latestLedger);
+                        eprintln!(
+                            "Transaction failed. Latest ledger: {}",
+                            failed_info.base.latestLedger
+                        );
                         break;
                     }
                     Ok(GetTransactionResponse::Missing(missing_info)) => {
-                        println!("Transaction not found. Latest ledger: {}", missing_info.base.latestLedger);
+                        println!(
+                            "Transaction not found. Latest ledger: {}",
+                            missing_info.base.latestLedger
+                        );
                         println!("Waiting for transaction confirmation...");
                         tokio::time::sleep(Duration::from_secs(1)).await;
                         continue;
@@ -129,3 +139,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
