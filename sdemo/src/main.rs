@@ -4,8 +4,8 @@ use soroban_client::contract::ContractBehavior;
 use soroban_client::keypair::KeypairBehavior;
 use soroban_client::network::{NetworkPassphrase, Networks};
 use soroban_client::server::Options;
-use soroban_client::soroban_rpc::soroban_rpc::GetTransactionResponse;
-use soroban_client::soroban_rpc::soroban_rpc::GetTransactionStatus;
+use soroban_client::soroban_rpc::GetTransactionResponse;
+use soroban_client::soroban_rpc::GetTransactionStatus;
 use soroban_client::transaction::Account;
 use soroban_client::transaction::TransactionBehavior;
 use soroban_client::transaction_builder::TransactionBuilder;
@@ -52,7 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .build();
 
     contract_tx = server
-        .prepare_transaction(contract_tx, Some(Networks::testnet()))
+        .prepare_transaction(contract_tx, Networks::testnet())
         .await
         .unwrap();
     // let before_signing = contract_tx.to_envelope().unwrap().to_xdr_base64(Limits::none());
@@ -139,4 +139,3 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-

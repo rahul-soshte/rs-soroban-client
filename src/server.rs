@@ -1,14 +1,9 @@
+use crate::error::*;
 use crate::http_client::create_client;
-use crate::soroban_rpc::soroban_rpc::{
-    self, GetAnyTransactionResponse, GetFailedTransactionResponse, GetHealtWrapperResponse,
-    GetLatestLedgerResponse, GetLedgerEntriesResponseWrapper, GetMissingTransactionResponse,
-    GetNetworkResponseWrapper, GetSuccessfulTransactionResponse, GetTransactionResponse,
-    GetTransactionStatus, JsonRpcResponse, JsonRpcSimulateResponse, LedgerEntryResult,
-    RawGetTransactionResponseWrapper, RawSimulateTransactionResponse, SendTransactionResponse,
-};
+use crate::jsonrpc::post;
+use crate::soroban_rpc::*;
 use crate::transaction::assemble_transaction;
 use crate::transaction::SimulationResponse::Raw;
-use crate::{jsonrpc::post, soroban_rpc::soroban_rpc::EventFilter};
 use futures::TryFutureExt;
 use http::Uri;
 use serde::{Deserialize, Serialize};
@@ -27,7 +22,6 @@ use stellar_baselib::xdr::next::{
     TransactionEnvelope, TransactionMeta, TransactionResult,
 };
 use stellar_baselib::xdr::next::{LedgerEntryData, LedgerKey, LedgerKeyAccount, ReadXdr, WriteXdr};
-use thiserror::Error;
 pub const SUBMIT_TRANSACTION_TIMEOUT: u32 = 60 * 1000;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -69,67 +63,23 @@ pub struct ResourceLeeway {
     pub cpu_instructions: u64,
 }
 
-impl Default for GetSuccessfulTransactionResponse {
-    fn default() -> Self {
-        Self {
-            base: None,
-            ledger: None,
-            createdAt: None,
-            applicationOrder: None,
-            feeBump: None,
-            envelopeXdr: None,
-            resultXdr: None,
-            resultMetaXdr: None,
-            returnValue: None,
-        }
-    }
-}
-
-#[derive(Error, Debug)]
-pub enum ServerError {
-    #[error(transparent)]
-    InvalidRpc(#[from] InvalidRpcUrl),
-    #[error("XdrError")]
-    XdrError,
-    #[error("NetworkError")]
-    NetworkError,
-    #[error("AccountError")]
-    AccountNotFound,
-    #[error("ContractError")]
-    ContractDataNotFound,
-    #[error("TransactionError")]
-    TransactionError, // temporary
-}
-
-#[derive(Error, Debug)]
-pub enum InvalidRpcUrl {
-    #[error("The RPC Url scheme should be http or https")]
-    NotHttpScheme,
-    #[error("Http scheme requires the option allow_http: true")]
-    UnsecureHttpNotAllowed,
-    #[error(transparent)]
-    InvalidUri(#[from] http::uri::InvalidUri),
-}
-
 impl Server {
-    pub fn new(server_url: &str, opts: Options) -> Result<Self, ServerError> {
+    pub fn new(server_url: &str, opts: Options) -> Result<Self, Error> {
         let server_url = Uri::from_str(server_url)
-            .map_err(|e| ServerError::InvalidRpc(InvalidRpcUrl::InvalidUri(e)))?;
+            .map_err(|e| Error::InvalidRpc(InvalidRpcUrl::InvalidUri(e)))?;
 
         let allow_http = opts.allow_http.unwrap_or(false);
         match server_url.scheme() {
             Some(s) if s.as_str() == "http" => {
                 if !allow_http {
-                    return Err(ServerError::InvalidRpc(
-                        InvalidRpcUrl::UnsecureHttpNotAllowed,
-                    ));
+                    return Err(Error::InvalidRpc(InvalidRpcUrl::UnsecureHttpNotAllowed));
                 }
             }
             Some(s) if s.as_str() == "https" => {
                 // all good
             }
             _ => {
-                return Err(ServerError::InvalidRpc(InvalidRpcUrl::NotHttpScheme));
+                return Err(Error::InvalidRpc(InvalidRpcUrl::NotHttpScheme));
             }
         }
 
@@ -142,13 +92,10 @@ impl Server {
     pub async fn get_ledger_entries(
         &self,
         keys: Vec<LedgerKey>,
-    ) -> Result<soroban_rpc::GetLedgerEntriesResponseWrapper, ServerError> {
-        let keys: Result<Vec<String>, ServerError> = keys
+    ) -> Result<GetLedgerEntriesResponseWrapper, Error> {
+        let keys: Result<Vec<String>, Error> = keys
             .into_iter()
-            .map(|k| {
-                k.to_xdr_base64(Limits::none())
-                    .map_err(|_| ServerError::XdrError)
-            })
+            .map(|k| k.to_xdr_base64(Limits::none()).map_err(|_| Error::XdrError))
             .collect();
 
         match keys {
@@ -168,39 +115,39 @@ impl Server {
                     .json(&payload)
                     .send()
                     .await
-                    .map_err(|_| ServerError::NetworkError)?
+                    .map_err(|_| Error::NetworkError)?
                     .json::<GetLedgerEntriesResponseWrapper>()
                     .await
-                    .map_err(|_| ServerError::NetworkError)
+                    .map_err(|_| Error::NetworkError)
             }
             Err(err) => Err(err),
         }
     }
 
-    pub async fn get_account(&self, address: &str) -> Result<Account, ServerError> {
+    pub async fn get_account(&self, address: &str) -> Result<Account, Error> {
         let account_id = stellar_baselib::keypair::Keypair::from_public_key(address)
-            .map_err(|_| ServerError::AccountNotFound)?
+            .map_err(|_| Error::AccountNotFound)?
             .xdr_account_id();
         let ledger_key = LedgerKey::Account(LedgerKeyAccount { account_id });
 
         let resp = self.get_ledger_entries(vec![ledger_key]).await?;
         let entries = resp.result.entries.unwrap_or_default();
         if entries.is_empty() {
-            return Err(ServerError::AccountNotFound);
+            return Err(Error::AccountNotFound);
         }
 
         let ledger_entry_data = &entries[0].xdr;
-        match LedgerEntryData::from_xdr_base64(ledger_entry_data, Limits::none())
-            .map_err(|_| ServerError::XdrError)?
+        if let LedgerEntryData::Account(account_entry) =
+            LedgerEntryData::from_xdr_base64(ledger_entry_data, Limits::none())
+                .map_err(|_| Error::XdrError)?
         {
-            LedgerEntryData::Account(account_entry) => {
-                Ok(Account::new(address, &account_entry.seq_num.0.to_string()).unwrap())
-            }
-            _ => Err(ServerError::AccountNotFound),
+            Ok(Account::new(address, &account_entry.seq_num.0.to_string()).unwrap())
+        } else {
+            Err(Error::AccountNotFound)
         }
     }
 
-    pub async fn get_health(&self) -> Result<GetHealtWrapperResponse, ServerError> {
+    pub async fn get_health(&self) -> Result<GetHealtWrapperResponse, Error> {
         let payload = json!({
             "jsonrpc": "2.0",
             "id": 1,
@@ -212,14 +159,14 @@ impl Server {
             .header("Content-Type", "application/json")
             .json(&payload)
             .send()
-            .map_err(|_| ServerError::NetworkError)
+            .map_err(|_| Error::NetworkError)
             .await?
             .json::<GetHealtWrapperResponse>()
-            .map_err(|_| ServerError::NetworkError)
+            .map_err(|_| Error::NetworkError)
             .await
     }
 
-    pub async fn get_network(&self) -> Result<GetNetworkResponseWrapper, ServerError> {
+    pub async fn get_network(&self) -> Result<GetNetworkResponseWrapper, Error> {
         let payload = json!({
             "jsonrpc": "2.0",
             "id": 1,
@@ -231,20 +178,20 @@ impl Server {
             .header("Content-Type", "application/json")
             .json(&payload)
             .send()
-            .map_err(|_| ServerError::NetworkError)
+            .map_err(|_| Error::NetworkError)
             .await?
             .json::<GetNetworkResponseWrapper>()
-            .map_err(|_| ServerError::NetworkError)
+            .map_err(|_| Error::NetworkError)
             .await
     }
 
-    pub async fn get_latest_ledger(&self) -> Result<GetLatestLedgerResponse, ServerError> {
-        post::<soroban_rpc::GetLatestLedgerResponse>(
+    pub async fn get_latest_ledger(&self) -> Result<GetLatestLedgerResponse, Error> {
+        post::<GetLatestLedgerResponse>(
             &self.server_url.to_string(),
             "getLatestLedger",
             HashMap::new(),
         )
-        .map_err(|_| ServerError::NetworkError)
+        .map_err(|_| Error::NetworkError)
         .await
     }
 
@@ -252,12 +199,12 @@ impl Server {
         &self,
         transaction: Transaction,
         addl_resources: Option<ResourceLeeway>,
-    ) -> Result<RawSimulateTransactionResponse, ServerError> {
+    ) -> Result<RawSimulateTransactionResponse, Error> {
         let transaction_xdr = transaction
             .to_envelope()
-            .map_err(|_| ServerError::TransactionError)?
+            .map_err(|_| Error::TransactionError)?
             .to_xdr_base64(Limits::none())
-            .map_err(|_| ServerError::XdrError)?;
+            .map_err(|_| Error::XdrError)?;
 
         let mut params = json!({
             "transaction": transaction_xdr
@@ -286,13 +233,11 @@ impl Server {
             .header("Content-Type", "application/json")
             .json(&payload)
             .send()
-            .map_err(|_| ServerError::NetworkError)
+            .map_err(|_| Error::NetworkError)
             .await?;
 
-        let result: JsonRpcSimulateResponse = response
-            .json()
-            .map_err(|_| ServerError::NetworkError)
-            .await?;
+        let result: JsonRpcSimulateResponse =
+            response.json().map_err(|_| Error::NetworkError).await?;
         Ok(result.result)
     }
 
@@ -301,13 +246,14 @@ impl Server {
         contract: &str,
         key: ScVal,
         durability: Durability,
-    ) -> Result<LedgerEntryResult, ServerError> {
+    ) -> Result<LedgerEntryResult, Error> {
         let hex_contract_val = &hex::encode(Sha256Hasher::hash(contract.as_bytes()));
         let hex_id = hex_contract_val.as_bytes();
         let mut array = [0u8; 32];
         array.copy_from_slice(&hex_id[0..32]);
 
-        let sc_address = ScAddress::Contract(Hash::from_str(hex_contract_val).unwrap());
+        let sc_address =
+            ScAddress::Contract(Hash::from_str(hex_contract_val).map_err(|_| Error::XdrError)?);
 
         let contract_key = LedgerKey::ContractData(LedgerKeyContractData {
             key: key.clone(),
@@ -319,13 +265,18 @@ impl Server {
 
         let response = self.get_ledger_entries(val).await?;
 
-        match response.result.entries.unwrap().first() {
-            Some(entry) => Ok(entry.clone()),
-            None => Err(ServerError::ContractDataNotFound),
+        if let Some(entries) = response.result.entries {
+            if let Some(entry) = entries.first() {
+                Ok(entry.clone())
+            } else {
+                Err(Error::ContractDataNotFound)
+            }
+        } else {
+            Err(Error::ContractDataNotFound)
         }
     }
 
-    pub async fn get_transaction(&self, hash: &str) -> Result<GetTransactionResponse, ServerError> {
+    pub async fn get_transaction(&self, hash: &str) -> Result<GetTransactionResponse, Error> {
         let payload = json!({
             "jsonrpc": "2.0",
             "id": 1,
@@ -341,10 +292,10 @@ impl Server {
             .header("Content-Type", "application/json")
             .json(&payload)
             .send()
-            .map_err(|_| ServerError::NetworkError)
+            .map_err(|_| Error::NetworkError)
             .await?
             .json::<RawGetTransactionResponseWrapper>()
-            .map_err(|_| ServerError::NetworkError)
+            .map_err(|_| Error::NetworkError)
             .await?;
 
         let mut success_info = GetSuccessfulTransactionResponse {
@@ -367,7 +318,7 @@ impl Server {
 
             // Handle optional createdAt
             if let Some(created_at) = raw.result.createdAt {
-                success_info.createdAt = Some(i32::from_str(&created_at).unwrap());
+                success_info.createdAt = Some(i32::from_str(&created_at).unwrap_or(-1));
             }
 
             // Handle optional envelopeXdr
@@ -400,9 +351,11 @@ impl Server {
             let base = GetAnyTransactionResponse {
                 status: raw.result.status,
                 latestLedger: raw.result.latestLedger,
-                latestLedgerCloseTime: i32::from_str(&raw.result.latestLedgerCloseTime).unwrap(),
+                latestLedgerCloseTime: i32::from_str(&raw.result.latestLedgerCloseTime)
+                    .unwrap_or(-1),
                 oldestLedger: raw.result.oldestLedger,
-                oldestLedgerCloseTime: i32::from_str(&raw.result.oldestLedgerCloseTime).unwrap(),
+                oldestLedgerCloseTime: i32::from_str(&raw.result.oldestLedgerCloseTime)
+                    .unwrap_or(-1),
             };
             success_info.base = Some(base);
 
@@ -411,9 +364,11 @@ impl Server {
             let base = GetAnyTransactionResponse {
                 status: raw.result.status,
                 latestLedger: raw.result.latestLedger,
-                latestLedgerCloseTime: i32::from_str(&raw.result.latestLedgerCloseTime).unwrap(),
+                latestLedgerCloseTime: i32::from_str(&raw.result.latestLedgerCloseTime)
+                    .unwrap_or(-1),
                 oldestLedger: raw.result.oldestLedger,
-                oldestLedgerCloseTime: i32::from_str(&raw.result.oldestLedgerCloseTime).unwrap(),
+                oldestLedgerCloseTime: i32::from_str(&raw.result.oldestLedgerCloseTime)
+                    .unwrap_or(-1),
             };
             Ok(GetTransactionResponse::Missing(
                 GetMissingTransactionResponse { base },
@@ -422,9 +377,11 @@ impl Server {
             let base = GetAnyTransactionResponse {
                 status: raw.result.status,
                 latestLedger: raw.result.latestLedger,
-                latestLedgerCloseTime: i32::from_str(&raw.result.latestLedgerCloseTime).unwrap(),
+                latestLedgerCloseTime: i32::from_str(&raw.result.latestLedgerCloseTime)
+                    .unwrap_or(-1),
                 oldestLedger: raw.result.oldestLedger,
-                oldestLedgerCloseTime: i32::from_str(&raw.result.oldestLedgerCloseTime).unwrap(),
+                oldestLedgerCloseTime: i32::from_str(&raw.result.oldestLedgerCloseTime)
+                    .unwrap_or(-1),
             };
             Ok(GetTransactionResponse::Failed(
                 GetFailedTransactionResponse { base },
@@ -435,27 +392,22 @@ impl Server {
     pub async fn prepare_transaction(
         &self,
         transaction: Transaction,
-        network_passphrase: Option<&str>,
-    ) -> Result<Transaction, ServerError> {
+        network_passphrase: &str,
+    ) -> Result<Transaction, Error> {
         let sim_response = self.simulate_transaction(transaction.clone(), None).await?;
 
-        //TODO: Error Handling
-        Ok(
-            assemble_transaction(transaction, network_passphrase.unwrap(), Raw(sim_response))
-                .unwrap()
-                .build(),
-        )
+        Ok(assemble_transaction(transaction, network_passphrase, Raw(sim_response))?.build())
     }
 
     pub async fn send_transaction(
         &self,
         transaction: Transaction,
-    ) -> Result<SendTransactionResponse, ServerError> {
+    ) -> Result<SendTransactionResponse, Error> {
         let transaction_xdr = transaction
             .to_envelope()
-            .map_err(|_| ServerError::TransactionError)?
+            .map_err(|_| Error::TransactionError)?
             .to_xdr_base64(Limits::none())
-            .map_err(|_| ServerError::XdrError)?;
+            .map_err(|_| Error::XdrError)?;
 
         let payload = json!({
             "jsonrpc": "2.0",
@@ -472,13 +424,10 @@ impl Server {
             .header("Content-Type", "application/json")
             .json(&payload)
             .send()
-            .map_err(|_| ServerError::NetworkError)
+            .map_err(|_| Error::NetworkError)
             .await?;
 
-        let result: JsonRpcResponse = response
-            .json()
-            .map_err(|_| ServerError::NetworkError)
-            .await?;
+        let result: JsonRpcResponse = response.json().map_err(|_| Error::NetworkError).await?;
 
         /*Not sure why this is here
                 // If error result is present, decode it
@@ -537,7 +486,7 @@ impl Server {
 #[cfg(test)]
 mod test {
 
-    use crate::server::{InvalidRpcUrl, ServerError};
+    use crate::server::{Error, InvalidRpcUrl};
 
     use super::Server;
 
@@ -563,7 +512,7 @@ mod test {
         );
         assert!(matches!(
             s2.err(),
-            Some(ServerError::InvalidRpc(InvalidRpcUrl::NotHttpScheme)),
+            Some(Error::InvalidRpc(InvalidRpcUrl::NotHttpScheme)),
         ));
 
         let s3 = Server::new(
@@ -576,7 +525,7 @@ mod test {
         );
         assert!(matches!(
             s3.err(),
-            Some(ServerError::InvalidRpc(InvalidRpcUrl::NotHttpScheme)),
+            Some(Error::InvalidRpc(InvalidRpcUrl::NotHttpScheme)),
         ));
 
         let s4 = Server::new(
@@ -599,7 +548,7 @@ mod test {
         );
         assert!(matches!(
             s5.err(),
-            Some(ServerError::InvalidRpc(InvalidRpcUrl::InvalidUri(_))),
+            Some(Error::InvalidRpc(InvalidRpcUrl::InvalidUri(_))),
         ));
 
         let s6 = Server::new(
@@ -612,9 +561,7 @@ mod test {
         );
         assert!(matches!(
             s6.err(),
-            Some(ServerError::InvalidRpc(
-                InvalidRpcUrl::UnsecureHttpNotAllowed
-            )),
+            Some(Error::InvalidRpc(InvalidRpcUrl::UnsecureHttpNotAllowed)),
         ));
     }
 }
