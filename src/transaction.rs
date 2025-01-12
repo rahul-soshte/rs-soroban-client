@@ -7,20 +7,20 @@ use crate::soroban_rpc::soroban_rpc::{
     SimulateTransactionResponse, SimulateTransactionRestoreResponse,
     SimulateTransactionSuccessResponse,
 };
-use stellar_baselib::account::AccountBehavior;
-use stellar_baselib::transaction_builder::TransactionBuilderBehavior;
-pub use stellar_baselib::{
+use stellar_baselib::{
     account::Account,
+    account::AccountBehavior,
     soroban_data_builder::{self, SorobanDataBuilder},
     transaction::Transaction,
-    transaction::TransactionBehavior,
     transaction_builder::TransactionBuilder,
+    transaction_builder::TransactionBuilderBehavior,
+    xdr::{
+        DiagnosticEvent, Limits, OperationBody, OperationType, ReadXdr, ScVal,
+        SorobanAuthorizationEntry, VecM,
+    },
 };
 
 use stellar_baselib::soroban_data_builder::SorobanDataBuilderBehavior;
-use stellar_baselib::xdr::next::{
-    DiagnosticEvent, Limits, ReadXdr, ScVal, SorobanAuthorizationEntry,
-};
 
 // use stellar_baselib::operation::Operation
 
@@ -53,27 +53,24 @@ pub fn assemble_transaction(
     // Calculate fees
     let classic_fee_num = raw.fee;
 
-    let (min_resource_fee, soroban_tx_data, auth): (
-        _,
-        _,
-        Option<stellar_baselib::xdr::next::VecM<SorobanAuthorizationEntry>>,
-    ) = match &success {
-        SimulateTransactionResponse::Success(response) => {
-            //
-            (
-                response.min_resource_fee.parse::<u32>().unwrap_or(0),
-                response.transaction_data.build(),
-                response.result.as_ref().map(|result| {
-                    result
-                        .auth
-                        .clone()
-                        .try_into()
-                        .expect("Conversion to VecM failed")
-                }),
-            )
-        }
-        _ => return Err("Simulation result is not a success".to_string()),
-    };
+    let (min_resource_fee, soroban_tx_data, auth): (_, _, Option<VecM<SorobanAuthorizationEntry>>) =
+        match &success {
+            SimulateTransactionResponse::Success(response) => {
+                //
+                (
+                    response.min_resource_fee.parse::<u32>().unwrap_or(0),
+                    response.transaction_data.build(),
+                    response.result.as_ref().map(|result| {
+                        result
+                            .auth
+                            .clone()
+                            .try_into()
+                            .expect("Conversion to VecM failed")
+                    }),
+                )
+            }
+            _ => return Err("Simulation result is not a success".to_string()),
+        };
 
     // Create a transaction builder with updated fees and Soroban data
     let source_acc = Rc::new(RefCell::new(
@@ -93,10 +90,7 @@ pub fn assemble_transaction(
 
     // Process the operation
     if let Some(ops) = raw.operations {
-        if let stellar_baselib::xdr::next::OperationBody::InvokeHostFunction(
-            invoke_host_function_op,
-        ) = ops[0].clone().body
-        {
+        if let OperationBody::InvokeHostFunction(invoke_host_function_op) = ops[0].clone().body {
             tx_builder.add_operation(
                 stellar_baselib::operation::Operation::invoke_host_function(
                     invoke_host_function_op.host_function,
@@ -229,9 +223,9 @@ fn is_soroban_transaction(tx: &Transaction) -> bool {
             let op = &operations[0];
             let valid = matches!(
                 op.body.discriminant(),
-                stellar_baselib::xdr::next::OperationType::InvokeHostFunction
-                    | stellar_baselib::xdr::next::OperationType::ExtendFootprintTtl
-                    | stellar_baselib::xdr::next::OperationType::RestoreFootprint
+                OperationType::InvokeHostFunction
+                    | OperationType::ExtendFootprintTtl
+                    | OperationType::RestoreFootprint
             );
             return valid;
         }
@@ -252,7 +246,7 @@ mod test {
     use stellar_baselib::{
         account::{Account, AccountBehavior},
         transaction_builder::{TransactionBuilder, TransactionBuilderBehavior},
-        xdr::next::{
+        xdr::{
             AccountId, CreateAccountOp, Hash, HostFunction, InvokeContractArgs,
             InvokeHostFunctionOp, Operation, OperationBody, PublicKey, ScAddress, ScSymbol, ScVal,
             SorobanAuthorizationEntry, StringM, Uint256, VecM,
