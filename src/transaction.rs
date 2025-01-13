@@ -1,12 +1,7 @@
 use core::panic;
 use std::{cell::RefCell, rc::Rc};
 
-use crate::soroban_rpc::soroban_rpc::{
-    is_simulation_success, BaseSimulateTransactionResponse, RawSimulateTransactionResponse,
-    RestorePreamble, SimulateHostFunctionResult, SimulateTransactionErrorResponse,
-    SimulateTransactionResponse, SimulateTransactionRestoreResponse,
-    SimulateTransactionSuccessResponse,
-};
+use crate::{error::Error, soroban_rpc::*};
 use stellar_baselib::account::AccountBehavior;
 use stellar_baselib::transaction_builder::TransactionBuilderBehavior;
 pub use stellar_baselib::{
@@ -34,52 +29,51 @@ pub fn assemble_transaction(
     raw: Transaction,
     network_passphrase: &str,
     simulation: SimulationResponse,
-) -> Result<TransactionBuilder, String> {
+) -> Result<TransactionBuilder, Error> {
     // Ensure the transaction is a valid Soroban transaction
     if !is_soroban_transaction(&raw) {
-        return Err("unsupported transaction: must contain exactly one invokeHostFunction, extendFootprintTtl, or restoreFootprint operation".to_string());
+        return Err(Error::InvalidSorobanTransaction);
     }
 
     // Parse simulation response and ensure it's successful
-    let success = parse_raw_simulation(match simulation {
+    let Ok(success) = parse_raw_simulation(match simulation {
         SimulationResponse::Normal(sim) => Either::Left(sim),
         SimulationResponse::Raw(raw_sim) => Either::Right(raw_sim),
-    });
+    }) else {
+        return Err(Error::SimulationFailed);
+    };
 
     if !is_simulation_success(&success) {
-        return Err(format!("simulation incorrect: {:?}", success));
+        return Err(Error::SimulationFailed);
     }
 
     // Calculate fees
     let classic_fee_num = raw.fee;
+    let SimulateTransactionResponse::Success(response) = &success else {
+        return Err(Error::SimulationFailed);
+    };
 
     let (min_resource_fee, soroban_tx_data, auth): (
         _,
         _,
         Option<stellar_baselib::xdr::next::VecM<SorobanAuthorizationEntry>>,
-    ) = match &success {
-        SimulateTransactionResponse::Success(response) => {
-            //
-            (
-                response.min_resource_fee.parse::<u32>().unwrap_or(0),
-                response.transaction_data.build(),
-                response.result.as_ref().map(|result| {
-                    result
-                        .auth
-                        .clone()
-                        .try_into()
-                        .expect("Conversion to VecM failed")
-                }),
-            )
-        }
-        _ => return Err("Simulation result is not a success".to_string()),
-    };
+    ) = (
+        response.min_resource_fee.parse::<u32>().unwrap_or(0),
+        response.transaction_data.build(),
+        response.result.as_ref().map(|result| {
+            result
+                .auth
+                .clone()
+                .try_into()
+                .expect("Conversion to VecM failed")
+        }),
+    );
 
     // Create a transaction builder with updated fees and Soroban data
     let source_acc = Rc::new(RefCell::new(
         Account::new(
-            &raw.source.ok_or("missing source account")?,
-            &raw.sequence.unwrap(),
+            &raw.source.ok_or(Error::AccountNotFound)?,
+            &raw.sequence.ok_or(Error::AccountNotFound)?,
         )
         .expect("Failed to copy source account data"),
     ));
@@ -103,7 +97,7 @@ pub fn assemble_transaction(
                     auth,
                     None,
                 )
-                .unwrap(),
+                .map_err(|_| Error::TransactionError)?,
             );
         }
     }
@@ -113,11 +107,11 @@ pub fn assemble_transaction(
 
 pub fn parse_raw_simulation(
     sim: Either<SimulateTransactionResponse, RawSimulateTransactionResponse>,
-) -> SimulateTransactionResponse {
+) -> Result<SimulateTransactionResponse, Error> {
     if !is_simulation_raw(sim.clone()) {
         match sim {
-            Either::Left(x) => return x.clone(),
-            Either::Right(_) => panic!("Invalid"),
+            Either::Left(x) => return Ok(x.clone()),
+            Either::Right(_) => return Err(Error::TransactionError),
         }
     }
 
@@ -142,26 +136,28 @@ pub fn parse_raw_simulation(
     match &sim {
         Either::Right(raw) => {
             if let Some(err) = &raw.error {
-                SimulateTransactionResponse::Error(SimulateTransactionErrorResponse {
-                    base,
-                    error: err.to_string(),
-                })
+                Ok(SimulateTransactionResponse::Error(
+                    SimulateTransactionErrorResponse {
+                        base,
+                        error: err.to_string(),
+                    },
+                ))
             } else {
                 parse_successful(raw.clone(), base)
             }
         }
-        _ => panic!("Unexpected type"), // or return some error
+        _ => Err(Error::TransactionError),
     }
 }
 
 fn parse_successful(
     sim: RawSimulateTransactionResponse,
     partial: BaseSimulateTransactionResponse,
-) -> SimulateTransactionResponse {
+) -> Result<SimulateTransactionResponse, Error> {
     let success_data = {
         let mut base = SimulateTransactionSuccessResponse {
             transaction_data: SorobanDataBuilder::new(Some(soroban_data_builder::Either::Left(
-                sim.transactionData.unwrap(),
+                sim.transactionData.ok_or(Error::TransactionError)?,
             ))),
             min_resource_fee: sim.minResourceFee.unwrap(),
             // cost: sim.cost.unwrap(),
@@ -180,11 +176,12 @@ fn parse_successful(
                         .iter()
                         .map(|entry| {
                             SorobanAuthorizationEntry::from_xdr_base64(entry, Limits::none())
-                                .unwrap()
+                                .expect("Not a SorobanAuthorizationEntry")
                         })
                         .collect(),
                     retval: if let Some(xdr) = &results[0].xdr {
-                        ScVal::from_xdr_base64(xdr, Limits::none()).unwrap() // assuming ScVal is defined elsewhere
+                        // assuming ScVal is defined elsewhere
+                        ScVal::from_xdr_base64(xdr, Limits::none()).expect("Not a ScVal")
                     } else {
                         ScVal::Void
                     },
@@ -195,7 +192,7 @@ fn parse_successful(
         base
     };
 
-    match &sim.restorePreamble {
+    let r = match &sim.restorePreamble {
         Some(preamble) => {
             SimulateTransactionResponse::Restore(SimulateTransactionRestoreResponse {
                 restore_preamble: RestorePreamble {
@@ -207,7 +204,8 @@ fn parse_successful(
             })
         }
         _ => SimulateTransactionResponse::Success(success_data),
-    }
+    };
+    Ok(r)
 }
 
 pub fn is_simulation_raw(

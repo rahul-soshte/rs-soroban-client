@@ -1,6 +1,7 @@
 //! A rust client library
 //! for interacting with Soroban smart contracts on the stellar blockchain
 pub mod contract_spec;
+pub mod error;
 pub mod friendbot;
 pub mod http_client;
 pub mod jsonrpc;
