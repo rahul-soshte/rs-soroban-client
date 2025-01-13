@@ -1,4 +1,4 @@
-use stellar_baselib::xdr::next::{ScSpecType, ScVal};
+use stellar_baselib::xdr::{ScSpecType, ScVal};
 
 pub fn native_to_sc_val(input: Vec<&str>, ty: ScSpecType) -> Result<ScVal, &'static str> {
     match ty {

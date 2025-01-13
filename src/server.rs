@@ -17,11 +17,11 @@ use stellar_baselib::hashing::Sha256Hasher;
 use stellar_baselib::keypair::KeypairBehavior;
 use stellar_baselib::transaction::{Transaction, TransactionBehavior};
 use stellar_baselib::transaction_builder::TransactionBuilderBehavior;
-use stellar_baselib::xdr::next::{
-    ContractDataDurability, Hash, LedgerKeyContractData, Limits, ScAddress, ScVal,
-    TransactionEnvelope, TransactionMeta, TransactionResult,
+use stellar_baselib::xdr::{
+    ContractDataDurability, DiagnosticEvent, Hash, LedgerEntryChange, LedgerEntryData, LedgerKey,
+    LedgerKeyAccount, LedgerKeyContractData, Limits, ReadXdr, ScAddress, ScVal,
+    TransactionEnvelope, TransactionMeta, TransactionResult, WriteXdr,
 };
-use stellar_baselib::xdr::next::{LedgerEntryData, LedgerKey, LedgerKeyAccount, ReadXdr, WriteXdr};
 pub const SUBMIT_TRANSACTION_TIMEOUT: u32 = 60 * 1000;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -471,7 +471,7 @@ impl Server {
 
         for op in operations {
             for change in op.changes.0.to_vec() {
-                if let stellar_baselib::xdr::next::LedgerEntryChange::Created(x) = change {
+                if let LedgerEntryChange::Created(x) = change {
                     if let LedgerEntryData::Account(ae) = x.data {
                         return Ok(ae.seq_num.0.to_string());
                     }

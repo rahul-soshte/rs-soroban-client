@@ -2,20 +2,20 @@ use core::panic;
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{error::Error, soroban_rpc::*};
-use stellar_baselib::account::AccountBehavior;
-use stellar_baselib::transaction_builder::TransactionBuilderBehavior;
 pub use stellar_baselib::{
     account::Account,
+    account::AccountBehavior,
     soroban_data_builder::{self, SorobanDataBuilder},
     transaction::Transaction,
-    transaction::TransactionBehavior,
     transaction_builder::TransactionBuilder,
+    transaction_builder::TransactionBuilderBehavior,
+    transaction::TransactionBehavior,
+    xdr::{
+        DiagnosticEvent, Limits, OperationBody, OperationType, ReadXdr, ScVal,
+        SorobanAuthorizationEntry, VecM,
+    },
 };
-
 use stellar_baselib::soroban_data_builder::SorobanDataBuilderBehavior;
-use stellar_baselib::xdr::next::{
-    DiagnosticEvent, Limits, ReadXdr, ScVal, SorobanAuthorizationEntry,
-};
 
 // use stellar_baselib::operation::Operation
 
@@ -56,7 +56,7 @@ pub fn assemble_transaction(
     let (min_resource_fee, soroban_tx_data, auth): (
         _,
         _,
-        Option<stellar_baselib::xdr::next::VecM<SorobanAuthorizationEntry>>,
+        Option<stellar_baselib::xdr::VecM<SorobanAuthorizationEntry>>,
     ) = (
         response.min_resource_fee.parse::<u32>().unwrap_or(0),
         response.transaction_data.build(),
@@ -87,10 +87,7 @@ pub fn assemble_transaction(
 
     // Process the operation
     if let Some(ops) = raw.operations {
-        if let stellar_baselib::xdr::next::OperationBody::InvokeHostFunction(
-            invoke_host_function_op,
-        ) = ops[0].clone().body
-        {
+        if let OperationBody::InvokeHostFunction(invoke_host_function_op) = ops[0].clone().body {
             tx_builder.add_operation(
                 stellar_baselib::operation::Operation::invoke_host_function(
                     invoke_host_function_op.host_function,
@@ -227,9 +224,9 @@ fn is_soroban_transaction(tx: &Transaction) -> bool {
             let op = &operations[0];
             let valid = matches!(
                 op.body.discriminant(),
-                stellar_baselib::xdr::next::OperationType::InvokeHostFunction
-                    | stellar_baselib::xdr::next::OperationType::ExtendFootprintTtl
-                    | stellar_baselib::xdr::next::OperationType::RestoreFootprint
+                OperationType::InvokeHostFunction
+                    | OperationType::ExtendFootprintTtl
+                    | OperationType::RestoreFootprint
             );
             return valid;
         }
@@ -250,7 +247,7 @@ mod test {
     use stellar_baselib::{
         account::{Account, AccountBehavior},
         transaction_builder::{TransactionBuilder, TransactionBuilderBehavior},
-        xdr::next::{
+        xdr::{
             AccountId, CreateAccountOp, Hash, HostFunction, InvokeContractArgs,
             InvokeHostFunctionOp, Operation, OperationBody, PublicKey, ScAddress, ScSymbol, ScVal,
             SorobanAuthorizationEntry, StringM, Uint256, VecM,
