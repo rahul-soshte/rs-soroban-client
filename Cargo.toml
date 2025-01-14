@@ -1,6 +1,6 @@
 [package]
 name = "soroban-client"
-version = "0.3.8"
+version = "0.3.9"
 edition = "2021"
 description = "A high-level library Rust client library for interacting with Soroban smart contracts on the Stellar blockchain"
 license = "Apache-2.0"
@@ -13,7 +13,6 @@ authors = ["Rahul Soshte <rahul.soshte47@gmail.com>"]
 
 [dependencies]
 # stellar-baselib = { path = "stellar-baselib" } # Useful for local development, but not for publishing
-stellar-baselib = "0.4.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.11.20", features = ["json"] }
@@ -22,3 +21,8 @@ futures = "0.3"
 hex = "0.4"
 tracing = "0.1.40"
 thiserror = { version = "2.0.9" }
+stellar-baselib = { version = "0.4.6" }
+
+[features]
+default = []  
+next = ["stellar-baselib/next"]  
