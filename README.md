@@ -17,7 +17,7 @@ Add this to your Cargo.toml:
 
 ```toml
 [dependencies]
-soroban-client = "0.3.8"
+soroban-client = "0.3.9"
 ```
 
 And this to your code:
@@ -28,7 +28,7 @@ use soroban_client::*;
 
 ## Crate Docs
 
-([Link](https://docs.rs/soroban-client/0.3.4/soroban_client/))
+([Link](https://docs.rs/soroban-client/latest/soroban_client/))
 
 ## Description
 
