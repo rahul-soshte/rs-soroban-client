@@ -19,8 +19,8 @@ pub enum Id {
 
 #[derive(Debug, Serialize)]
 pub struct Request<T> {
-    jsonrpc: &'static str,
-    id: Id,
+    jsonrpc: String,
+    id: i32,
     method: String,
     params: T,
 }
@@ -33,56 +33,49 @@ pub struct Notification<T> {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub enum Response<T, E = serde_json::Value> {
-    Success {
-        jsonrpc: &'static str,
-        id: Id,
-        result: T,
-    },
-    Error {
-        jsonrpc: &'static str,
-        id: Id,
-        error: Error<E>,
-    },
+pub struct Response<T> {
+    jsonrpc: String,
+    id: i32,
+    result: Option<T>,
+    error: Option<Error>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct Error<E = serde_json::Value> {
+pub struct Error {
     #[allow(dead_code)]
     code: i32,
     #[allow(dead_code)]
     message: Option<String>,
-    #[allow(dead_code)]
-    data: Option<E>,
 }
 
-pub async fn post<T: for<'a> Deserialize<'a>>(
+pub async fn post<T: for<'a> Deserialize<'a> + std::fmt::Debug>(
     url: &str,
     method: &str,
     params: HashMap<String, serde_json::Value>,
 ) -> Result<T, reqwest::Error> {
     let client = Client::new();
     let request = Request {
-        jsonrpc: "2.0",
-        id: Id::Num(1), // TODO: Generate a unique request id
+        jsonrpc: "2.0".into(),
+        id: 1,
         method: method.to_string(),
         params,
     };
 
     let res = client.post(url).json(&request).send().await?;
-
-    let data: T = res.json().await?;
+    //dbg!(&res.text().await);
+    //panic!();
+    let data = res.json::<Response<T>>().await?;
     // println!("Data {:?}", data);
     // Here we ensure that the response status is not an error.
     // If it's an error, it will convert the response into an error type
     // let dc = res.error_for_status_ref()?;
     // TODO: Add Error Check
 
-    Ok(data)
+    let r = data.result;
+    Ok(r.unwrap())
 }
 
-pub async fn post_object<T: for<'a> Deserialize<'a>>(
+pub async fn post_object<T: for<'a> Deserialize<'a> + std::fmt::Debug>(
     url: &str,
     method: &str,
     param: serde_json::Value,

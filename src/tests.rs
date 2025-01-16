@@ -2,8 +2,10 @@ use crate::error::*;
 use crate::server::*;
 use crate::soroban_rpc::GetHealthResponse;
 use crate::soroban_rpc::GetHealthWrapperResponse;
+use crate::soroban_rpc::GetLatestLedgerResponse;
 use serde::Deserialize;
 use serde_json::json;
+use wiremock::matchers;
 use wiremock::matchers::method;
 use wiremock::matchers::path;
 use wiremock::Mock;
@@ -99,6 +101,7 @@ async fn get_health() {
 
     Mock::given(method("POST"))
         .and(path("/"))
+        .and(matchers::body_partial_json(json!({"method": "getHealth"})))
         .respond_with(response)
         .expect(1..)
         .mount(&mock_server)
@@ -123,5 +126,56 @@ async fn get_health() {
         },
     };
 
+    assert_eq!(dbg!(result), expect);
+}
+
+#[tokio::test]
+async fn get_latest_ledger() {
+    let mock_server = MockServer::start().await;
+    let server_url = mock_server.uri();
+
+    let response = ResponseTemplate::new(200).set_body_raw(
+        json!(
+        {
+          "jsonrpc": "2.0",
+          "id": 8675309,
+          "result": {
+            "id": "c73c5eac58a441d4eb733c35253ae85f783e018f7be5ef974258fed067aabb36",
+            "protocolVersion": 20,
+            "sequence": 2539605
+          }
+        }
+            )
+        .to_string()
+        .as_str(),
+        "application/json",
+    );
+
+    Mock::given(method("POST"))
+        .and(path("/"))
+        .and(matchers::body_partial_json(
+            json!({"method": "getLatestLedger"}),
+        ))
+        .respond_with(response)
+        .expect(1..)
+        .mount(&mock_server)
+        .await;
+
+    let s = Server::new(
+        &server_url,
+        Options {
+            allow_http: Some(true),
+            timeout: None,
+            headers: None,
+        },
+    )
+    .unwrap();
+
+    let result = s.get_latest_ledger().await.expect("Should not fail");
+    let expect = GetLatestLedgerResponse {
+        id: "c73c5eac58a441d4eb733c35253ae85f783e018f7be5ef974258fed067aabb36".into(),
+        sequence: 2539605,
+        protocol_version: 20,
+    };
     assert_eq!(dbg!(result), expect);
 }

@@ -89,11 +89,12 @@ pub struct GetNetworkResponse {
     pub protocolVersion: Option<i32>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, PartialEq, Eq)]
 pub struct GetLatestLedgerResponse {
     pub id: String,
     pub sequence: i32,
-    pub protocol_version: String,
+    #[serde(rename = "protocolVersion")]
+    pub protocol_version: u32,
 }
 
 #[derive(Clone, Debug, Deserialize)]
