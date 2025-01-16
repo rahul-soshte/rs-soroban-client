@@ -5,7 +5,15 @@ use crate::soroban_rpc::GetHealthWrapperResponse;
 use crate::soroban_rpc::GetLatestLedgerResponse;
 use crate::soroban_rpc::GetNetworkResponse;
 use crate::soroban_rpc::GetNetworkResponseWrapper;
+use base64::Engine;
 use serde_json::json;
+use stellar_baselib::account::AccountBehavior;
+use stellar_baselib::keypair::Keypair;
+use stellar_baselib::keypair::KeypairBehavior;
+use stellar_baselib::xdr::LedgerKey;
+use stellar_baselib::xdr::LedgerKeyAccount;
+use stellar_baselib::xdr::Limits;
+use stellar_baselib::xdr::WriteXdr;
 use wiremock::matchers;
 use wiremock::matchers::method;
 use wiremock::matchers::path;
@@ -110,16 +118,16 @@ async fn get_health() {
 async fn get_latest_ledger() {
     let request = json!({"method": "getLatestLedger"});
     let response = json!(
-    {
-      "jsonrpc": "2.0",
-      "id": 8675309,
-      "result": {
-        "id": "c73c5eac58a441d4eb733c35253ae85f783e018f7be5ef974258fed067aabb36",
-        "protocolVersion": 20,
-        "sequence": 2539605
-      }
+        {
+            "jsonrpc": "2.0",
+            "id": 8675309,
+            "result": {
+            "id": "c73c5eac58a441d4eb733c35253ae85f783e018f7be5ef974258fed067aabb36",
+            "protocolVersion": 20,
+            "sequence": 2539605
+        }
     }
-        );
+    );
 
     let (s, _m) = get_mocked_server(request, response).await;
     let result = s.get_latest_ledger().await.expect("Should not fail");
@@ -136,15 +144,15 @@ async fn get_network() {
     let request = json!({"method": "getNetwork"});
     let response = json!(
         {
-      "jsonrpc": "2.0",
-      "id": 8675309,
-      "result": {
-        "friendbotUrl": "https://friendbot-testnet.stellar.org/",
-        "passphrase": "Test SDF Network ; September 2015",
-        "protocolVersion": 20
-      }
+            "jsonrpc": "2.0",
+            "id": 8675309,
+            "result": {
+            "friendbotUrl": "https://friendbot-testnet.stellar.org/",
+            "passphrase": "Test SDF Network ; September 2015",
+            "protocolVersion": 20
+        }
     }
-            );
+    );
 
     let (s, _m) = get_mocked_server(request, response).await;
     let result = s.get_network().await.expect("Should not fail");
@@ -158,6 +166,80 @@ async fn get_network() {
         },
     };
     assert_eq!(dbg!(result), expect);
+}
+
+#[tokio::test]
+async fn get_account() {
+    let address = "GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI";
+    let account_id = Keypair::from_public_key(address)
+        .expect("Should not fail")
+        .xdr_account_id();
+    let key = LedgerKey::Account(LedgerKeyAccount { account_id });
+    let account_entry = "AAAAAAAAAABzdv3ojkzWHMD7KUoXhrPx0GH18vHKV0ZfqpMiEblG1g3gtpoE608YAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAADAAAAAAAAAAQAAAAAY9D8iA";
+
+    let value = base64::prelude::BASE64_STANDARD.encode(key.to_xdr(Limits::none()).unwrap());
+    let request = json!(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getLedgerEntries",
+            "params": { "keys": [value] },
+    }
+    );
+    let response = json!(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+            "entries": [
+            {
+                "key": value,
+                "xdr": account_entry,
+                "lastModifiedLedgerSeq": 2552504
+            }
+        ],
+            "latestLedger": 2552990
+        }
+    }
+    );
+
+    let (s, _m) = get_mocked_server(request, response).await;
+    let result = s.get_account(address).await.expect("Should not fail");
+    assert_eq!(result.sequence_number(), "1");
+    assert_eq!(result.account_id(), address);
+}
+
+#[tokio::test]
+async fn get_account_not_found() {
+    let address = "GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI";
+    let account_id = Keypair::from_public_key(address)
+        .expect("Should not fail")
+        .xdr_account_id();
+    let key = LedgerKey::Account(LedgerKeyAccount { account_id });
+
+    let value = base64::prelude::BASE64_STANDARD.encode(key.to_xdr(Limits::none()).unwrap());
+    let request = json!(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getLedgerEntries",
+            "params": { "keys": [value] },
+    }
+    );
+    let response = json!(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+            "entries": null,
+            "latestLedger": 2552990
+        }
+    }
+    );
+
+    let (s, _m) = get_mocked_server(request, response).await;
+    let result = s.get_account(address).await;
+    assert!(matches!(result, Err(Error::AccountNotFound)));
 }
 
 // Create a Server that will reply `response` for a json `request` partially matching

@@ -25,6 +25,7 @@ stellar-baselib = { version = "0.4.6" }
 
 [dev-dependencies]
 tokio = { version = "1.43.0", features = ["macros"] }
+base64 = "0.22.1"
 wiremock = "0.6.2"
 
 [features]
