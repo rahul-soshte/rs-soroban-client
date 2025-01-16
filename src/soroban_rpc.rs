@@ -74,14 +74,14 @@ pub struct RawGetLedgerEntriesResponse {
     pub entries: Option<Vec<RawLedgerEntryResult>>, // pub latest_ledger: i32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct GetNetworkResponseWrapper {
     pub jsonrpc: String,
     pub id: u32,
     pub result: GetNetworkResponse,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, PartialEq, Eq)]
 #[allow(non_snake_case)]
 pub struct GetNetworkResponse {
     pub friendbotUrl: Option<String>,

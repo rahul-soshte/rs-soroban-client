@@ -3,7 +3,8 @@ use crate::server::*;
 use crate::soroban_rpc::GetHealthResponse;
 use crate::soroban_rpc::GetHealthWrapperResponse;
 use crate::soroban_rpc::GetLatestLedgerResponse;
-use serde::Deserialize;
+use crate::soroban_rpc::GetNetworkResponse;
+use crate::soroban_rpc::GetNetworkResponseWrapper;
 use serde_json::json;
 use wiremock::matchers;
 use wiremock::matchers::method;
@@ -126,6 +127,35 @@ async fn get_latest_ledger() {
         id: "c73c5eac58a441d4eb733c35253ae85f783e018f7be5ef974258fed067aabb36".into(),
         sequence: 2539605,
         protocol_version: 20,
+    };
+    assert_eq!(dbg!(result), expect);
+}
+
+#[tokio::test]
+async fn get_network() {
+    let request = json!({"method": "getNetwork"});
+    let response = json!(
+        {
+      "jsonrpc": "2.0",
+      "id": 8675309,
+      "result": {
+        "friendbotUrl": "https://friendbot-testnet.stellar.org/",
+        "passphrase": "Test SDF Network ; September 2015",
+        "protocolVersion": 20
+      }
+    }
+            );
+
+    let (s, _m) = get_mocked_server(request, response).await;
+    let result = s.get_network().await.expect("Should not fail");
+    let expect = GetNetworkResponseWrapper {
+        jsonrpc: "2.0".into(),
+        id: 8675309,
+        result: GetNetworkResponse {
+            friendbotUrl: Some("https://friendbot-testnet.stellar.org/".into()),
+            passphrase: Some("Test SDF Network ; September 2015".into()),
+            protocolVersion: Some(20),
+        },
     };
     assert_eq!(dbg!(result), expect);
 }
