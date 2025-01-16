@@ -24,16 +24,21 @@ pub struct Cost {
     pub mem_bytes: String,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct GetHealtWrapperResponse {
-    jsonrpc: String,
-    id: u32,
-    result: GetHealthResponse,
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+pub struct GetHealthWrapperResponse {
+    pub jsonrpc: String,
+    pub id: u32,
+    pub result: GetHealthResponse,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct GetHealthResponse {
     pub status: String, // Can be an enum if the number of statuses is known
+                        /*
+                        pub latestLedger: u32,
+                        pub oldestLedger: u32,
+                        pub ledgerRetentionWindow: u32,
+                        */
 }
 
 #[derive(Clone, Debug, Deserialize)]

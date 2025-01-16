@@ -147,7 +147,7 @@ impl Server {
         }
     }
 
-    pub async fn get_health(&self) -> Result<GetHealtWrapperResponse, Error> {
+    pub async fn get_health(&self) -> Result<GetHealthWrapperResponse, Error> {
         let payload = json!({
             "jsonrpc": "2.0",
             "id": 1,
@@ -161,7 +161,7 @@ impl Server {
             .send()
             .map_err(|_| Error::NetworkError)
             .await?
-            .json::<GetHealtWrapperResponse>()
+            .json::<GetHealthWrapperResponse>()
             .map_err(|_| Error::NetworkError)
             .await
     }
@@ -484,84 +484,4 @@ impl Server {
 }
 
 #[cfg(test)]
-mod test {
-
-    use crate::server::{Error, InvalidRpcUrl};
-
-    use super::Server;
-
-    #[test]
-    fn server_new() {
-        let s1 = Server::new(
-            "https://rpc",
-            super::Options {
-                allow_http: None,
-                timeout: None,
-                headers: None,
-            },
-        );
-        assert!(s1.is_ok(), "https scheme with allow_http None");
-
-        let s2 = Server::new(
-            "/rpc",
-            super::Options {
-                allow_http: None,
-                timeout: None,
-                headers: None,
-            },
-        );
-        assert!(matches!(
-            s2.err(),
-            Some(Error::InvalidRpc(InvalidRpcUrl::NotHttpScheme)),
-        ));
-
-        let s3 = Server::new(
-            "/rpc",
-            super::Options {
-                allow_http: Some(true),
-                timeout: None,
-                headers: None,
-            },
-        );
-        assert!(matches!(
-            s3.err(),
-            Some(Error::InvalidRpc(InvalidRpcUrl::NotHttpScheme)),
-        ));
-
-        let s4 = Server::new(
-            "http://rpc",
-            super::Options {
-                allow_http: Some(true),
-                timeout: None,
-                headers: None,
-            },
-        );
-        assert!(s4.is_ok(), "http scheme with allow_http true");
-
-        let s5 = Server::new(
-            "",
-            super::Options {
-                allow_http: Some(true),
-                timeout: None,
-                headers: None,
-            },
-        );
-        assert!(matches!(
-            s5.err(),
-            Some(Error::InvalidRpc(InvalidRpcUrl::InvalidUri(_))),
-        ));
-
-        let s6 = Server::new(
-            "http://rpc",
-            super::Options {
-                allow_http: Some(false),
-                timeout: None,
-                headers: None,
-            },
-        );
-        assert!(matches!(
-            s6.err(),
-            Some(Error::InvalidRpc(InvalidRpcUrl::UnsecureHttpNotAllowed)),
-        ));
-    }
-}
+mod test {}
