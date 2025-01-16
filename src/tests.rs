@@ -89,33 +89,9 @@ fn server_new() {
 
 #[tokio::test]
 async fn get_health() {
-    let mock_server = MockServer::start().await;
-    let server_url = mock_server.uri();
-
-    let response = ResponseTemplate::new(200).set_body_raw(
-        json!({"jsonrpc": "2.0", "id": 1, "result": {"status": "healthy"}})
-            .to_string()
-            .as_str(),
-        "application/json",
-    );
-
-    Mock::given(method("POST"))
-        .and(path("/"))
-        .and(matchers::body_partial_json(json!({"method": "getHealth"})))
-        .respond_with(response)
-        .expect(1..)
-        .mount(&mock_server)
-        .await;
-
-    let s = Server::new(
-        &server_url,
-        Options {
-            allow_http: Some(true),
-            timeout: None,
-            headers: None,
-        },
-    )
-    .unwrap();
+    let request = json!({"method": "getHealth"});
+    let response = json!({"jsonrpc": "2.0", "id": 1, "result": {"status": "healthy"}});
+    let (s, _m) = get_mocked_server(request, response).await;
     let result = s.get_health().await.expect("Should not fail");
 
     let expect = GetHealthWrapperResponse {
@@ -131,46 +107,20 @@ async fn get_health() {
 
 #[tokio::test]
 async fn get_latest_ledger() {
-    let mock_server = MockServer::start().await;
-    let server_url = mock_server.uri();
+    let request = json!({"method": "getLatestLedger"});
+    let response = json!(
+    {
+      "jsonrpc": "2.0",
+      "id": 8675309,
+      "result": {
+        "id": "c73c5eac58a441d4eb733c35253ae85f783e018f7be5ef974258fed067aabb36",
+        "protocolVersion": 20,
+        "sequence": 2539605
+      }
+    }
+        );
 
-    let response = ResponseTemplate::new(200).set_body_raw(
-        json!(
-        {
-          "jsonrpc": "2.0",
-          "id": 8675309,
-          "result": {
-            "id": "c73c5eac58a441d4eb733c35253ae85f783e018f7be5ef974258fed067aabb36",
-            "protocolVersion": 20,
-            "sequence": 2539605
-          }
-        }
-            )
-        .to_string()
-        .as_str(),
-        "application/json",
-    );
-
-    Mock::given(method("POST"))
-        .and(path("/"))
-        .and(matchers::body_partial_json(
-            json!({"method": "getLatestLedger"}),
-        ))
-        .respond_with(response)
-        .expect(1..)
-        .mount(&mock_server)
-        .await;
-
-    let s = Server::new(
-        &server_url,
-        Options {
-            allow_http: Some(true),
-            timeout: None,
-            headers: None,
-        },
-    )
-    .unwrap();
-
+    let (s, _m) = get_mocked_server(request, response).await;
     let result = s.get_latest_ledger().await.expect("Should not fail");
     let expect = GetLatestLedgerResponse {
         id: "c73c5eac58a441d4eb733c35253ae85f783e018f7be5ef974258fed067aabb36".into(),
@@ -178,4 +128,34 @@ async fn get_latest_ledger() {
         protocol_version: 20,
     };
     assert_eq!(dbg!(result), expect);
+}
+
+// Create a Server that will reply `response` for a json `request` partially matching
+async fn get_mocked_server(
+    request: serde_json::Value,
+    response: serde_json::Value,
+) -> (Server, MockServer) {
+    let mock_server = MockServer::start().await;
+    let server_url = mock_server.uri();
+
+    let response = ResponseTemplate::new(200).set_body_json(response);
+    Mock::given(method("POST"))
+        .and(path("/"))
+        .and(matchers::body_partial_json(request))
+        .respond_with(response)
+        .expect(1..)
+        .mount(&mock_server)
+        .await;
+
+    let server = Server::new(
+        &server_url,
+        Options {
+            allow_http: Some(true),
+            timeout: None,
+            headers: None,
+        },
+    )
+    .expect("Configuration should not fail");
+
+    (server, mock_server)
 }
