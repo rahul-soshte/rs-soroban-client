@@ -265,7 +265,7 @@ async fn get_ledger_entries() {
     let contract = Address::new(address).unwrap().to_sc_address().unwrap();
     let durability = stellar_baselib::xdr::ContractDataDurability::Persistent;
     let ledger_entry = LedgerEntryData::ContractData(ContractDataEntry {
-        ext: stellar_baselib::xdr::ExtensionPoint::V0,
+        ext: ExtensionPoint::V0,
         contract: contract.clone(),
         durability,
         key: key.clone(),
