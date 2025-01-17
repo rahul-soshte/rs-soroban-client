@@ -8,11 +8,23 @@ use crate::soroban_rpc::GetNetworkResponseWrapper;
 use base64::Engine;
 use serde_json::json;
 use stellar_baselib::account::AccountBehavior;
+use stellar_baselib::address::Address;
+use stellar_baselib::address::AddressTrait;
+use stellar_baselib::hashing;
+use stellar_baselib::hashing::HashingBehavior;
 use stellar_baselib::keypair::Keypair;
 use stellar_baselib::keypair::KeypairBehavior;
+use stellar_baselib::xdr::ContractDataEntry;
+use stellar_baselib::xdr::ExtensionPoint;
+use stellar_baselib::xdr::Hash;
+use stellar_baselib::xdr::LedgerEntryData;
 use stellar_baselib::xdr::LedgerKey;
 use stellar_baselib::xdr::LedgerKeyAccount;
+use stellar_baselib::xdr::LedgerKeyContractData;
 use stellar_baselib::xdr::Limits;
+use stellar_baselib::xdr::ScVal;
+use stellar_baselib::xdr::ScVec;
+use stellar_baselib::xdr::TtlEntry;
 use stellar_baselib::xdr::WriteXdr;
 use wiremock::matchers;
 use wiremock::matchers::method;
@@ -240,6 +252,168 @@ async fn get_account_not_found() {
     let (s, _m) = get_mocked_server(request, response).await;
     let result = s.get_account(address).await;
     assert!(matches!(result, Err(Error::AccountNotFound)));
+}
+
+#[tokio::test]
+async fn get_ledger_entries() {
+    let address = "CCJZ5DGASBWQXR5MPFCJXMBI333XE5U3FSJTNQU7RIKE3P5GN2K2WYD5";
+    let key = ScVal::Vec(Some(ScVec(
+        [ScVal::Symbol("test".try_into().unwrap())]
+            .try_into()
+            .unwrap(),
+    )));
+    let contract = Address::new(address).unwrap().to_sc_address().unwrap();
+    let durability = stellar_baselib::xdr::ContractDataDurability::Persistent;
+    let ledger_entry = LedgerEntryData::ContractData(ContractDataEntry {
+        ext: stellar_baselib::xdr::ExtensionPoint::V0,
+        contract: contract.clone(),
+        durability,
+        key: key.clone(),
+        val: key.clone(),
+    });
+    let ledger_key = LedgerKey::ContractData(LedgerKeyContractData {
+        contract,
+        key: key.clone(),
+        durability,
+    });
+    let h = hashing::Sha256Hasher::hash(ledger_entry.to_xdr(Limits::none()).unwrap());
+    let ledger_ttl_entry = TtlEntry {
+        key_hash: Hash(h),
+        live_until_ledger_seq: 1000,
+    };
+    let ledger_key_xdr = ledger_key.to_xdr_base64(Limits::none()).unwrap();
+    let ledger_entry_xdr = ledger_entry.to_xdr_base64(Limits::none()).unwrap();
+
+    /*
+     * ledger entry found, includes ttl meta in response
+     */
+    {
+        let request = json!(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getLedgerEntries",
+                "params": { "keys": [ledger_key_xdr] },
+        }
+        );
+        let response = json!(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                "entries": [
+            {
+              "liveUntilLedgerSeq": 1000,
+              "lastModifiedLedgerSeq": 2,
+              "key": ledger_key_xdr,
+              "xdr": ledger_entry_xdr,
+            },
+          ],
+                "latestLedger": 2552990
+            }
+        }
+        );
+
+        let (s, _m) = get_mocked_server(request, response).await;
+        let result = s
+            .get_ledger_entries(vec![ledger_key.clone()])
+            .await
+            .expect("Should not fail");
+        if let Some(entries) = result.result.entries {
+            assert_eq!(entries.len(), 1);
+            let e = &entries[0];
+            assert_eq!(e.last_modified_ledger_seq, Some(2));
+            assert_eq!(e.key, ledger_key_xdr);
+            assert_eq!(e.xdr, ledger_entry_xdr);
+            assert_eq!(e.live_until_ledger_seq, Some(1000));
+        } else {
+            panic!("No entry found");
+        }
+    }
+
+    /*
+     * ledger entry found, no ttl in response
+     */
+    {
+        let request = json!(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getLedgerEntries",
+                "params": { "keys": [ledger_key_xdr] },
+        }
+        );
+        let response = json!(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                "entries": [
+            {
+              "lastModifiedLedgerSeq": 2,
+              "key": ledger_key_xdr,
+              "xdr": ledger_entry_xdr,
+            },
+          ],
+                "latestLedger": 2552990
+            }
+        }
+        );
+
+        let (s, _m) = get_mocked_server(request, response).await;
+        let result = s
+            .get_ledger_entries(vec![ledger_key.clone()])
+            .await
+            .expect("Should not fail");
+        if let Some(entries) = result.result.entries {
+            assert_eq!(entries.len(), 1);
+            let e = &entries[0];
+            assert_eq!(e.last_modified_ledger_seq, Some(2));
+            assert_eq!(e.key, ledger_key_xdr);
+            assert_eq!(e.xdr, ledger_entry_xdr);
+            assert_eq!(e.live_until_ledger_seq, None);
+        } else {
+            panic!("No entry found");
+        }
+        //
+    }
+
+    /*
+     * throws when invalid rpc response
+     */
+    {
+        let request = json!(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getLedgerEntries",
+                "params": { "keys": [ledger_key_xdr] },
+        }
+        );
+        let response = json!(
+        {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+        "entries": [
+            {
+                 "lastModifiedLedgerSeq": 2,
+            },
+            {
+                "lastModifiedLedgerSeq": 1,
+            },
+        ],
+        "latestLedger": 2552990
+        }
+        }
+        );
+
+        let (s, _m) = get_mocked_server(request, response).await;
+        let result = s.get_ledger_entries(vec![ledger_key.clone()]).await;
+
+        // TODO better error should be used
+        assert!(matches!(result, Err(Error::NetworkError)));
+    }
 }
 
 // Create a Server that will reply `response` for a json `request` partially matching

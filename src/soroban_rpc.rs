@@ -45,7 +45,11 @@ pub struct GetHealthResponse {
 pub struct LedgerEntryResult {
     pub key: String,
     pub xdr: String,
-    pub lastModifiedLedgerSeq: Option<i32>,
+
+    #[serde(rename = "lastModifiedLedgerSeq")]
+    pub last_modified_ledger_seq: Option<i64>,
+    #[serde(rename = "liveUntilLedgerSeq")]
+    pub live_until_ledger_seq: Option<i64>,
 }
 
 #[derive(Deserialize, Debug)]
