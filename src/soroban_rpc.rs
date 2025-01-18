@@ -49,7 +49,7 @@ pub struct LedgerEntryResult {
     #[serde(rename = "lastModifiedLedgerSeq")]
     pub last_modified_ledger_seq: Option<i64>,
     #[serde(rename = "liveUntilLedgerSeq")]
-    pub live_until_ledger_seq: Option<i64>,
+    pub live_until_ledger_seq: Option<u32>,
 }
 
 #[derive(Deserialize, Debug)]

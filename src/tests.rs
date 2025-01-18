@@ -276,7 +276,7 @@ async fn get_ledger_entries() {
         key: key.clone(),
         durability,
     });
-    let h = hashing::Sha256Hasher::hash(ledger_entry.to_xdr(Limits::none()).unwrap());
+    let h = hashing::Sha256Hasher::hash(ledger_key.to_xdr(Limits::none()).unwrap());
     let ledger_ttl_entry = TtlEntry {
         key_hash: Hash(h),
         live_until_ledger_seq: 1000,
@@ -303,7 +303,7 @@ async fn get_ledger_entries() {
                 "result": {
                 "entries": [
             {
-              "liveUntilLedgerSeq": 1000,
+              "liveUntilLedgerSeq": ledger_ttl_entry.live_until_ledger_seq,
               "lastModifiedLedgerSeq": 2,
               "key": ledger_key_xdr,
               "xdr": ledger_entry_xdr,
@@ -325,7 +325,10 @@ async fn get_ledger_entries() {
             assert_eq!(e.last_modified_ledger_seq, Some(2));
             assert_eq!(e.key, ledger_key_xdr);
             assert_eq!(e.xdr, ledger_entry_xdr);
-            assert_eq!(e.live_until_ledger_seq, Some(1000));
+            assert_eq!(
+                e.live_until_ledger_seq,
+                Some(ledger_ttl_entry.live_until_ledger_seq)
+            );
         } else {
             panic!("No entry found");
         }
@@ -413,6 +416,111 @@ async fn get_ledger_entries() {
 
         // TODO better error should be used
         assert!(matches!(result, Err(Error::NetworkError)));
+    }
+}
+
+#[tokio::test]
+async fn get_contract_data() {
+    let address = "CCJZ5DGASBWQXR5MPFCJXMBI333XE5U3FSJTNQU7RIKE3P5GN2K2WYD5";
+    let key = ScVal::Vec(Some(ScVec(
+        [ScVal::Symbol("Admin".try_into().unwrap())]
+            .try_into()
+            .unwrap(),
+    )));
+    let contract = Address::new(address).unwrap().to_sc_address().unwrap();
+    let durability = stellar_baselib::xdr::ContractDataDurability::Persistent;
+    let ledger_entry = LedgerEntryData::ContractData(ContractDataEntry {
+        ext: ExtensionPoint::V0,
+        contract: contract.clone(),
+        durability,
+        key: key.clone(),
+        val: key.clone(),
+    });
+    let ledger_key = LedgerKey::ContractData(LedgerKeyContractData {
+        contract,
+        key: key.clone(),
+        durability,
+    });
+    let h = hashing::Sha256Hasher::hash(ledger_key.to_xdr(Limits::none()).unwrap());
+    let ledger_ttl_entry = TtlEntry {
+        key_hash: Hash(h),
+        live_until_ledger_seq: 1000,
+    };
+    let ledger_key_xdr = ledger_key.to_xdr_base64(Limits::none()).unwrap();
+    let ledger_entry_xdr = ledger_entry.to_xdr_base64(Limits::none()).unwrap();
+
+    /*
+     * contract data found
+     */
+    {
+        let request = json!(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getLedgerEntries",
+                "params": { "keys": [ledger_key_xdr] },
+        }
+        );
+        let response = json!(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                "entries": [
+                {
+                    "liveUntilLedgerSeq": ledger_ttl_entry.live_until_ledger_seq,
+                    "lastModifiedLedgerSeq": 2,
+                    "key": ledger_key_xdr,
+                    "xdr": ledger_entry_xdr,
+                },
+            ],
+            "latestLedger": 2552990
+        }
+        }
+        );
+
+        let (s, _m) = get_mocked_server(request, response).await;
+        let result = s
+            .get_contract_data(address, key.clone(), Durability::Persistent)
+            .await
+            .expect("Should not fail");
+
+        assert_eq!(result.key, ledger_key_xdr);
+        assert_eq!(result.xdr, ledger_entry_xdr);
+        assert_eq!(
+            result.live_until_ledger_seq,
+            Some(ledger_ttl_entry.live_until_ledger_seq)
+        );
+    }
+    /*
+     * contract data not found
+     */
+    {
+        let request = json!(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getLedgerEntries",
+                "params": { "keys": [ledger_key_xdr] },
+        }
+        );
+        let response = json!(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                "entries": [],
+            "latestLedger": 2552990
+        }
+        }
+        );
+
+        let (s, _m) = get_mocked_server(request, response).await;
+        let result = s
+            .get_contract_data(address, key.clone(), Durability::Persistent)
+            .await;
+
+        assert!(matches!(result, Err(Error::ContractDataNotFound)));
     }
 }
 
