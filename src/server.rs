@@ -286,107 +286,19 @@ impl Server {
             }
         });
 
-        let raw = self
+        let r = self
             .client
             .post(self.server_url.to_string())
             .header("Content-Type", "application/json")
             .json(&payload)
             .send()
             .map_err(|_| Error::NetworkError)
-            .await?
-            .json::<RawGetTransactionResponseWrapper>()
-            .map_err(|_| Error::NetworkError)
             .await?;
 
-        let mut success_info = GetSuccessfulTransactionResponse {
-            base: None,
-            ledger: None,
-            createdAt: None,
-            applicationOrder: None,
-            feeBump: None,
-            envelopeXdr: None,
-            resultXdr: None,
-            resultMetaXdr: None,
-            returnValue: None,
-        };
-
-        if let GetTransactionStatus::SUCCESS = raw.result.status {
-            // Set the basic fields that don't depend on XDR parsing
-            success_info.ledger = raw.result.ledger;
-            success_info.applicationOrder = raw.result.applicationOrder;
-            success_info.feeBump = raw.result.feeBump;
-
-            // Handle optional createdAt
-            if let Some(created_at) = raw.result.createdAt {
-                success_info.createdAt = Some(i32::from_str(&created_at).unwrap_or(-1));
-            }
-
-            // Handle optional envelopeXdr
-            if let Some(envelope_xdr) = &raw.result.envelopeXdr {
-                success_info.envelopeXdr =
-                    TransactionEnvelope::from_xdr_base64(envelope_xdr, Limits::none()).ok();
-            }
-
-            // Handle optional resultXdr
-            if let Some(result_xdr) = &raw.result.resultXdr {
-                success_info.resultXdr =
-                    TransactionResult::from_xdr_base64(result_xdr, Limits::none()).ok();
-            }
-
-            // Handle optional resultMetaXdr
-            if let Some(meta_xdr) = &raw.result.resultMetaXdr {
-                if let Ok(meta) = TransactionMeta::from_xdr_base64(meta_xdr, Limits::none()) {
-                    success_info.resultMetaXdr = Some(meta.clone());
-
-                    // Extract return value if it's a V3 transaction with Soroban metadata
-                    if let TransactionMeta::V3(v3) = meta {
-                        if let Some(soroban_meta) = v3.soroban_meta {
-                            success_info.returnValue = Some(soroban_meta.return_value.clone());
-                        }
-                    }
-                }
-            }
-
-            // Set the base response info
-            let base = GetAnyTransactionResponse {
-                status: raw.result.status,
-                latestLedger: raw.result.latestLedger,
-                latestLedgerCloseTime: i32::from_str(&raw.result.latestLedgerCloseTime)
-                    .unwrap_or(-1),
-                oldestLedger: raw.result.oldestLedger,
-                oldestLedgerCloseTime: i32::from_str(&raw.result.oldestLedgerCloseTime)
-                    .unwrap_or(-1),
-            };
-            success_info.base = Some(base);
-
-            Ok(GetTransactionResponse::Successful(success_info))
-        } else if let GetTransactionStatus::NOT_FOUND = raw.result.status {
-            let base = GetAnyTransactionResponse {
-                status: raw.result.status,
-                latestLedger: raw.result.latestLedger,
-                latestLedgerCloseTime: i32::from_str(&raw.result.latestLedgerCloseTime)
-                    .unwrap_or(-1),
-                oldestLedger: raw.result.oldestLedger,
-                oldestLedgerCloseTime: i32::from_str(&raw.result.oldestLedgerCloseTime)
-                    .unwrap_or(-1),
-            };
-            Ok(GetTransactionResponse::Missing(
-                GetMissingTransactionResponse { base },
-            ))
-        } else {
-            let base = GetAnyTransactionResponse {
-                status: raw.result.status,
-                latestLedger: raw.result.latestLedger,
-                latestLedgerCloseTime: i32::from_str(&raw.result.latestLedgerCloseTime)
-                    .unwrap_or(-1),
-                oldestLedger: raw.result.oldestLedger,
-                oldestLedgerCloseTime: i32::from_str(&raw.result.oldestLedgerCloseTime)
-                    .unwrap_or(-1),
-            };
-            Ok(GetTransactionResponse::Failed(
-                GetFailedTransactionResponse { base },
-            ))
-        }
+        Ok(r.json::<GetTransactionResponseWrapper>()
+            .map_err(|_| Error::NetworkError)
+            .await?
+            .result)
     }
 
     pub async fn prepare_transaction(

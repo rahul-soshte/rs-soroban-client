@@ -1,6 +1,9 @@
 #![allow(non_snake_case)]
 use std::collections::HashMap;
-use stellar_baselib::soroban_data_builder::SorobanDataBuilder;
+use stellar_baselib::{
+    soroban_data_builder::SorobanDataBuilder,
+    xdr::{Limits, ReadXdr, ScVal, TransactionEnvelope, TransactionMeta, TransactionResult},
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -101,7 +104,7 @@ pub struct GetLatestLedgerResponse {
     pub protocol_version: u32,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[allow(non_camel_case_types)]
 pub enum GetTransactionStatus {
     SUCCESS,
@@ -109,11 +112,74 @@ pub enum GetTransactionStatus {
     FAILED,
 }
 
-#[derive(Debug)]
-pub enum GetTransactionResponse {
-    Successful(GetSuccessfulTransactionResponse),
-    Failed(GetFailedTransactionResponse),
-    Missing(GetMissingTransactionResponse),
+#[derive(Debug, Deserialize)]
+pub struct GetTransactionResponseWrapper {
+    pub jsonrpc: String,
+    pub id: u32,
+    pub result: GetTransactionResponse,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GetTransactionResponse {
+    pub status: GetTransactionStatus,
+    pub latestLedger: i32,
+    pub latestLedgerCloseTime: String,
+    pub oldestLedger: i32,
+    pub oldestLedgerCloseTime: String,
+    pub applicationOrder: Option<i32>,
+    pub feeBump: Option<bool>,
+    pub ledger: Option<i32>,
+    pub createdAt: Option<String>,
+    envelopeXdr: Option<String>,
+    resultXdr: Option<String>,
+    resultMetaXdr: Option<String>,
+}
+
+impl GetTransactionResponse {
+    pub fn getEnvelope(&self) -> Option<TransactionEnvelope> {
+        if let Some(result) = &self.envelopeXdr {
+            let r = TransactionEnvelope::from_xdr_base64(result, Limits::none());
+            if let Ok(e) = r {
+                Some(e)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn getResult(&self) -> Option<TransactionResult> {
+        if let Some(result) = &self.resultXdr {
+            let r = TransactionResult::from_xdr_base64(result, Limits::none());
+            if let Ok(e) = r {
+                Some(e)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn getResultMeta(&self) -> Option<(TransactionMeta, Option<ScVal>)> {
+        if let Some(result) = &self.resultMetaXdr {
+            let r = TransactionMeta::from_xdr_base64(result, Limits::none());
+            if let Ok(e) = r {
+                let mut return_value = None;
+                if let TransactionMeta::V3(v3) = &e {
+                    if let Some(v) = &v3.soroban_meta {
+                        return_value = Some(v.return_value.clone());
+                    }
+                }
+                Some((e, return_value))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
