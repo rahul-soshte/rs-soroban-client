@@ -3,7 +3,6 @@ use crate::http_client::create_client;
 use crate::jsonrpc::post;
 use crate::soroban_rpc::*;
 use crate::transaction::assemble_transaction;
-use crate::transaction::SimulationResponse::Raw;
 use futures::TryFutureExt;
 use http::Uri;
 use serde::{Deserialize, Serialize};
@@ -199,7 +198,7 @@ impl Server {
         &self,
         transaction: Transaction,
         addl_resources: Option<ResourceLeeway>,
-    ) -> Result<RawSimulateTransactionResponse, Error> {
+    ) -> Result<SimulateTransactionResponse, Error> {
         let transaction_xdr = transaction
             .to_envelope()
             .map_err(|_| Error::TransactionError)?
@@ -236,7 +235,7 @@ impl Server {
             .map_err(|_| Error::NetworkError)
             .await?;
 
-        let result: JsonRpcSimulateResponse =
+        let result: SimulateTransactionResponseWrapper =
             response.json().map_err(|_| Error::NetworkError).await?;
         Ok(result.result)
     }
@@ -308,7 +307,7 @@ impl Server {
     ) -> Result<Transaction, Error> {
         let sim_response = self.simulate_transaction(transaction.clone(), None).await?;
 
-        Ok(assemble_transaction(transaction, network_passphrase, Raw(sim_response))?.build())
+        Ok(assemble_transaction(transaction, network_passphrase, sim_response)?.build())
     }
 
     pub async fn send_transaction(
@@ -340,28 +339,6 @@ impl Server {
             .await?;
 
         let result: JsonRpcResponse = response.json().map_err(|_| Error::NetworkError).await?;
-
-        /*Not sure why this is here
-                // If error result is present, decode it
-                if let Some(error_xdr) = &result.result.error_result {
-                    println!(
-                        "Transaction error: {:?}",
-                        TransactionResult::from_xdr_base64(error_xdr, Limits::none())
-                            .expect("Xdr from RPC should be valid")
-                    );
-                }
-
-                // If diagnostic events are present, decode them
-                if let Some(events) = &result.result.diagnostic_events {
-                    for event_xdr in events {
-                        println!(
-                            "Diagnostic event: {:?}",
-                            DiagnosticEvent::from_xdr_base64(event_xdr, Limits::none())
-                                .expect("Xdr from RPC should be valid")
-                        );
-                    }
-                }
-        */
 
         Ok(result.result)
     }

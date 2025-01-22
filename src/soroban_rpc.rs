@@ -220,23 +220,14 @@ pub enum SendTransactionStatus {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct BaseSendTransactionResponse {
+#[serde(rename_all = "camelCase")]
+pub struct SendTransactionResponse {
     pub status: SendTransactionStatus,
     pub hash: String,
-    #[serde(rename = "latestLedger")]
     pub latest_ledger: u32,
-    #[serde(rename = "latestLedgerCloseTime")]
     pub latest_ledger_close_time: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SendTransactionResponse {
-    #[serde(flatten)]
-    pub base: BaseSendTransactionResponse,
-    #[serde(rename = "errorResultXdr")]
-    pub error_result: Option<String>, // Base64 encoded TransactionResult
-    #[serde(rename = "diagnosticEventsXdr")]
-    pub diagnostic_events: Option<Vec<String>>, // Base64 encoded DiagnosticEvent
+    pub error_result_xdr: Option<String>, // Base64 encoded TransactionResult
+    pub diagnostic_events_xdr: Option<Vec<String>>, // Base64 encoded DiagnosticEvent
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -252,57 +243,8 @@ pub struct JsonRpcResponse {
     pub result: SendTransactionResponse,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct JsonRpcSimulateResponse {
-    pub jsonrpc: String,
-    pub id: serde_json::Value,
-    pub result: RawSimulateTransactionResponse,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-
-pub enum SimulateTransactionResponse {
-    Success(SimulateTransactionSuccessResponse),
-    Restore(SimulateTransactionRestoreResponse),
-    Error(SimulateTransactionErrorResponse),
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
-
-pub struct BaseSimulateTransactionResponse {
-    // pub id: String,
-    pub latest_ledger: i32,
-    pub events: Vec<stellar_baselib::xdr::DiagnosticEvent>,
-    pub _parsed: bool,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SimulateTransactionSuccessResponse {
-    pub base: BaseSimulateTransactionResponse,
-    pub latest_ledger: u32,
-    pub transaction_data: SorobanDataBuilder,
-    pub min_resource_fee: String,
-    // pub cost: Cost,
-    pub result: Option<SimulateHostFunctionResult>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-
-pub struct SimulateTransactionErrorResponse {
-    pub base: BaseSimulateTransactionResponse,
-    pub error: String,
-}
-#[derive(Clone, Debug, Serialize, Deserialize)]
-
-pub struct SimulateTransactionRestoreResponse {
-    pub base: SimulateTransactionSuccessResponse,
-    // pub result: SimulateHostFunctionResult,
-    pub restore_preamble: RestorePreamble,
-    pub(crate) result: Option<SimulateHostFunctionResult>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-
+#[serde(rename_all = "camelCase")]
 pub struct RestorePreamble {
     pub min_resource_fee: String,
     pub transaction_data: SorobanDataBuilder,
@@ -310,30 +252,26 @@ pub struct RestorePreamble {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RawSimulateHostFunctionResult {
-    pub auth: Option<Vec<String>>,
-    pub xdr: Option<String>,
+    pub auth: Vec<String>,
+    pub xdr: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SimulateTransactionResponseWrapper {
+    pub jsonrpc: String,
+    pub id: serde_json::Value,
+    pub result: SimulateTransactionResponse,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RawSimulateTransactionResponse {
-    pub latestLedger: i32,
-    pub error: Option<String>,
-    pub transactionData: Option<String>,
-    pub events: Option<Vec<String>>,
-    pub minResourceFee: Option<String>,
+#[serde(rename_all = "camelCase")]
+pub struct SimulateTransactionResponse {
+    pub latest_ledger: i32,
+    pub min_resource_fee: Option<String>,
     pub results: Option<Vec<RawSimulateHostFunctionResult>>,
+    pub transaction_data: Option<String>,
+    pub events: Option<Vec<String>>,
+    pub restore_preamble: Option<RestorePreamble>,
+    pub error: Option<String>,
     pub cost: Option<Cost>,
-    pub restorePreamble: Option<RestorePreamble>,
-}
-
-pub fn is_simulation_error(sim: &SimulateTransactionResponse) -> bool {
-    matches!(sim, SimulateTransactionResponse::Error(_))
-}
-
-pub fn is_simulation_success(sim: &SimulateTransactionResponse) -> bool {
-    matches!(sim, SimulateTransactionResponse::Success(_))
-}
-
-pub fn is_simulation_restore(sim: &SimulateTransactionResponse) -> bool {
-    matches!(sim, SimulateTransactionResponse::Restore(_))
 }

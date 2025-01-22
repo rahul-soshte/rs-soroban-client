@@ -4,7 +4,6 @@ use soroban_client::contract::ContractBehavior;
 use soroban_client::keypair::KeypairBehavior;
 use soroban_client::network::{NetworkPassphrase, Networks};
 use soroban_client::server::Options;
-use soroban_client::soroban_rpc::GetTransactionResponse;
 use soroban_client::soroban_rpc::GetTransactionStatus;
 use soroban_client::transaction::Account;
 use soroban_client::transaction::TransactionBehavior;
@@ -66,10 +65,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match server.send_transaction(contract_tx).await {
         Ok(response) => {
             println!("Transaction sent successfully");
-            println!("Transaction hash: {}", response.base.hash);
+            println!("Transaction hash: {}", response.hash);
 
             // Start polling for transaction completion
-            let hash = response.base.hash.clone();
+            let hash = response.hash.clone();
 
             loop {
                 let response = server.get_transaction(&hash).await;

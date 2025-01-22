@@ -18,6 +18,8 @@ pub enum Error {
     InvalidSorobanTransaction,
     #[error("SimulationFailed")]
     SimulationFailed,
+    #[error("RestorationRequired")]
+    RestorationRequired,
 }
 
 #[derive(Error, Debug)]
