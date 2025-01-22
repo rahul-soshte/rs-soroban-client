@@ -45,13 +45,11 @@ pub struct GetHealthResponse {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LedgerEntryResult {
     pub key: String,
     pub xdr: String,
-
-    #[serde(rename = "lastModifiedLedgerSeq")]
     pub last_modified_ledger_seq: Option<i64>,
-    #[serde(rename = "liveUntilLedgerSeq")]
     pub live_until_ledger_seq: Option<u32>,
 }
 
@@ -68,19 +66,6 @@ pub struct GetLedgerEntriesResponseWrapper {
     pub result: GetLedgerEntriesResponse,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct RawLedgerEntryResult {
-    pub last_modified_ledger_seq: Option<i64>,
-    pub key: String,
-    pub xdr: String,
-    pub live_until_ledger_seq: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct RawGetLedgerEntriesResponse {
-    pub entries: Option<Vec<RawLedgerEntryResult>>, // pub latest_ledger: i32,
-}
-
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct GetNetworkResponseWrapper {
     pub jsonrpc: String,
@@ -89,18 +74,18 @@ pub struct GetNetworkResponseWrapper {
 }
 
 #[derive(Deserialize, Debug, PartialEq, Eq)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 pub struct GetNetworkResponse {
-    pub friendbotUrl: Option<String>,
+    pub friendbot_url: Option<String>,
     pub passphrase: Option<String>,
-    pub protocolVersion: Option<i32>,
+    pub protocol_version: Option<i32>,
 }
 
 #[derive(Deserialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct GetLatestLedgerResponse {
     pub id: String,
     pub sequence: i32,
-    #[serde(rename = "protocolVersion")]
     pub protocol_version: u32,
 }
 
@@ -120,24 +105,25 @@ pub struct GetTransactionResponseWrapper {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GetTransactionResponse {
     pub status: GetTransactionStatus,
-    pub latestLedger: i32,
-    pub latestLedgerCloseTime: String,
-    pub oldestLedger: i32,
-    pub oldestLedgerCloseTime: String,
-    pub applicationOrder: Option<i32>,
-    pub feeBump: Option<bool>,
+    pub latest_ledger: i32,
+    pub latest_ledger_close_time: String,
+    pub oldest_ledger: i32,
+    pub oldest_ledger_close_time: String,
+    pub application_order: Option<i32>,
+    pub fee_bump: Option<bool>,
     pub ledger: Option<i32>,
-    pub createdAt: Option<String>,
-    envelopeXdr: Option<String>,
-    resultXdr: Option<String>,
-    resultMetaXdr: Option<String>,
+    pub created_at: Option<String>,
+    envelope_xdr: Option<String>,
+    result_xdr: Option<String>,
+    result_meta_xdr: Option<String>,
 }
 
 impl GetTransactionResponse {
-    pub fn getEnvelope(&self) -> Option<TransactionEnvelope> {
-        if let Some(result) = &self.envelopeXdr {
+    pub fn get_envelope(&self) -> Option<TransactionEnvelope> {
+        if let Some(result) = &self.envelope_xdr {
             let r = TransactionEnvelope::from_xdr_base64(result, Limits::none());
             if let Ok(e) = r {
                 Some(e)
@@ -149,8 +135,8 @@ impl GetTransactionResponse {
         }
     }
 
-    pub fn getResult(&self) -> Option<TransactionResult> {
-        if let Some(result) = &self.resultXdr {
+    pub fn get_result(&self) -> Option<TransactionResult> {
+        if let Some(result) = &self.result_xdr {
             let r = TransactionResult::from_xdr_base64(result, Limits::none());
             if let Ok(e) = r {
                 Some(e)
@@ -162,8 +148,8 @@ impl GetTransactionResponse {
         }
     }
 
-    pub fn getResultMeta(&self) -> Option<(TransactionMeta, Option<ScVal>)> {
-        if let Some(result) = &self.resultMetaXdr {
+    pub fn get_result_meta(&self) -> Option<(TransactionMeta, Option<ScVal>)> {
+        if let Some(result) = &self.result_meta_xdr {
             let r = TransactionMeta::from_xdr_base64(result, Limits::none());
             if let Ok(e) = r {
                 let mut return_value = None;
@@ -180,61 +166,6 @@ impl GetTransactionResponse {
             None
         }
     }
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct GetAnyTransactionResponse {
-    pub status: GetTransactionStatus,
-    pub latestLedger: i32,
-    pub latestLedgerCloseTime: i32,
-    pub oldestLedger: i32,
-    pub oldestLedgerCloseTime: i32,
-}
-
-#[derive(Debug)]
-pub struct GetMissingTransactionResponse {
-    pub base: GetAnyTransactionResponse,
-}
-
-#[derive(Debug)]
-pub struct GetFailedTransactionResponse {
-    pub base: GetAnyTransactionResponse,
-}
-
-#[derive(Clone, Deserialize, Debug, Default)]
-pub struct GetSuccessfulTransactionResponse {
-    pub base: Option<GetAnyTransactionResponse>,
-    pub ledger: Option<i32>,
-    pub createdAt: Option<i32>,
-    pub applicationOrder: Option<i32>,
-    pub feeBump: Option<bool>,
-    pub envelopeXdr: Option<stellar_baselib::xdr::TransactionEnvelope>,
-    pub resultXdr: Option<stellar_baselib::xdr::TransactionResult>,
-    pub resultMetaXdr: Option<stellar_baselib::xdr::TransactionMeta>,
-    pub returnValue: Option<stellar_baselib::xdr::ScVal>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct RawGetTransactionResponseWrapper {
-    pub jsonrpc: String,
-    pub id: i32,
-    pub result: RawGetTransactionResponse,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct RawGetTransactionResponse {
-    pub status: GetTransactionStatus,
-    pub latestLedger: i32,
-    pub latestLedgerCloseTime: String,
-    pub oldestLedger: i32,
-    pub oldestLedgerCloseTime: String,
-    pub applicationOrder: Option<i32>,
-    pub feeBump: Option<bool>,
-    pub envelopeXdr: Option<String>,
-    pub resultXdr: Option<String>,
-    pub resultMetaXdr: Option<String>,
-    pub ledger: Option<i32>,
-    pub createdAt: Option<String>,
 }
 
 pub enum EventType {

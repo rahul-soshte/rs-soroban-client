@@ -181,9 +181,9 @@ async fn get_network() {
         jsonrpc: "2.0".into(),
         id: 8675309,
         result: GetNetworkResponse {
-            friendbotUrl: Some("https://friendbot-testnet.stellar.org/".into()),
+            friendbot_url: Some("https://friendbot-testnet.stellar.org/".into()),
             passphrase: Some("Test SDF Network ; September 2015".into()),
-            protocolVersion: Some(20),
+            protocol_version: Some(20),
         },
     };
     assert_eq!(dbg!(result), expect);
@@ -572,10 +572,10 @@ async fn get_transaction() {
 
         if let Ok(r) = txresult {
             assert_eq!(r.status, GetTransactionStatus::SUCCESS);
-            assert_eq!(r.latestLedger, 2540076);
-            assert_eq!(r.oldestLedger, 2538637);
-            assert_eq!(r.applicationOrder, Some(1));
-            let result = dbg!(r.getResult().unwrap());
+            assert_eq!(r.latest_ledger, 2540076);
+            assert_eq!(r.oldest_ledger, 2538637);
+            assert_eq!(r.application_order, Some(1));
+            let result = dbg!(r.get_result().unwrap());
             assert_eq!(result.fee_charged, 1120047);
             if let TransactionResultResult::TxSuccess(ops) = result.result {
                 let op = ops.first().unwrap();
@@ -598,8 +598,8 @@ async fn get_transaction() {
             } else {
                 panic!("TransactionResultResult not found")
             }
-            let envelope = r.getEnvelope().expect("Should not fail");
-            let (meta, val) = r.getResultMeta().expect("Should not fail");
+            let envelope = r.get_envelope().expect("Should not fail");
+            let (meta, val) = r.get_result_meta().expect("Should not fail");
             assert_eq!(val, Some(ScVal::Void));
             // TODO add more tests
         }
@@ -638,10 +638,10 @@ async fn get_transaction() {
         let txresult = s.get_transaction(hash).await;
         if let Ok(r) = txresult {
             assert_eq!(r.status, GetTransactionStatus::NOT_FOUND);
-            assert_eq!(r.latestLedger, 2540099);
-            assert_eq!(r.oldestLedger, 2538660);
-            assert_eq!(r.applicationOrder, None);
-            assert_eq!(r.getResult(), None);
+            assert_eq!(r.latest_ledger, 2540099);
+            assert_eq!(r.oldest_ledger, 2538660);
+            assert_eq!(r.application_order, None);
+            assert_eq!(r.get_result(), None);
         }
     }
     /*
@@ -683,10 +683,10 @@ async fn get_transaction() {
         let txresult = s.get_transaction(hash).await;
         if let Ok(r) = txresult {
             assert_eq!(r.status, GetTransactionStatus::FAILED);
-            assert_eq!(r.latestLedger, 2540124);
-            assert_eq!(r.oldestLedger, 2538685);
-            assert_eq!(r.applicationOrder, Some(2));
-            let result = r.getResult().unwrap();
+            assert_eq!(r.latest_ledger, 2540124);
+            assert_eq!(r.oldest_ledger, 2538685);
+            assert_eq!(r.application_order, Some(2));
+            let result = r.get_result().unwrap();
             if let TransactionResultResult::TxFailed(ops) = result.result {
                 let op = ops.first().unwrap();
                 assert_eq!(
