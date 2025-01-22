@@ -7,9 +7,9 @@ use soroban_client::server::Options;
 use soroban_client::soroban_rpc::GetTransactionResponse;
 use soroban_client::soroban_rpc::GetTransactionStatus;
 use soroban_client::transaction::Account;
+use soroban_client::transaction::TransactionBehavior;
 use soroban_client::transaction_builder::TransactionBuilder;
 use soroban_client::transaction_builder::TransactionBuilderBehavior;
-use soroban_client::transaction::TransactionBehavior;
 use soroban_client::transaction_builder::TIMEOUT_INFINITE;
 use soroban_client::{keypair::Keypair, server::Server};
 use std::cell::RefCell;
@@ -72,63 +72,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let hash = response.base.hash.clone();
 
             loop {
-                match server.get_transaction(&hash).await {
-                    Ok(GetTransactionResponse::Successful(success_info)) => {
-                        // Check if we have base information
-                        if let Some(base) = &success_info.base {
-                            match base.status {
-                                GetTransactionStatus::SUCCESS => {
-                                    println!("Transaction successful!");
-                                    if let Some(ledger) = success_info.ledger {
-                                        println!("Confirmed in ledger: {}", ledger);
-                                    }
-                                    if let Some(return_value) = success_info.returnValue {
-                                        println!("Return value: {:?}", return_value);
-                                    }
-                                    if let Some(meta) = success_info.resultMetaXdr {
-                                        println!("Transaction metadata: {:?}", meta);
-                                    }
-                                    break;
-                                }
-                                GetTransactionStatus::FAILED => {
-                                    if let Some(result) = success_info.resultXdr {
-                                        eprintln!("Transaction failed with result: {:?}", result);
-                                    } else {
-                                        eprintln!("Transaction failed without result XDR");
-                                    }
-                                    break;
-                                }
-                                GetTransactionStatus::NOT_FOUND => {
-                                    println!(
-                                        "Waiting for transaction confirmation... Latest ledger: {}",
-                                        base.latestLedger
-                                    );
-                                    tokio::time::sleep(Duration::from_secs(1)).await;
-                                    continue;
-                                }
+                let response = server.get_transaction(&hash).await;
+                if let Ok(tx_result) = response {
+                    match tx_result.status {
+                        GetTransactionStatus::SUCCESS => {
+                            println!("Transaction successful!");
+                            if let Some(ledger) = tx_result.ledger {
+                                println!("Confirmed in ledger: {}", ledger);
                             }
+                            if let Some((meta, Some(return_value))) = tx_result.get_result_meta() {
+                                println!("Return value: {:?}", return_value);
+                                println!("Transaction metadata: {:?}", meta);
+                            }
+                            break;
+                        }
+                        GetTransactionStatus::NOT_FOUND => {
+                            println!(
+                                "Waiting for transaction confirmation... Latest ledger: {}",
+                                tx_result.latest_ledger
+                            );
+                            tokio::time::sleep(Duration::from_secs(1)).await;
+                        }
+                        GetTransactionStatus::FAILED => {
+                            if let Some(result) = tx_result.get_result() {
+                                eprintln!("Transaction failed with result: {:?}", result);
+                            } else {
+                                eprintln!("Transaction failed without result XDR");
+                            }
+                            break;
                         }
                     }
-                    Ok(GetTransactionResponse::Failed(failed_info)) => {
-                        eprintln!(
-                            "Transaction failed. Latest ledger: {}",
-                            failed_info.base.latestLedger
-                        );
-                        break;
-                    }
-                    Ok(GetTransactionResponse::Missing(missing_info)) => {
-                        println!(
-                            "Transaction not found. Latest ledger: {}",
-                            missing_info.base.latestLedger
-                        );
-                        println!("Waiting for transaction confirmation...");
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        continue;
-                    }
-                    Err(e) => {
-                        eprintln!("Error getting transaction status: {}", e);
-                        break;
-                    }
+                } else {
+                    eprintln!("Error getting transaction status: {:?}", response);
                 }
             }
         }
