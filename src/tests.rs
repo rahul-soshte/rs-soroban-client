@@ -28,6 +28,7 @@ use stellar_baselib::transaction::TransactionBehavior;
 use stellar_baselib::transaction_builder::TransactionBuilder;
 use stellar_baselib::transaction_builder::TransactionBuilderBehavior;
 use stellar_baselib::xdr::ContractDataEntry;
+use stellar_baselib::xdr::ContractEventV0;
 use stellar_baselib::xdr::ExtensionPoint;
 use stellar_baselib::xdr::Hash;
 use stellar_baselib::xdr::InvokeContractArgs;
@@ -41,6 +42,8 @@ use stellar_baselib::xdr::Limits;
 use stellar_baselib::xdr::OperationResult;
 use stellar_baselib::xdr::OperationResultTr;
 use stellar_baselib::xdr::RestoreFootprintOp;
+use stellar_baselib::xdr::ScString;
+use stellar_baselib::xdr::ScSymbol;
 use stellar_baselib::xdr::ScVal;
 use stellar_baselib::xdr::ScVec;
 use stellar_baselib::xdr::TimeBounds;
@@ -149,7 +152,7 @@ async fn get_health() {
         },
     };
 
-    assert_eq!(dbg!(result), expect);
+    assert_eq!(result, expect);
 }
 
 #[tokio::test]
@@ -174,7 +177,7 @@ async fn get_latest_ledger() {
         sequence: 2539605,
         protocol_version: 20,
     };
-    assert_eq!(dbg!(result), expect);
+    assert_eq!(result, expect);
 }
 
 #[tokio::test]
@@ -203,7 +206,7 @@ async fn get_network() {
             protocol_version: Some(20),
         },
     };
-    assert_eq!(dbg!(result), expect);
+    assert_eq!(result, expect);
 }
 
 #[tokio::test]
@@ -592,7 +595,7 @@ async fn get_transaction() {
             assert_eq!(r.latest_ledger, 2540076);
             assert_eq!(r.oldest_ledger, 2538637);
             assert_eq!(r.application_order, Some(1));
-            let result = dbg!(r.get_result().unwrap());
+            let result = r.get_result().unwrap();
             assert_eq!(result.fee_charged, 1120047);
             if let TransactionResultResult::TxSuccess(ops) = result.result {
                 let op = ops.first().unwrap();
@@ -721,6 +724,9 @@ async fn get_transaction() {
 
 #[tokio::test]
 async fn simulate_transaction() {
+    /*
+     * Success (no auth)
+     */
     {
         let tx_xdr = "AAAAAgAAAAAg4dbAxsGAGICfBG3iT2cKGYQ6hK4sJWzZ6or1C5v6GAAAAGQAJsOiAAAAEQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABzAP+dP0PsNzYvFF1pv7a8RQXwH5eg3uZBbbWjE9PwAsAAAAJaW5jcmVtZW50AAAAAAAAAgAAABIAAAAAAAAAACDh1sDGwYAYgJ8EbeJPZwoZhDqEriwlbNnqivULm/oYAAAAAwAAAAMAAAAAAAAAAAAAAAA=";
         let request = json!(
@@ -804,12 +810,22 @@ async fn simulate_transaction() {
         let (s, _m) = get_mocked_server(request, response).await;
         let txresult = s.simulate_transaction(tx, None).await.unwrap();
 
-        if let Some((ret_val, auth)) = txresult.to_result() {
+        if let Some((ret_val, _auth)) = txresult.to_result() {
             assert_eq!(ret_val, ScVal::U32(12));
         } else {
             panic!("Simulation failed")
         }
+
+        if let Some(tx_data) = txresult.to_transaction_data().as_ref() {
+            assert_eq!(tx_data.resource_fee, 3);
+            assert_eq!(tx_data.resources.instructions, 1962674);
+            assert_eq!(tx_data.resources.read_bytes, 1416);
+            assert_eq!(tx_data.resources.write_bytes, 136);
+        } else {
+            panic!("Simulation failed")
+        }
     }
+
     /*
      * Failed transaction
      * */
@@ -828,13 +844,13 @@ async fn simulate_transaction() {
           }
         }
                 );
+        let expected_err_str = "host invocation failed\n\nCaused by:\n    HostError: Error(WasmVm, InternalError)\n    \n    Event log (newest first):\n       0: [Diagnostic Event] contract:cc03fe74fd0fb0dcd8bc5175a6fedaf11417c07e5e837b9905b6d68c4f4fc00b, topics:[error, Error(WasmVm, InternalError)], data:[\"VM call failed: Func(MismatchingParameterLen)\", increment]\n       1: [Diagnostic Event] topics:[fn_call, Bytes(cc03fe74fd0fb0dcd8bc5175a6fedaf11417c07e5e837b9905b6d68c4f4fc00b), increment], data:3\n    \n    Backtrace (newest first):\n       0: soroban_env_host::vm::Vm::invoke_function_raw\n       1: soroban_env_host::host::frame::<impl soroban_env_host::host::Host>::with_frame\n       2: soroban_env_host::host::frame::<impl soroban_env_host::host::Host>::call_n_internal\n       3: soroban_env_host::host::frame::<impl soroban_env_host::host::Host>::invoke_function\n       4: preflight::preflight::preflight_invoke_hf_op\n       5: preflight::preflight_invoke_hf_op::{{closure}}\n       6: core::ops::function::FnOnce::call_once{{vtable.shim}}\n       7: preflight::catch_preflight_panic\n       8: _cgo_0b49d6ed4a0b_Cfunc_preflight_invoke_hf_op\n                 at tmp/go-build/cgo-gcc-prolog:103:11\n       9: runtime.asmcgocall\n                 at ./runtime/asm_amd64.s:848\n    \n    ";
         let response = json!(
         {
                    "jsonrpc": "2.0",
                    "id": 1,
                    "result": {
-                     //"error": "host invocation failed\n\nCaused by:\n    HostError: Error(WasmVm, InternalError)\n    \n    Event log (newest first):\n       0: [Diagnostic Event] contract:cc03fe74fd0fb0dcd8bc5175a6fedaf11417c07e5e837b9905b6d68c4f4fc00b, topics:[error, Error(WasmVm, InternalError)], data:[\"VM call failed: Func(MismatchingParameterLen)\", increment]\n       1: [Diagnostic Event] topics:[fn_call, Bytes(cc03fe74fd0fb0dcd8bc5175a6fedaf11417c07e5e837b9905b6d68c4f4fc00b), increment], data:3\n    \n    Backtrace (newest first):\n       0: soroban_env_host::vm::Vm::invoke_function_raw\n       1: soroban_env_host::host::frame::<impl soroban_env_host::host::Host>::with_frame\n       2: soroban_env_host::host::frame::<impl soroban_env_host::host::Host>::call_n_internal\n       3: soroban_env_host::host::frame::<impl soroban_env_host::host::Host>::invoke_function\n       4: preflight::preflight::preflight_invoke_hf_op\n       5: preflight::preflight_invoke_hf_op::{{closure}}\n       6: core::ops::function::FnOnce::call_once{{vtable.shim}}\n       7: preflight::catch_preflight_panic\n       8: _cgo_0b49d6ed4a0b_Cfunc_preflight_invoke_hf_op\n                 at tmp/go-build/cgo-gcc-prolog:103:11\n       9: runtime.asmcgocall\n                 at ./runtime/asm_amd64.s:848\n    \n    ",
-                     "error": "host invokation error...",
+                     "error": expected_err_str,
                      "events": [
                        "AAAAAAAAAAAAAAAAAAAAAgAAAAAAAAADAAAADwAAAAdmbl9jYWxsAAAAAA0AAAAgzAP+dP0PsNzYvFF1pv7a8RQXwH5eg3uZBbbWjE9PwAsAAAAPAAAACWluY3JlbWVudAAAAAAAAAMAAAAD",
                        "AAAAAAAAAAAAAAABzAP+dP0PsNzYvFF1pv7a8RQXwH5eg3uZBbbWjE9PwAsAAAACAAAAAAAAAAIAAAAPAAAABWVycm9yAAAAAAAAAgAAAAEAAAAHAAAAEAAAAAEAAAACAAAADgAAAC1WTSBjYWxsIGZhaWxlZDogRnVuYyhNaXNtYXRjaGluZ1BhcmFtZXRlckxlbikAAAAAAAAPAAAACWluY3JlbWVudAAAAA=="
@@ -876,12 +892,56 @@ async fn simulate_transaction() {
             .unwrap();
         assert_eq!(xdr, tx_xdr);
 
-        // TODO make it work
         let (s, _m) = get_mocked_server(request, response).await;
-        let txresult = s.simulate_transaction(tx, None).await.unwrap();
+        let txresult = s
+            .simulate_transaction(
+                tx,
+                Some(ResourceLeeway {
+                    cpu_instructions: 3000000,
+                }),
+            )
+            .await
+            .unwrap();
 
-        if let Some((ret_val, auth)) = txresult.to_result() {
-            assert_eq!(ret_val, ScVal::U32(12));
+        if let Some(err_str) = txresult.error.clone() {
+            assert_eq!(err_str, expected_err_str);
+            let diag_events = txresult.to_diagnostic_events().unwrap();
+            assert_eq!(diag_events.len(), 2);
+            let stellar_baselib::xdr::ContractEventBody::V0(ContractEventV0 { topics, data }) =
+                &diag_events[0].event.body;
+
+            assert_eq!(
+                topics.to_vec()[0],
+                ScVal::Symbol(ScSymbol("fn_call".try_into().unwrap()))
+            );
+            assert_eq!(data, &ScVal::U32(3));
+
+            let stellar_baselib::xdr::ContractEventBody::V0(ContractEventV0 { topics, data }) =
+                &diag_events[1].event.body;
+            assert_eq!(
+                topics.to_vec(),
+                vec![
+                    ScVal::Symbol(ScSymbol("error".try_into().unwrap())),
+                    ScVal::Error(stellar_baselib::xdr::ScError::WasmVm(
+                        stellar_baselib::xdr::ScErrorCode::InternalError
+                    ))
+                ]
+            );
+            if let ScVal::Vec(Some(data_v)) = data {
+                assert_eq!(
+                    data_v.to_vec(),
+                    vec![
+                        ScVal::String(ScString(
+                            "VM call failed: Func(MismatchingParameterLen)"
+                                .try_into()
+                                .unwrap()
+                        )),
+                        ScVal::Symbol(ScSymbol("increment".try_into().unwrap()))
+                    ]
+                )
+            } else {
+                panic!("Missing diag event")
+            }
         } else {
             panic!("Simulation failed")
         }

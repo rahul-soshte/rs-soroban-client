@@ -285,7 +285,7 @@ pub struct StateChange {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SimulateTransactionResponseWrapper {
     pub jsonrpc: String,
-    pub id: serde_json::Value,
+    pub id: u32,
     pub result: SimulateTransactionResponse,
 }
 
