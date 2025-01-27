@@ -1,3 +1,6 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use crate::error::*;
 use crate::server::*;
 use crate::soroban_rpc::GetHealthResponse;
@@ -8,16 +11,26 @@ use crate::soroban_rpc::GetNetworkResponseWrapper;
 use crate::soroban_rpc::GetTransactionStatus;
 use base64::Engine;
 use serde_json::json;
+use stellar_baselib::account::Account;
 use stellar_baselib::account::AccountBehavior;
 use stellar_baselib::address::Address;
 use stellar_baselib::address::AddressTrait;
+use stellar_baselib::contract::ContractBehavior;
+use stellar_baselib::contract::Contracts;
 use stellar_baselib::hashing;
 use stellar_baselib::hashing::HashingBehavior;
 use stellar_baselib::keypair::Keypair;
 use stellar_baselib::keypair::KeypairBehavior;
+use stellar_baselib::network::NetworkPassphrase;
+use stellar_baselib::network::Networks;
+use stellar_baselib::operation::Operation;
+use stellar_baselib::transaction::TransactionBehavior;
+use stellar_baselib::transaction_builder::TransactionBuilder;
+use stellar_baselib::transaction_builder::TransactionBuilderBehavior;
 use stellar_baselib::xdr::ContractDataEntry;
 use stellar_baselib::xdr::ExtensionPoint;
 use stellar_baselib::xdr::Hash;
+use stellar_baselib::xdr::InvokeContractArgs;
 use stellar_baselib::xdr::InvokeHostFunctionOp;
 use stellar_baselib::xdr::InvokeHostFunctionResult;
 use stellar_baselib::xdr::LedgerEntryData;
@@ -27,13 +40,17 @@ use stellar_baselib::xdr::LedgerKeyContractData;
 use stellar_baselib::xdr::Limits;
 use stellar_baselib::xdr::OperationResult;
 use stellar_baselib::xdr::OperationResultTr;
+use stellar_baselib::xdr::RestoreFootprintOp;
 use stellar_baselib::xdr::ScVal;
 use stellar_baselib::xdr::ScVec;
+use stellar_baselib::xdr::TimeBounds;
+use stellar_baselib::xdr::TimePoint;
 use stellar_baselib::xdr::TransactionMeta;
 use stellar_baselib::xdr::TransactionMetaV3;
 use stellar_baselib::xdr::TransactionResult;
 use stellar_baselib::xdr::TransactionResultResult;
 use stellar_baselib::xdr::TtlEntry;
+use stellar_baselib::xdr::VecM;
 use stellar_baselib::xdr::WriteXdr;
 use wiremock::matchers;
 use wiremock::matchers::method;
@@ -700,6 +717,177 @@ async fn get_transaction() {
             }
         }
     }
+}
+
+#[tokio::test]
+async fn simulate_transaction() {
+    {
+        let tx_xdr = "AAAAAgAAAAAg4dbAxsGAGICfBG3iT2cKGYQ6hK4sJWzZ6or1C5v6GAAAAGQAJsOiAAAAEQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABzAP+dP0PsNzYvFF1pv7a8RQXwH5eg3uZBbbWjE9PwAsAAAAJaW5jcmVtZW50AAAAAAAAAgAAABIAAAAAAAAAACDh1sDGwYAYgJ8EbeJPZwoZhDqEriwlbNnqivULm/oYAAAAAwAAAAMAAAAAAAAAAAAAAAA=";
+        let request = json!(
+                {
+                  "jsonrpc": "2.0",
+                  "id": 1,
+                  "method": "simulateTransaction",
+                  "params": {
+                    "transaction": tx_xdr,
+                  }
+                }
+                /*
+                    "resourceConfig": {
+                      "instructionLeeway": 3000000
+                    }
+        */
+                                );
+        let response = json!(
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "transactionData": "AAAAAAAAAAIAAAAGAAAAAcwD/nT9D7Dc2LxRdab+2vEUF8B+XoN7mQW21oxPT8ALAAAAFAAAAAEAAAAHy8vNUZ8vyZ2ybPHW0XbSrRtP7gEWsJ6zDzcfY9P8z88AAAABAAAABgAAAAHMA/50/Q+w3Ni8UXWm/trxFBfAfl6De5kFttaMT0/ACwAAABAAAAABAAAAAgAAAA8AAAAHQ291bnRlcgAAAAASAAAAAAAAAAAg4dbAxsGAGICfBG3iT2cKGYQ6hK4sJWzZ6or1C5v6GAAAAAEAHfKyAAAFiAAAAIgAAAAAAAAAAw==",
+            "minResourceFee": "90353",
+            "events": [
+              "AAAAAQAAAAAAAAAAAAAAAgAAAAAAAAADAAAADwAAAAdmbl9jYWxsAAAAAA0AAAAgzAP+dP0PsNzYvFF1pv7a8RQXwH5eg3uZBbbWjE9PwAsAAAAPAAAACWluY3JlbWVudAAAAAAAABAAAAABAAAAAgAAABIAAAAAAAAAACDh1sDGwYAYgJ8EbeJPZwoZhDqEriwlbNnqivULm/oYAAAAAwAAAAM=",
+              "AAAAAQAAAAAAAAABzAP+dP0PsNzYvFF1pv7a8RQXwH5eg3uZBbbWjE9PwAsAAAACAAAAAAAAAAIAAAAPAAAACWZuX3JldHVybgAAAAAAAA8AAAAJaW5jcmVtZW50AAAAAAAAAwAAAAw="
+            ],
+            "results": [
+              {
+                "auth": [],
+                "xdr": "AAAAAwAAAAw="
+              }
+            ],
+            "cost": {
+              "cpuInsns": "1635562",
+              "memBytes": "1295756"
+            },
+            "latestLedger": 2552139
+          }
+        }
+                );
+        let source_account = Rc::new(RefCell::new(
+            Account::new(
+                "GAQODVWAY3AYAGEAT4CG3YSPM4FBTBB2QSXCYJLM3HVIV5ILTP5BRXCD",
+                "10911149667123217",
+            )
+            .unwrap(),
+        ));
+        let network = Networks::testnet();
+        let time_bounds = TimeBounds {
+            min_time: TimePoint(0),
+            max_time: TimePoint(0),
+        };
+
+        let contract =
+            Contracts::new("CDGAH7TU7UH3BXGYXRIXLJX63LYRIF6APZPIG64ZAW3NNDCPJ7AAWVTZ").unwrap();
+        let op = contract.call(
+            "increment",
+            Some(vec![
+                Address::new("GAQODVWAY3AYAGEAT4CG3YSPM4FBTBB2QSXCYJLM3HVIV5ILTP5BRXCD")
+                    .unwrap()
+                    .to_sc_val()
+                    .unwrap(),
+                ScVal::U32(3),
+            ]),
+        );
+
+        let mut tx_builder = TransactionBuilder::new(source_account, network, Some(time_bounds));
+        tx_builder.add_operation(op);
+        tx_builder.fee(100u32);
+
+        let tx = tx_builder.build();
+        let xdr = tx
+            .to_envelope()
+            .unwrap()
+            .to_xdr_base64(Limits::none())
+            .unwrap();
+        assert_eq!(xdr, tx_xdr);
+
+        let (s, _m) = get_mocked_server(request, response).await;
+        let txresult = s.simulate_transaction(tx, None).await.unwrap();
+
+        if let Some((ret_val, auth)) = txresult.to_result() {
+            assert_eq!(ret_val, ScVal::U32(12));
+        } else {
+            panic!("Simulation failed")
+        }
+    }
+    /*
+     * Failed transaction
+     * */
+    {
+        let tx_xdr = "AAAAAgAAAAAg4dbAxsGAGICfBG3iT2cKGYQ6hK4sJWzZ6or1C5v6GAAAAGQAJsOiAAAADwAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABzAP+dP0PsNzYvFF1pv7a8RQXwH5eg3uZBbbWjE9PwAsAAAAJaW5jcmVtZW50AAAAAAAAAQAAAAMAAAADAAAAAAAAAAAAAAAA";
+        let request = json!(
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "simulateTransaction",
+          "params": {
+            "transaction": tx_xdr,
+            "resourceConfig": {
+              "instructionLeeway": 3000000
+            }
+          }
+        }
+                );
+        let response = json!(
+        {
+                   "jsonrpc": "2.0",
+                   "id": 1,
+                   "result": {
+                     //"error": "host invocation failed\n\nCaused by:\n    HostError: Error(WasmVm, InternalError)\n    \n    Event log (newest first):\n       0: [Diagnostic Event] contract:cc03fe74fd0fb0dcd8bc5175a6fedaf11417c07e5e837b9905b6d68c4f4fc00b, topics:[error, Error(WasmVm, InternalError)], data:[\"VM call failed: Func(MismatchingParameterLen)\", increment]\n       1: [Diagnostic Event] topics:[fn_call, Bytes(cc03fe74fd0fb0dcd8bc5175a6fedaf11417c07e5e837b9905b6d68c4f4fc00b), increment], data:3\n    \n    Backtrace (newest first):\n       0: soroban_env_host::vm::Vm::invoke_function_raw\n       1: soroban_env_host::host::frame::<impl soroban_env_host::host::Host>::with_frame\n       2: soroban_env_host::host::frame::<impl soroban_env_host::host::Host>::call_n_internal\n       3: soroban_env_host::host::frame::<impl soroban_env_host::host::Host>::invoke_function\n       4: preflight::preflight::preflight_invoke_hf_op\n       5: preflight::preflight_invoke_hf_op::{{closure}}\n       6: core::ops::function::FnOnce::call_once{{vtable.shim}}\n       7: preflight::catch_preflight_panic\n       8: _cgo_0b49d6ed4a0b_Cfunc_preflight_invoke_hf_op\n                 at tmp/go-build/cgo-gcc-prolog:103:11\n       9: runtime.asmcgocall\n                 at ./runtime/asm_amd64.s:848\n    \n    ",
+                     "error": "host invokation error...",
+                     "events": [
+                       "AAAAAAAAAAAAAAAAAAAAAgAAAAAAAAADAAAADwAAAAdmbl9jYWxsAAAAAA0AAAAgzAP+dP0PsNzYvFF1pv7a8RQXwH5eg3uZBbbWjE9PwAsAAAAPAAAACWluY3JlbWVudAAAAAAAAAMAAAAD",
+                       "AAAAAAAAAAAAAAABzAP+dP0PsNzYvFF1pv7a8RQXwH5eg3uZBbbWjE9PwAsAAAACAAAAAAAAAAIAAAAPAAAABWVycm9yAAAAAAAAAgAAAAEAAAAHAAAAEAAAAAEAAAACAAAADgAAAC1WTSBjYWxsIGZhaWxlZDogRnVuYyhNaXNtYXRjaGluZ1BhcmFtZXRlckxlbikAAAAAAAAPAAAACWluY3JlbWVudAAAAA=="
+                     ],
+                     "cost": {
+                       "cpuInsns": "0",
+                       "memBytes": "0"
+                     },
+                     "latestLedger": 2552013
+                   }
+          }
+                         );
+        let source_account = Rc::new(RefCell::new(
+            Account::new(
+                "GAQODVWAY3AYAGEAT4CG3YSPM4FBTBB2QSXCYJLM3HVIV5ILTP5BRXCD",
+                "10911149667123215",
+            )
+            .unwrap(),
+        ));
+        let network = Networks::testnet();
+        let time_bounds = TimeBounds {
+            min_time: TimePoint(0),
+            max_time: TimePoint(0),
+        };
+
+        let contract =
+            Contracts::new("CDGAH7TU7UH3BXGYXRIXLJX63LYRIF6APZPIG64ZAW3NNDCPJ7AAWVTZ").unwrap();
+        let op = contract.call("increment", Some(vec![ScVal::U32(3)]));
+
+        let mut tx_builder = TransactionBuilder::new(source_account, network, Some(time_bounds));
+        tx_builder.add_operation(op);
+        tx_builder.fee(100u32);
+
+        let tx = tx_builder.build();
+        let xdr = tx
+            .to_envelope()
+            .unwrap()
+            .to_xdr_base64(Limits::none())
+            .unwrap();
+        assert_eq!(xdr, tx_xdr);
+
+        // TODO make it work
+        let (s, _m) = get_mocked_server(request, response).await;
+        let txresult = s.simulate_transaction(tx, None).await.unwrap();
+
+        if let Some((ret_val, auth)) = txresult.to_result() {
+            assert_eq!(ret_val, ScVal::U32(12));
+        } else {
+            panic!("Simulation failed")
+        }
+    }
+    // TODO test for restore_preamble
+    // TODO test for state changes
 }
 
 // Create a Server that will reply `response` for a json `request` partially matching

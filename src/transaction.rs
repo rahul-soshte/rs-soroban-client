@@ -34,36 +34,29 @@ pub fn assemble_transaction(
         return Err(Error::SimulationFailed);
     }
 
-    if let Some(_restore) = simulation.restore_preamble {
+    if let Some((_, _restore)) = simulation.to_restore_transaction_data() {
         return Err(Error::RestorationRequired);
     }
 
     // Calculate fees
     let classic_fee_num = tx.fee;
 
-    let auth: VecM<SorobanAuthorizationEntry> = if let Some(r) = simulation.results {
-        let v: Vec<SorobanAuthorizationEntry> = r[0]
-            .auth
-            .clone()
-            .into_iter()
-            .map(|e| SorobanAuthorizationEntry::from_xdr_base64(e, Limits::none()).unwrap())
-            .collect();
-        v.try_into().expect("Cannot convert Vec to VecM")
+    let auth = if let Some((_, a)) = simulation.to_result() {
+        Some(a.try_into().expect("Cannot convert Vec to VecM"))
     } else {
-        Default::default()
+        None
     };
 
     let min_resource_fee = simulation
         .min_resource_fee
+        .as_ref()
         .unwrap()
         .parse::<u32>()
         .unwrap_or(0);
 
-    let soroban_tx_data = SorobanDataBuilder::new(Some(
-        stellar_baselib::soroban_data_builder::Either::Left(simulation.transaction_data.unwrap()),
-    ))
-    .build();
-
+    let soroban_tx_data = simulation
+        .to_transaction_data()
+        .expect("No transaction data");
     // Create a transaction builder with updated fees and Soroban data
     let source_acc = Rc::new(RefCell::new(
         Account::new(
@@ -86,7 +79,7 @@ pub fn assemble_transaction(
             tx_builder.add_operation(
                 stellar_baselib::operation::Operation::invoke_host_function(
                     invoke_host_function_op.host_function,
-                    Some(auth),
+                    auth,
                     None,
                 )
                 .map_err(|_| Error::TransactionError)?,

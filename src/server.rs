@@ -225,6 +225,7 @@ impl Server {
             "method": "simulateTransaction",
             "params": params
         });
+        dbg!(&payload);
 
         let response = self
             .client
@@ -232,12 +233,13 @@ impl Server {
             .header("Content-Type", "application/json")
             .json(&payload)
             .send()
-            .map_err(|_| Error::NetworkError)
-            .await?;
+            .await;
+        let r = dbg!(response);
+        let rr = r.map_err(|_| Error::NetworkError)?;
 
-        let result: SimulateTransactionResponseWrapper =
-            response.json().map_err(|_| Error::NetworkError).await?;
-        Ok(result.result)
+        let result = dbg!(rr.json::<SimulateTransactionResponseWrapper>().await);
+
+        Ok(result.map_err(|_| Error::NetworkError)?.result)
     }
 
     pub async fn get_contract_data(

@@ -1,8 +1,11 @@
 #![allow(non_snake_case)]
 use std::collections::HashMap;
 use stellar_baselib::{
-    soroban_data_builder::SorobanDataBuilder,
-    xdr::{Limits, ReadXdr, ScVal, TransactionEnvelope, TransactionMeta, TransactionResult},
+    soroban_data_builder::{SorobanDataBuilder, SorobanDataBuilderBehavior},
+    xdr::{
+        DiagnosticEvent, LedgerEntry, LedgerKey, Limits, ReadXdr, ScVal, SorobanAuthorizationEntry,
+        SorobanTransactionData, TransactionEnvelope, TransactionMeta, TransactionResult,
+    },
 };
 
 use serde::{Deserialize, Serialize};
@@ -21,7 +24,7 @@ pub struct Balance {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-
+#[serde(rename_all = "camelCase")]
 pub struct Cost {
     pub cpu_insns: String,
     pub mem_bytes: String,
@@ -247,13 +250,36 @@ pub struct JsonRpcResponse {
 #[serde(rename_all = "camelCase")]
 pub struct RestorePreamble {
     pub min_resource_fee: String,
-    pub transaction_data: SorobanDataBuilder,
+    pub transaction_data: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RawSimulateHostFunctionResult {
     pub auth: Vec<String>,
     pub xdr: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Copy)]
+pub enum StateChangeKind {
+    Create = 1,
+    Updated = 2,
+    Deleted = 3,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RawStateChanges {
+    #[serde(rename = "type")]
+    kind: StateChangeKind,
+    key: String,
+    before: Option<String>,
+    after: Option<String>,
+}
+
+pub struct StateChange {
+    kind: StateChangeKind,
+    key: LedgerKey,
+    before: Option<LedgerEntry>,
+    after: Option<LedgerEntry>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -268,10 +294,89 @@ pub struct SimulateTransactionResponseWrapper {
 pub struct SimulateTransactionResponse {
     pub latest_ledger: i32,
     pub min_resource_fee: Option<String>,
-    pub results: Option<Vec<RawSimulateHostFunctionResult>>,
-    pub transaction_data: Option<String>,
-    pub events: Option<Vec<String>>,
-    pub restore_preamble: Option<RestorePreamble>,
     pub error: Option<String>,
     pub cost: Option<Cost>,
+    results: Option<Vec<RawSimulateHostFunctionResult>>,
+    transaction_data: Option<String>,
+    restore_preamble: Option<RestorePreamble>,
+    events: Option<Vec<String>>,
+    state_changes: Option<Vec<RawStateChanges>>,
+}
+
+impl SimulateTransactionResponse {
+    pub fn to_result(&self) -> Option<(ScVal, Vec<SorobanAuthorizationEntry>)> {
+        if let Some(r) = self.results.as_ref() {
+            let auth: Vec<SorobanAuthorizationEntry> = r[0]
+                .auth
+                .iter()
+                .map(|e| SorobanAuthorizationEntry::from_xdr_base64(e, Limits::none()).unwrap())
+                .collect();
+            let ret_val = ScVal::from_xdr_base64(&r[0].xdr, Limits::none())
+                .expect("Xdr from RPC should be valid");
+
+            Some((ret_val, auth))
+        } else {
+            None
+        }
+    }
+
+    pub fn to_transaction_data(&self) -> Option<SorobanTransactionData> {
+        self.transaction_data.clone().map(|data| {
+            SorobanDataBuilder::new(Some(stellar_baselib::soroban_data_builder::Either::Left(
+                data,
+            )))
+            .build()
+        })
+    }
+
+    pub fn to_restore_transaction_data(&self) -> Option<(i64, SorobanTransactionData)> {
+        if let Some(restore) = self.restore_preamble.clone() {
+            Some((
+                restore
+                    .min_resource_fee
+                    .parse()
+                    .expect("Invalid i64 for min_resource_fee"),
+                SorobanDataBuilder::new(Some(stellar_baselib::soroban_data_builder::Either::Left(
+                    restore.transaction_data,
+                )))
+                .build(),
+            ))
+        } else {
+            None
+        }
+    }
+
+    pub fn to_diagnostic_events(&self) -> Option<Vec<DiagnosticEvent>> {
+        if let Some(events) = self.events.as_ref() {
+            events
+                .iter()
+                .map(|e| DiagnosticEvent::from_xdr_base64(e, Limits::none()).ok())
+                .collect()
+        } else {
+            None
+        }
+    }
+
+    pub fn to_state_changes(&self) -> Vec<StateChange> {
+        if let Some(changes) = self.state_changes.as_ref() {
+            changes
+                .iter()
+                .map(|c| StateChange {
+                    kind: c.kind,
+                    key: LedgerKey::from_xdr_base64(&c.key, Limits::none())
+                        .expect("Invalid LedgerKey"),
+                    before: c.before.as_ref().map(|e| {
+                        LedgerEntry::from_xdr_base64(e, Limits::none())
+                            .expect("Invalid LedgerEntry")
+                    }),
+                    after: c.after.as_ref().map(|e| {
+                        LedgerEntry::from_xdr_base64(e, Limits::none())
+                            .expect("Invalid LedgerEntry")
+                    }),
+                })
+                .collect()
+        } else {
+            Default::default()
+        }
+    }
 }
