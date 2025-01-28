@@ -9,6 +9,7 @@ use crate::soroban_rpc::GetLatestLedgerResponse;
 use crate::soroban_rpc::GetNetworkResponse;
 use crate::soroban_rpc::GetNetworkResponseWrapper;
 use crate::soroban_rpc::GetTransactionStatus;
+use crate::soroban_rpc::SendTransactionStatus;
 use base64::Engine;
 use serde_json::json;
 use stellar_baselib::account::Account;
@@ -24,11 +25,13 @@ use stellar_baselib::keypair::KeypairBehavior;
 use stellar_baselib::network::NetworkPassphrase;
 use stellar_baselib::network::Networks;
 use stellar_baselib::operation::Operation;
+use stellar_baselib::transaction::Transaction;
 use stellar_baselib::transaction::TransactionBehavior;
 use stellar_baselib::transaction_builder::TransactionBuilder;
 use stellar_baselib::transaction_builder::TransactionBuilderBehavior;
 use stellar_baselib::xdr::ContractDataEntry;
 use stellar_baselib::xdr::ContractEventV0;
+use stellar_baselib::xdr::DataValue;
 use stellar_baselib::xdr::ExtensionPoint;
 use stellar_baselib::xdr::Hash;
 use stellar_baselib::xdr::InvokeContractArgs;
@@ -39,6 +42,7 @@ use stellar_baselib::xdr::LedgerKey;
 use stellar_baselib::xdr::LedgerKeyAccount;
 use stellar_baselib::xdr::LedgerKeyContractData;
 use stellar_baselib::xdr::Limits;
+use stellar_baselib::xdr::ManageDataOp;
 use stellar_baselib::xdr::OperationResult;
 use stellar_baselib::xdr::OperationResultTr;
 use stellar_baselib::xdr::RestoreFootprintOp;
@@ -46,6 +50,7 @@ use stellar_baselib::xdr::ScString;
 use stellar_baselib::xdr::ScSymbol;
 use stellar_baselib::xdr::ScVal;
 use stellar_baselib::xdr::ScVec;
+use stellar_baselib::xdr::String64;
 use stellar_baselib::xdr::TimeBounds;
 use stellar_baselib::xdr::TimePoint;
 use stellar_baselib::xdr::TransactionMeta;
@@ -948,6 +953,211 @@ async fn simulate_transaction() {
     }
     // TODO test for restore_preamble
     // TODO test for state changes
+}
+
+#[tokio::test]
+async fn send_transaction() {
+    /*
+     * Pending transaction
+     */
+    {
+        let tx_xdr = "AAAAAgAAAAAg4dbAxsGAGICfBG3iT2cKGYQ6hK4sJWzZ6or1C5v6GAAAAGQAJsOiAAAADQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAACgAAAAVIZWxsbwAAAAAAAAEAAAAMU29yb2JhbiBEb2NzAAAAAAAAAAELm/oYAAAAQATr6Ghp/DNO7S6JjEFwcJ9a+dvI6NJr7I/2eQttvoovjQ8te4zKKaapC3mbmx6ld6YKL5T81mxs45TjzdG5zw0=";
+        let request = json!(
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "sendTransaction",
+          "params": {
+            "transaction": tx_xdr,
+          }
+        }
+            );
+        let hash = "d8ec9b68780314ffdfdfc2194b1b35dd27d7303c3bceaef6447e31631a1419dc";
+        let response = json!(
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "status": "PENDING",
+            "hash": hash,
+            "latestLedger": 2553978,
+            "latestLedgerCloseTime": "1700159337"
+          }
+        }
+            );
+
+        let network = Networks::testnet();
+        let tx = Transaction::from_xdr_envelope(tx_xdr, network);
+        let xdr = tx
+            .to_envelope()
+            .unwrap()
+            .to_xdr_base64(Limits::none())
+            .unwrap();
+
+        assert_eq!(xdr, tx_xdr);
+
+        let (s, _m) = get_mocked_server(request, response).await;
+        let txresult = s.send_transaction(tx).await.unwrap();
+        assert_eq!(txresult.status, SendTransactionStatus::Pending);
+        assert_eq!(txresult.hash, hash);
+        assert_eq!(txresult.latest_ledger, 2553978);
+        assert_eq!(txresult.latest_ledger_close_time, "1700159337");
+        assert_eq!(txresult.to_error_result(), None);
+        assert_eq!(txresult.to_diagnostic_events(), None);
+    }
+
+    /*
+     * Duplicate transaction
+     */
+    {
+        let tx_xdr = "AAAAAgAAAAAg4dbAxsGAGICfBG3iT2cKGYQ6hK4sJWzZ6or1C5v6GAAAAGQAJsOiAAAADQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAACgAAAAVIZWxsbwAAAAAAAAEAAAAMU29yb2JhbiBEb2NzAAAAAAAAAAELm/oYAAAAQATr6Ghp/DNO7S6JjEFwcJ9a+dvI6NJr7I/2eQttvoovjQ8te4zKKaapC3mbmx6ld6YKL5T81mxs45TjzdG5zw0=";
+        let request = json!(
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "sendTransaction",
+          "params": {
+            "transaction": tx_xdr,
+          }
+        }
+                    );
+        let hash = "d8ec9b68780314ffdfdfc2194b1b35dd27d7303c3bceaef6447e31631a1419dc";
+        let response = json!(
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "status": "DUPLICATE",
+            "hash": hash,
+            "latestLedger": 2553978,
+            "latestLedgerCloseTime": "1700159337"
+          }
+        }
+            );
+
+        let network = Networks::testnet();
+        let tx = Transaction::from_xdr_envelope(tx_xdr, network);
+        let xdr = tx
+            .to_envelope()
+            .unwrap()
+            .to_xdr_base64(Limits::none())
+            .unwrap();
+
+        assert_eq!(xdr, tx_xdr);
+
+        let (s, _m) = get_mocked_server(request, response).await;
+        let txresult = s.send_transaction(tx).await.unwrap();
+        assert_eq!(txresult.status, SendTransactionStatus::Duplicate);
+        assert_eq!(txresult.hash, hash);
+        assert_eq!(txresult.latest_ledger, 2553978);
+        assert_eq!(txresult.latest_ledger_close_time, "1700159337");
+        assert_eq!(txresult.to_error_result(), None);
+        assert_eq!(txresult.to_diagnostic_events(), None);
+    }
+    /*
+     * Try again transaction
+     */
+    {
+        let tx_xdr = "AAAAAgAAAAAg4dbAxsGAGICfBG3iT2cKGYQ6hK4sJWzZ6or1C5v6GAAAAGQAJsOiAAAADQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAACgAAAAVIZWxsbwAAAAAAAAEAAAAMU29yb2JhbiBEb2NzAAAAAAAAAAELm/oYAAAAQATr6Ghp/DNO7S6JjEFwcJ9a+dvI6NJr7I/2eQttvoovjQ8te4zKKaapC3mbmx6ld6YKL5T81mxs45TjzdG5zw0=";
+        let request = json!(
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "sendTransaction",
+          "params": {
+            "transaction": tx_xdr,
+          }
+        }
+                    );
+        let hash = "d8ec9b68780314ffdfdfc2194b1b35dd27d7303c3bceaef6447e31631a1419dc";
+        let response = json!(
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "status": "TRY_AGAIN_LATER",
+            "hash": hash,
+            "latestLedger": 2553978,
+            "latestLedgerCloseTime": "1700159337"
+          }
+        }
+            );
+
+        let network = Networks::testnet();
+        let tx = Transaction::from_xdr_envelope(tx_xdr, network);
+        let xdr = tx
+            .to_envelope()
+            .unwrap()
+            .to_xdr_base64(Limits::none())
+            .unwrap();
+
+        assert_eq!(xdr, tx_xdr);
+
+        let (s, _m) = get_mocked_server(request, response).await;
+        let txresult = s.send_transaction(tx).await.unwrap();
+        assert_eq!(txresult.status, SendTransactionStatus::TryAgainLater);
+        assert_eq!(txresult.hash, hash);
+        assert_eq!(txresult.latest_ledger, 2553978);
+        assert_eq!(txresult.latest_ledger_close_time, "1700159337");
+        assert_eq!(txresult.to_error_result(), None);
+        assert_eq!(txresult.to_diagnostic_events(), None);
+    }
+
+    /*
+     * Error transaction
+     */
+    {
+        let tx_xdr = "AAAAAgAAAAAg4dbAxsGAGICfBG3iT2cKGYQ6hK4sJWzZ6or1C5v6GAAAAGQAAAAAAAAACgAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAACgAAAAVIZWxsbwAAAAAAAAEAAAAMU29yb2JhbiBEb2NzAAAAAAAAAAELm/oYAAAAQMQkfl8sdCYQIOdJB0TyazJ126y2TFRjL8yNHSb4TTsH5Ym6qM6gkTx1ENRZ0PFprVGusMTHISzdPHYJ4njBZAQ=";
+        let request = json!(
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "sendTransaction",
+          "params": {
+            "transaction": tx_xdr,
+          }
+        }
+                            );
+        let hash = "84a5f62bff422581dda019811daed0868a3db41833ad6e90a12f0d7db1be8167";
+        let response = json!(
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "errorResultXdr": "AAAAAAAAAGT////7AAAAAA==",
+            "status": "ERROR",
+            "hash": hash,
+            "latestLedger": 2553978,
+            "latestLedgerCloseTime": "1700159337"
+          }
+        }
+                    );
+
+        let network = Networks::testnet();
+        let tx = Transaction::from_xdr_envelope(tx_xdr, network);
+        let xdr = tx
+            .to_envelope()
+            .unwrap()
+            .to_xdr_base64(Limits::none())
+            .unwrap();
+
+        assert_eq!(xdr, tx_xdr);
+
+        let (s, _m) = get_mocked_server(request, response).await;
+        let txresult = s.send_transaction(tx).await.unwrap();
+        assert_eq!(txresult.status, SendTransactionStatus::Error);
+        assert_eq!(txresult.hash, hash);
+        assert_eq!(txresult.latest_ledger, 2553978);
+        assert_eq!(txresult.latest_ledger_close_time, "1700159337");
+        assert_eq!(txresult.to_diagnostic_events(), None);
+
+        let tx_error = TransactionResult {
+            fee_charged: 100,
+            result: TransactionResultResult::TxBadSeq,
+            ext: stellar_baselib::xdr::TransactionResultExt::V0,
+        };
+        assert_eq!(txresult.to_error_result(), Some(tx_error));
+    }
 }
 
 // Create a Server that will reply `response` for a json `request` partially matching

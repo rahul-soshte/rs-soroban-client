@@ -213,13 +213,13 @@ pub struct RequestAirdropResponse {
 //     ERROR,
 // }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum SendTransactionStatus {
     Pending,
     Duplicate,
     Error,
-    Success,
+    TryAgainLater,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -229,8 +229,26 @@ pub struct SendTransactionResponse {
     pub hash: String,
     pub latest_ledger: u32,
     pub latest_ledger_close_time: String,
-    pub error_result_xdr: Option<String>, // Base64 encoded TransactionResult
-    pub diagnostic_events_xdr: Option<Vec<String>>, // Base64 encoded DiagnosticEvent
+    error_result_xdr: Option<String>, // Base64 encoded TransactionResult
+    diagnostic_events_xdr: Option<Vec<String>>, // Base64 encoded DiagnosticEvent
+}
+
+impl SendTransactionResponse {
+    pub fn to_error_result(&self) -> Option<TransactionResult> {
+        self.error_result_xdr.as_ref().map(|e| {
+            TransactionResult::from_xdr_base64(e, Limits::none()).expect("Invalid XDR from RPC")
+        })
+    }
+    pub fn to_diagnostic_events(&self) -> Option<Vec<DiagnosticEvent>> {
+        if let Some(events) = self.diagnostic_events_xdr.as_ref() {
+            events
+                .iter()
+                .map(|e| DiagnosticEvent::from_xdr_base64(e, Limits::none()).ok())
+                .collect()
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -276,10 +294,10 @@ pub struct RawStateChanges {
 }
 
 pub struct StateChange {
-    kind: StateChangeKind,
-    key: LedgerKey,
-    before: Option<LedgerEntry>,
-    after: Option<LedgerEntry>,
+    pub kind: StateChangeKind,
+    pub key: LedgerKey,
+    pub before: Option<LedgerEntry>,
+    pub after: Option<LedgerEntry>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -321,9 +339,9 @@ impl SimulateTransactionResponse {
     }
 
     pub fn to_transaction_data(&self) -> Option<SorobanTransactionData> {
-        self.transaction_data.clone().map(|data| {
+        self.transaction_data.as_ref().map(|data| {
             SorobanDataBuilder::new(Some(stellar_baselib::soroban_data_builder::Either::Left(
-                data,
+                data.to_owned(),
             )))
             .build()
         })
