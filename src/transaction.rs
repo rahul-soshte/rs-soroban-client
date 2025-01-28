@@ -1,8 +1,6 @@
-use core::panic;
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{error::Error, soroban_rpc::*};
-use stellar_baselib::soroban_data_builder::SorobanDataBuilderBehavior;
 pub use stellar_baselib::{
     account::Account,
     account::AccountBehavior,
@@ -116,6 +114,7 @@ pub enum Either<L, R> {
 mod test {
     use std::{cell::RefCell, rc::Rc, str::FromStr};
 
+    use serde_json::json;
     use stellar_baselib::{
         account::{Account, AccountBehavior},
         transaction_builder::{TransactionBuilder, TransactionBuilderBehavior},
@@ -126,7 +125,49 @@ mod test {
         },
     };
 
-    use crate::transaction::is_soroban_transaction;
+    use crate::{error::Error, transaction::{
+        assemble_transaction, is_soroban_transaction, SimulateTransactionResponse,
+    }};
+
+    #[test]
+    fn simulation_failed() {
+
+        let source_account = Rc::new(RefCell::new(
+            Account::new(
+                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                "0",
+            )
+            .unwrap(),
+        ));
+        let network = "Network for tests";
+
+        let op = Operation {
+            source_account: None,
+            body: OperationBody::InvokeHostFunction(InvokeHostFunctionOp {
+                host_function: HostFunction::InvokeContract(InvokeContractArgs {
+                    contract_address: ScAddress::Contract(Hash([0; 32])),
+                    function_name: ScSymbol::from(StringM::from_str("test").unwrap()),
+                    args: VecM::<ScVal>::try_from(Vec::new()).unwrap(),
+                }),
+                auth: VecM::<SorobanAuthorizationEntry>::try_from(Vec::new()).unwrap(),
+            }),
+        };
+
+        let mut builder = TransactionBuilder::new(source_account, network, None);
+        builder.fee(1000u32).set_timeout(30).unwrap();
+        builder.add_operation(op);
+        let tx = builder.build();
+        let simulation: SimulateTransactionResponse = serde_json::from_value(json!(
+         {
+            "error": "This is an error",
+            "latestLedger": 2552139
+          }
+        
+        )).unwrap();
+
+        let r = assemble_transaction(tx, network, simulation);
+        assert!(matches!(r, Err(Error::SimulationFailed)));
+    }
 
     #[test]
     fn is_soroban_transaction_false() {
@@ -156,6 +197,32 @@ mod test {
             !is_soroban_transaction(&tx),
             "CreateAccountOp is not a soroban op"
         );
+
+        let simulation: SimulateTransactionResponse = serde_json::from_value(json!(
+         {
+            "transactionData": "AAAAAAAAAAIAAAAGAAAAAcwD/nT9D7Dc2LxRdab+2vEUF8B+XoN7mQW21oxPT8ALAAAAFAAAAAEAAAAHy8vNUZ8vyZ2ybPHW0XbSrRtP7gEWsJ6zDzcfY9P8z88AAAABAAAABgAAAAHMA/50/Q+w3Ni8UXWm/trxFBfAfl6De5kFttaMT0/ACwAAABAAAAABAAAAAgAAAA8AAAAHQ291bnRlcgAAAAASAAAAAAAAAAAg4dbAxsGAGICfBG3iT2cKGYQ6hK4sJWzZ6or1C5v6GAAAAAEAHfKyAAAFiAAAAIgAAAAAAAAAAw==",
+            "minResourceFee": "90353",
+            "events": [
+              "AAAAAQAAAAAAAAAAAAAAAgAAAAAAAAADAAAADwAAAAdmbl9jYWxsAAAAAA0AAAAgzAP+dP0PsNzYvFF1pv7a8RQXwH5eg3uZBbbWjE9PwAsAAAAPAAAACWluY3JlbWVudAAAAAAAABAAAAABAAAAAgAAABIAAAAAAAAAACDh1sDGwYAYgJ8EbeJPZwoZhDqEriwlbNnqivULm/oYAAAAAwAAAAM=",
+              "AAAAAQAAAAAAAAABzAP+dP0PsNzYvFF1pv7a8RQXwH5eg3uZBbbWjE9PwAsAAAACAAAAAAAAAAIAAAAPAAAACWZuX3JldHVybgAAAAAAAA8AAAAJaW5jcmVtZW50AAAAAAAAAwAAAAw="
+            ],
+            "results": [
+              {
+                "auth": [],
+                "xdr": "AAAAAwAAAAw="
+              }
+            ],
+            "cost": {
+              "cpuInsns": "1635562",
+              "memBytes": "1295756"
+            },
+            "latestLedger": 2552139
+          }
+        
+        )).unwrap();
+
+        let r = assemble_transaction(tx, network, simulation);
+        assert!(matches!(r, Err(Error::InvalidSorobanTransaction)));
     }
 
     #[test]

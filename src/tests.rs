@@ -24,41 +24,31 @@ use stellar_baselib::keypair::Keypair;
 use stellar_baselib::keypair::KeypairBehavior;
 use stellar_baselib::network::NetworkPassphrase;
 use stellar_baselib::network::Networks;
-use stellar_baselib::operation::Operation;
 use stellar_baselib::transaction::Transaction;
 use stellar_baselib::transaction::TransactionBehavior;
 use stellar_baselib::transaction_builder::TransactionBuilder;
 use stellar_baselib::transaction_builder::TransactionBuilderBehavior;
 use stellar_baselib::xdr::ContractDataEntry;
 use stellar_baselib::xdr::ContractEventV0;
-use stellar_baselib::xdr::DataValue;
 use stellar_baselib::xdr::ExtensionPoint;
 use stellar_baselib::xdr::Hash;
-use stellar_baselib::xdr::InvokeContractArgs;
-use stellar_baselib::xdr::InvokeHostFunctionOp;
 use stellar_baselib::xdr::InvokeHostFunctionResult;
 use stellar_baselib::xdr::LedgerEntryData;
 use stellar_baselib::xdr::LedgerKey;
 use stellar_baselib::xdr::LedgerKeyAccount;
 use stellar_baselib::xdr::LedgerKeyContractData;
 use stellar_baselib::xdr::Limits;
-use stellar_baselib::xdr::ManageDataOp;
 use stellar_baselib::xdr::OperationResult;
 use stellar_baselib::xdr::OperationResultTr;
-use stellar_baselib::xdr::RestoreFootprintOp;
 use stellar_baselib::xdr::ScString;
 use stellar_baselib::xdr::ScSymbol;
 use stellar_baselib::xdr::ScVal;
 use stellar_baselib::xdr::ScVec;
-use stellar_baselib::xdr::String64;
 use stellar_baselib::xdr::TimeBounds;
 use stellar_baselib::xdr::TimePoint;
-use stellar_baselib::xdr::TransactionMeta;
-use stellar_baselib::xdr::TransactionMetaV3;
 use stellar_baselib::xdr::TransactionResult;
 use stellar_baselib::xdr::TransactionResultResult;
 use stellar_baselib::xdr::TtlEntry;
-use stellar_baselib::xdr::VecM;
 use stellar_baselib::xdr::WriteXdr;
 use wiremock::matchers;
 use wiremock::matchers::method;
@@ -623,8 +613,8 @@ async fn get_transaction() {
             } else {
                 panic!("TransactionResultResult not found")
             }
-            let envelope = r.get_envelope().expect("Should not fail");
-            let (meta, val) = r.get_result_meta().expect("Should not fail");
+            let _envelope = r.get_envelope().expect("Should not fail");
+            let (_meta, val) = r.get_result_meta().expect("Should not fail");
             assert_eq!(val, Some(ScVal::Void));
             // TODO add more tests
         }
@@ -1157,6 +1147,95 @@ async fn send_transaction() {
             ext: stellar_baselib::xdr::TransactionResultExt::V0,
         };
         assert_eq!(txresult.to_error_result(), Some(tx_error));
+    }
+}
+
+#[tokio::test]
+async fn prepare_transaction() {
+    {
+        let tx_xdr = "AAAAAgAAAAAg4dbAxsGAGICfBG3iT2cKGYQ6hK4sJWzZ6or1C5v6GAAAAGQAJsOiAAAAEQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABzAP+dP0PsNzYvFF1pv7a8RQXwH5eg3uZBbbWjE9PwAsAAAAJaW5jcmVtZW50AAAAAAAAAgAAABIAAAAAAAAAACDh1sDGwYAYgJ8EbeJPZwoZhDqEriwlbNnqivULm/oYAAAAAwAAAAMAAAAAAAAAAAAAAAA=";
+        let request = json!(
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "simulateTransaction",
+          "params": {
+            "transaction": tx_xdr,
+          }
+        }
+        );
+        let response = json!(
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "transactionData": "AAAAAAAAAAIAAAAGAAAAAcwD/nT9D7Dc2LxRdab+2vEUF8B+XoN7mQW21oxPT8ALAAAAFAAAAAEAAAAHy8vNUZ8vyZ2ybPHW0XbSrRtP7gEWsJ6zDzcfY9P8z88AAAABAAAABgAAAAHMA/50/Q+w3Ni8UXWm/trxFBfAfl6De5kFttaMT0/ACwAAABAAAAABAAAAAgAAAA8AAAAHQ291bnRlcgAAAAASAAAAAAAAAAAg4dbAxsGAGICfBG3iT2cKGYQ6hK4sJWzZ6or1C5v6GAAAAAEAHfKyAAAFiAAAAIgAAAAAAAAAAw==",
+            "minResourceFee": "90353",
+            "events": [
+              "AAAAAQAAAAAAAAAAAAAAAgAAAAAAAAADAAAADwAAAAdmbl9jYWxsAAAAAA0AAAAgzAP+dP0PsNzYvFF1pv7a8RQXwH5eg3uZBbbWjE9PwAsAAAAPAAAACWluY3JlbWVudAAAAAAAABAAAAABAAAAAgAAABIAAAAAAAAAACDh1sDGwYAYgJ8EbeJPZwoZhDqEriwlbNnqivULm/oYAAAAAwAAAAM=",
+              "AAAAAQAAAAAAAAABzAP+dP0PsNzYvFF1pv7a8RQXwH5eg3uZBbbWjE9PwAsAAAACAAAAAAAAAAIAAAAPAAAACWZuX3JldHVybgAAAAAAAA8AAAAJaW5jcmVtZW50AAAAAAAAAwAAAAw="
+            ],
+            "results": [
+              {
+                "auth": [],
+                "xdr": "AAAAAwAAAAw="
+              }
+            ],
+            "cost": {
+              "cpuInsns": "1635562",
+              "memBytes": "1295756"
+            },
+            "latestLedger": 2552139
+          }
+        }
+        );
+        let source_account = Rc::new(RefCell::new(
+            Account::new(
+                "GAQODVWAY3AYAGEAT4CG3YSPM4FBTBB2QSXCYJLM3HVIV5ILTP5BRXCD",
+                "10911149667123217",
+            )
+            .unwrap(),
+        ));
+        let network = Networks::testnet();
+        let time_bounds = TimeBounds {
+            min_time: TimePoint(0),
+            max_time: TimePoint(0),
+        };
+
+        let contract =
+            Contracts::new("CDGAH7TU7UH3BXGYXRIXLJX63LYRIF6APZPIG64ZAW3NNDCPJ7AAWVTZ").unwrap();
+        let op = contract.call(
+            "increment",
+            Some(vec![
+                Address::new("GAQODVWAY3AYAGEAT4CG3YSPM4FBTBB2QSXCYJLM3HVIV5ILTP5BRXCD")
+                    .unwrap()
+                    .to_sc_val()
+                    .unwrap(),
+                ScVal::U32(3),
+            ]),
+        );
+
+        let mut tx_builder = TransactionBuilder::new(source_account, network, Some(time_bounds));
+        tx_builder.add_operation(op);
+        tx_builder.fee(100u32);
+
+        let tx = tx_builder.build();
+        let xdr = tx
+            .to_envelope()
+            .unwrap()
+            .to_xdr_base64(Limits::none())
+            .unwrap();
+        assert_eq!(xdr, tx_xdr);
+
+        let (s, _m) = get_mocked_server(request, response).await;
+
+        let simulation = s.simulate_transaction(tx.clone(), None).await.unwrap();
+        let txresult = s.prepare_transaction(tx.clone(), network).await.unwrap();
+
+        //dbg!(txresult);
+
+        assert_eq!(txresult.fee, tx.fee + 90353);
+        assert_eq!(txresult.soroban_data, simulation.to_transaction_data());
     }
 }
 
