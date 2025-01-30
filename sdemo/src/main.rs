@@ -4,16 +4,18 @@ use soroban_client::contract::ContractBehavior;
 use soroban_client::keypair::KeypairBehavior;
 use soroban_client::network::{NetworkPassphrase, Networks};
 use soroban_client::server::Options;
-use soroban_client::soroban_rpc::GetTransactionStatus;
+use soroban_client::soroban_rpc::{EventFilter, GetTransactionStatus, Topic};
 use soroban_client::transaction::Account;
 use soroban_client::transaction::TransactionBehavior;
 use soroban_client::transaction_builder::TransactionBuilder;
 use soroban_client::transaction_builder::TransactionBuilderBehavior;
 use soroban_client::transaction_builder::TIMEOUT_INFINITE;
+use soroban_client::xdr::ScVal;
 use soroban_client::{keypair::Keypair, server::Server};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
+use stellar_xdr::next::ScSymbol;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -50,10 +52,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .set_timeout(TIMEOUT_INFINITE)?
             .build();
 
-    contract_tx = server
+    let tmp = server
         .prepare_transaction(contract_tx, Networks::testnet())
-        .await
-        .unwrap();
+        .await;
+    contract_tx = tmp.unwrap();
     // let before_signing = contract_tx.to_envelope().unwrap().to_xdr_base64(Limits::none());
     // println!("Before Signing {:?}", before_signing);
 
@@ -62,6 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // let after_signing = contract_tx.to_envelope().unwrap().to_xdr_base64(Limits::none());
     // println!("After Signing {:?}", after_signing);
 
+    let mut led = 0i32;
     match server.send_transaction(contract_tx).await {
         Ok(response) => {
             println!("Transaction sent successfully");
@@ -78,6 +81,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             println!("Transaction successful!");
                             if let Some(ledger) = tx_result.ledger {
                                 println!("Confirmed in ledger: {}", ledger);
+                                led = ledger;
                             }
                             if let Some((meta, Some(return_value))) = tx_result.get_result_meta() {
                                 println!("Return value: {:?}", return_value);
@@ -110,6 +114,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("Failed to send transaction: {}", e);
         }
     }
+
+    let event_result = server
+        .get_events(
+            soroban_client::soroban_rpc::EventLedger::From(led as u64),
+            vec![
+                EventFilter::new(soroban_client::soroban_rpc::EventType::Diagnostic)
+                    .contract(contract_id),
+            ],
+            Some(10),
+        )
+        .await;
+    let result = dbg!(event_result).unwrap();
+    result.events.into_iter().for_each(|event| {
+        //
+
+        println!("Topic: {:?}, Value: {:?}", event.topic(), event.value());
+    });
 
     Ok(())
 }

@@ -1,8 +1,10 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::vec;
 
 use crate::error::*;
 use crate::server::*;
+use crate::soroban_rpc::EventFilter;
 use crate::soroban_rpc::GetHealthResponse;
 use crate::soroban_rpc::GetHealthWrapperResponse;
 use crate::soroban_rpc::GetLatestLedgerResponse;
@@ -10,6 +12,7 @@ use crate::soroban_rpc::GetNetworkResponse;
 use crate::soroban_rpc::GetNetworkResponseWrapper;
 use crate::soroban_rpc::GetTransactionStatus;
 use crate::soroban_rpc::SendTransactionStatus;
+use crate::soroban_rpc::Topic;
 use base64::Engine;
 use serde_json::json;
 use stellar_baselib::account::Account;
@@ -32,6 +35,7 @@ use stellar_baselib::xdr::ContractDataEntry;
 use stellar_baselib::xdr::ContractEventV0;
 use stellar_baselib::xdr::ExtensionPoint;
 use stellar_baselib::xdr::Hash;
+use stellar_baselib::xdr::Int128Parts;
 use stellar_baselib::xdr::InvokeHostFunctionResult;
 use stellar_baselib::xdr::LedgerEntryData;
 use stellar_baselib::xdr::LedgerKey;
@@ -1237,6 +1241,159 @@ async fn prepare_transaction() {
         assert_eq!(txresult.fee, tx.fee + 90353);
         assert_eq!(txresult.soroban_data, simulation.to_transaction_data());
     }
+}
+
+#[tokio::test]
+async fn get_events() {
+    /*
+     *
+     */
+    {
+        let request = json!(
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "getEvents",
+          "params": {
+            "startLedger": 1190000,
+            "filters": [
+              {
+                "type": "contract",
+                "contractIds": [
+                  "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+                ],
+                "topics": [
+                  [
+                    "AAAADwAAAAh0cmFuc2Zlcg==",
+                    "*",
+                    "*",
+                    "*"
+                  ]
+                ]
+              }
+            ],
+            "pagination": {
+              "limit": 2
+            }
+          }
+        }
+                );
+        dbg!(&request.to_string());
+
+        let response = json!(
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "events": [
+              {
+                "type": "contract",
+                "ledger": 1192402,
+                "ledgerClosedAt": "2024-04-19T06:19:00Z",
+                "contractId": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+                "id": "0005121327593697280-0000000002",
+                "pagingToken": "0005121327593697280-0000000002",
+                "topic": [
+                  "AAAADwAAAAh0cmFuc2Zlcg==",
+                  "AAAAEgAAAAAAAAAA/ItF3cwsGhkee6lL5X6kicifdluxtsuDq9J/F0zou6Q=",
+                  "AAAAEgAAAAAAAAAA2uSCoRk2StNEYAmWOhGXKQg0SLV6avaiN7TdV/uMozQ=",
+                  "AAAADgAAAAZuYXRpdmUAAA=="
+                ],
+                "value": "AAAACgAAAAAAAAAAAAAAAAX14QA=",
+                "inSuccessfulContractCall": true,
+                "txHash": "bd8a6611a3b44ff7dce76a27fb32fa69c9f6eff3435ca5296f6035d5105617ed"
+              },
+              {
+                "type": "contract",
+                "ledger": 1192438,
+                "ledgerClosedAt": "2024-04-19T06:22:14Z",
+                "contractId": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+                "id": "0005121482212511744-0000000002",
+                "pagingToken": "0005121482212511744-0000000002",
+                "topic": [
+                  "AAAADwAAAAh0cmFuc2Zlcg==",
+                  "AAAAEgAAAAAAAAAA/ItF3cwsGhkee6lL5X6kicifdluxtsuDq9J/F0zou6Q=",
+                  "AAAAEgAAAAAAAAAA2uSCoRk2StNEYAmWOhGXKQg0SLV6avaiN7TdV/uMozQ=",
+                  "AAAADgAAAAZuYXRpdmUAAA=="
+                ],
+                "value": "AAAACgAAAAAAAAAAAAAAAACYloA=",
+                "inSuccessfulContractCall": true,
+                "txHash": "3fa1787085a4aa585507751394d70494a02e71d347446095a763ecbfc647937c"
+              }
+            ],
+            "latestLedger": 1197926
+          }
+        }
+                );
+
+        let (s, _m) = get_mocked_server(request, response).await;
+
+        let ledger = crate::soroban_rpc::EventLedger::From(1190000);
+        let contract_id = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
+        let filters = vec![EventFilter::new(crate::soroban_rpc::EventType::Contract)
+            .contract(contract_id)
+            .topic(vec![
+                Topic::Val(ScVal::Symbol(ScSymbol("transfer".try_into().unwrap()))),
+                Topic::Any,
+                Topic::Any,
+                Topic::Any,
+            ])];
+        let limit = Some(2);
+        let result = s.get_events(ledger, filters, limit).await.unwrap();
+
+        let events = result.events;
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].contract_id, contract_id);
+        assert_eq!(events[0].ledger, 1192402);
+        assert_eq!(
+            events[0].topic(),
+            vec![
+                ScVal::Symbol(ScSymbol("transfer".try_into().unwrap())),
+                Address::new("GD6IWRO5ZQWBUGI6POUUXZL6USE4RH3WLOY3NS4DVPJH6F2M5C52IYAI")
+                    .unwrap()
+                    .to_sc_val()
+                    .unwrap(),
+                Address::new("GDNOJAVBDE3EVU2EMAEZMOQRS4UQQNCIWV5GV5VCG62N2V73RSRTJMP6")
+                    .unwrap()
+                    .to_sc_val()
+                    .unwrap(),
+                ScVal::String(ScString("native".try_into().unwrap()))
+            ]
+        );
+        assert_eq!(
+            events[0].value(),
+            ScVal::I128(Int128Parts {
+                hi: 0,
+                lo: 100000000
+            })
+        );
+
+        assert_eq!(
+            events[1].topic(),
+            vec![
+                ScVal::Symbol(ScSymbol("transfer".try_into().unwrap())),
+                Address::new("GD6IWRO5ZQWBUGI6POUUXZL6USE4RH3WLOY3NS4DVPJH6F2M5C52IYAI")
+                    .unwrap()
+                    .to_sc_val()
+                    .unwrap(),
+                Address::new("GDNOJAVBDE3EVU2EMAEZMOQRS4UQQNCIWV5GV5VCG62N2V73RSRTJMP6")
+                    .unwrap()
+                    .to_sc_val()
+                    .unwrap(),
+                ScVal::String(ScString("native".try_into().unwrap()))
+            ]
+        );
+        assert_eq!(events[1].contract_id, contract_id);
+        assert_eq!(events[1].ledger, 1192438);
+        assert_eq!(
+            events[1].value(),
+            ScVal::I128(Int128Parts {
+                hi: 0,
+                lo: 10000000
+            })
+        );
+    }
+    // TODO more tests
 }
 
 // Create a Server that will reply `response` for a json `request` partially matching

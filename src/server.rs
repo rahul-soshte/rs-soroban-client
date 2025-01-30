@@ -17,9 +17,8 @@ use stellar_baselib::keypair::KeypairBehavior;
 use stellar_baselib::transaction::{Transaction, TransactionBehavior};
 use stellar_baselib::transaction_builder::TransactionBuilderBehavior;
 use stellar_baselib::xdr::{
-    ContractDataDurability, DiagnosticEvent, Hash, LedgerEntryChange, LedgerEntryData, LedgerKey,
-    LedgerKeyAccount, LedgerKeyContractData, Limits, ReadXdr, ScAddress, ScVal,
-    TransactionEnvelope, TransactionMeta, TransactionResult, WriteXdr,
+    ContractDataDurability, Hash, LedgerEntryData, LedgerKey, LedgerKeyAccount,
+    LedgerKeyContractData, Limits, ReadXdr, ScAddress, ScVal, WriteXdr,
 };
 pub const SUBMIT_TRANSACTION_TIMEOUT: u32 = 60 * 1000;
 
@@ -36,12 +35,6 @@ impl Durability {
             Durability::Persistent => ContractDataDurability::Persistent,
         }
     }
-}
-pub struct GetEventsRequest {
-    filters: Vec<EventFilter>, // placeholder for actual type
-    start_ledger: Option<u32>,
-    cursor: Option<String>,
-    limit: Option<u32>,
 }
 
 pub struct Options {
@@ -236,7 +229,7 @@ impl Server {
             .await?;
 
         let result: SimulateTransactionResponseWrapper =
-            response.json().map_err(|_| Error::NetworkError).await?;
+            response.json().map_err(|_e| Error::NetworkError).await?;
 
         Ok(result.result)
     }
@@ -344,33 +337,61 @@ impl Server {
         Ok(result.result)
     }
 
-    //TODO: getEvents
-    //TODO: request airdrop
-    #[allow(unused)]
-    fn find_created_account_sequence_in_transaction_meta(
-        meta: TransactionMeta,
-    ) -> Result<String, &'static str> {
-        let operations = match meta {
-            TransactionMeta::V0(ops) => ops,
-            TransactionMeta::V1(v3_meta) => v3_meta.operations,
-            TransactionMeta::V2(v3_meta) => v3_meta.operations,
-            TransactionMeta::V3(v3_meta) => v3_meta.operations,
+    pub async fn get_events(
+        &self,
+        ledger: EventLedger,
+        filters: Vec<EventFilter>,
+        limit: Option<u32>,
+    ) -> Result<GetEventsResponse, Error> {
+        let (start_ledger, end_ledger, cursor) = match ledger {
+            EventLedger::From(s) => (Some(s), None, None),
+            EventLedger::FromTo(s, e) => (Some(s), Some(e), None),
+            EventLedger::Cursor(c) => (None, None, Some(c)),
         };
+        let filters = filters
+            .into_iter()
+            .map(|v| {
+                //
+                json!({
+                    "type": v.event_type(),
+                    "contractIds": v.contracts(),
+                    "topics": v.topics(),
+                })
+            })
+            .collect::<Vec<serde_json::Value>>();
 
-        let operations = operations.to_vec();
-
-        for op in operations {
-            for change in op.changes.0.to_vec() {
-                if let LedgerEntryChange::Created(x) = change {
-                    if let LedgerEntryData::Account(ae) = x.data {
-                        return Ok(ae.seq_num.0.to_string());
-                    }
+        //
+        let payload = json!(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getEvents",
+            "params": {
+                "startLedger": start_ledger,
+                "endLedger": end_ledger,
+                "filters": filters,
+                "pagination": {
+                    "cursor": cursor,
+                    "limit": limit
                 }
             }
-        }
+        });
 
-        Err("No account created in transaction")
+        let response = self
+            .client
+            .post(self.server_url.to_string())
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .map_err(|_| Error::NetworkError)
+            .await?;
+
+        let result: GetEventsResponseWrapper =
+            response.json().map_err(|_e| Error::NetworkError).await?;
+
+        Ok(result.result)
     }
+    //TODO: request airdrop
 }
 
 #[cfg(test)]

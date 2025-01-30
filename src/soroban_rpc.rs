@@ -4,7 +4,7 @@ use stellar_baselib::{
     soroban_data_builder::{SorobanDataBuilder, SorobanDataBuilderBehavior},
     xdr::{
         DiagnosticEvent, LedgerEntry, LedgerKey, Limits, ReadXdr, ScVal, SorobanAuthorizationEntry,
-        SorobanTransactionData, TransactionEnvelope, TransactionMeta, TransactionResult,
+        SorobanTransactionData, TransactionEnvelope, TransactionMeta, TransactionResult, WriteXdr,
     },
 };
 
@@ -171,33 +171,128 @@ impl GetTransactionResponse {
     }
 }
 
+pub enum EventLedger {
+    From(u64),
+    FromTo(u64, u64),
+    Cursor(String),
+}
+
+#[derive(PartialEq, Eq, Deserialize, Debug)]
+#[serde(rename_all = "lowercase")]
 pub enum EventType {
     Contract,
     System,
     Diagnostic,
+    All,
 }
 
 pub struct EventFilter {
-    pub event_type: Option<EventType>,
-    pub contract_ids: Option<Vec<String>>,
-    pub topics: Option<Vec<Vec<String>>>,
+    event_type: EventType,
+    contract_ids: Vec<String>,
+    topics: Vec<Vec<Topic>>,
 }
 
+#[derive(Clone, Debug)]
+pub enum Topic {
+    Val(ScVal),
+    Any,
+}
+impl EventFilter {
+    pub fn new(event_type: EventType) -> Self {
+        EventFilter {
+            event_type,
+            contract_ids: Vec::new(),
+            topics: Vec::new(),
+        }
+    }
+
+    pub fn contract(self, contract_id: &str) -> Self {
+        let mut contract_ids = self.contract_ids.to_vec();
+        contract_ids.push(contract_id.to_string());
+        EventFilter {
+            contract_ids,
+            ..self
+        }
+    }
+
+    pub fn topic(self, filer: Vec<Topic>) -> Self {
+        let mut topics = self.topics.to_vec();
+        topics.push(filer);
+        EventFilter { topics, ..self }
+    }
+
+    pub fn event_type(&self) -> Option<String> {
+        match self.event_type {
+            EventType::Contract => Some("contract".to_string()),
+            EventType::System => Some("system".to_string()),
+            EventType::Diagnostic => Some("diagnostic".to_string()),
+            EventType::All => None,
+        }
+    }
+
+    pub fn contracts(&self) -> Vec<String> {
+        self.contract_ids.to_vec()
+    }
+
+    pub fn topics(&self) -> Vec<Vec<String>> {
+        self.topics
+            .iter()
+            .map(|v| {
+                v.iter()
+                    .map(|vv| match vv {
+                        Topic::Val(sc_val) => sc_val
+                            .to_xdr_base64(Limits::none())
+                            .expect("ScVal cannot be converted to base64"),
+                        Topic::Any => "*".to_string(),
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GetEventsResponseWrapper {
+    pub jsonrpc: String,
+    pub id: serde_json::Value,
+    pub result: GetEventsResponse,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GetEventsResponse {
-    pub latest_ledger: i32,
+    pub latest_ledger: u64,
     pub events: Vec<EventResponse>,
+    pub cursor: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EventResponse {
+    #[serde(rename = "type")]
     pub event_type: EventType,
-    pub ledger: String,
+    pub ledger: u64,
     pub ledger_closed_at: String,
     pub contract_id: String,
     pub id: String,
+    pub tx_hash: String,
     pub paging_token: String,
     pub in_successful_contract_call: bool,
-    pub topic: Vec<String>,
-    pub value: HashMap<String, String>, // Assuming this to be a key-value pair, need to update depending on structure
+    topic: Vec<String>,
+    value: String,
+}
+
+impl EventResponse {
+    pub fn topic(&self) -> Vec<ScVal> {
+        self.topic
+            .iter()
+            .map(|t| ScVal::from_xdr_base64(t, Limits::none()).expect("Invalid XDR from RPC"))
+            .collect()
+    }
+
+    pub fn value(&self) -> ScVal {
+        ScVal::from_xdr_base64(&self.value, Limits::none()).expect("Invalid XDR from RPC")
+    }
 }
 
 pub struct RequestAirdropResponse {
@@ -278,6 +373,7 @@ pub struct RawSimulateHostFunctionResult {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Copy)]
+#[serde(rename_all = "lowercase")]
 pub enum StateChangeKind {
     Create = 1,
     Updated = 2,
