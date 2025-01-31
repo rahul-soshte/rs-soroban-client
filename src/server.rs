@@ -2,7 +2,6 @@ use crate::error::*;
 use crate::jsonrpc::{JsonRpc, Response};
 use crate::soroban_rpc::*;
 use crate::transaction::assemble_transaction;
-use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::option::Option;
 use std::{collections::HashMap, str::FromStr};
@@ -15,7 +14,7 @@ use stellar_baselib::transaction::{Transaction, TransactionBehavior};
 use stellar_baselib::transaction_builder::TransactionBuilderBehavior;
 use stellar_baselib::xdr::{
     ContractDataDurability, Hash, LedgerEntryData, LedgerKey, LedgerKeyAccount,
-    LedgerKeyContractData, Limits, ReadXdr, ScAddress, ScVal, WriteXdr,
+    LedgerKeyContractData, Limits, ScAddress, ScVal, WriteXdr,
 };
 pub const SUBMIT_TRANSACTION_TIMEOUT: u32 = 60 * 1000;
 
@@ -43,12 +42,6 @@ pub struct Options {
 #[derive(Debug)]
 pub struct Server {
     client: JsonRpc,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResourceLeeway {
-    #[serde(rename = "cpuInstructions")]
-    pub cpu_instructions: u64,
 }
 
 impl Server {
@@ -113,11 +106,7 @@ impl Server {
             return Err(Error::AccountNotFound);
         }
 
-        let ledger_entry_data = &entries[0].xdr;
-        if let LedgerEntryData::Account(account_entry) =
-            LedgerEntryData::from_xdr_base64(ledger_entry_data, Limits::none())
-                .map_err(|_| Error::XdrError)?
-        {
+        if let LedgerEntryData::Account(account_entry) = entries[0].to_data() {
             Ok(Account::new(address, &account_entry.seq_num.0.to_string()).unwrap())
         } else {
             Err(Error::AccountNotFound)
@@ -305,6 +294,7 @@ impl Server {
     }
     //TODO: request airdrop
 }
+
 fn handle_response<T>(response: Response<T>) -> Result<T, Error> {
     if let Some(result) = response.result {
         Ok(result)

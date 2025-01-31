@@ -2,8 +2,9 @@
 use stellar_baselib::{
     soroban_data_builder::{SorobanDataBuilder, SorobanDataBuilderBehavior},
     xdr::{
-        DiagnosticEvent, LedgerEntry, LedgerKey, Limits, ReadXdr, ScVal, SorobanAuthorizationEntry,
-        SorobanTransactionData, TransactionEnvelope, TransactionMeta, TransactionResult, WriteXdr,
+        DiagnosticEvent, LedgerEntry, LedgerEntryData, LedgerKey, Limits, ReadXdr, ScVal,
+        SorobanAuthorizationEntry, SorobanTransactionData, TransactionEnvelope, TransactionMeta,
+        TransactionResult, WriteXdr,
     },
 };
 
@@ -42,10 +43,20 @@ pub struct GetHealthResponse {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LedgerEntryResult {
-    pub key: String,
-    pub xdr: String,
     pub last_modified_ledger_seq: Option<i64>,
     pub live_until_ledger_seq: Option<u32>,
+    key: String,
+    xdr: String,
+}
+
+impl LedgerEntryResult {
+    pub fn to_key(&self) -> LedgerKey {
+        LedgerKey::from_xdr_base64(&self.key, Limits::none()).expect("Invalid LedgerKey from RPC")
+    }
+    pub fn to_data(&self) -> LedgerEntryData {
+        LedgerEntryData::from_xdr_base64(&self.xdr, Limits::none())
+            .expect("Invalid LedgerEntryData from RPC")
+    }
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -71,11 +82,11 @@ pub struct GetLatestLedgerResponse {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
-#[allow(non_camel_case_types)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum GetTransactionStatus {
-    SUCCESS,
-    NOT_FOUND,
-    FAILED,
+    Success,
+    NotFound,
+    Failed,
 }
 
 #[derive(Debug, Deserialize)]
@@ -336,7 +347,7 @@ pub enum StateChangeKind {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RawStateChanges {
+struct RawStateChanges {
     #[serde(rename = "type")]
     kind: StateChangeKind,
     key: String,
@@ -349,6 +360,12 @@ pub struct StateChange {
     pub key: LedgerKey,
     pub before: Option<LedgerEntry>,
     pub after: Option<LedgerEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceLeeway {
+    pub cpu_instructions: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -9,6 +9,7 @@ use crate::soroban_rpc::GetHealthResponse;
 use crate::soroban_rpc::GetLatestLedgerResponse;
 use crate::soroban_rpc::GetNetworkResponse;
 use crate::soroban_rpc::GetTransactionStatus;
+use crate::soroban_rpc::ResourceLeeway;
 use crate::soroban_rpc::SendTransactionStatus;
 use crate::soroban_rpc::Topic;
 use base64::Engine;
@@ -341,8 +342,8 @@ async fn get_ledger_entries() {
             assert_eq!(entries.len(), 1);
             let e = &entries[0];
             assert_eq!(e.last_modified_ledger_seq, Some(2));
-            assert_eq!(e.key, ledger_key_xdr);
-            assert_eq!(e.xdr, ledger_entry_xdr);
+            assert_eq!(e.to_key(), ledger_key);
+            assert_eq!(e.to_data(), ledger_entry);
             assert_eq!(
                 e.live_until_ledger_seq,
                 Some(ledger_ttl_entry.live_until_ledger_seq)
@@ -390,8 +391,8 @@ async fn get_ledger_entries() {
             assert_eq!(entries.len(), 1);
             let e = &entries[0];
             assert_eq!(e.last_modified_ledger_seq, Some(2));
-            assert_eq!(e.key, ledger_key_xdr);
-            assert_eq!(e.xdr, ledger_entry_xdr);
+            assert_eq!(e.to_key(), ledger_key);
+            assert_eq!(e.to_data(), ledger_entry);
             assert_eq!(e.live_until_ledger_seq, None);
         } else {
             panic!("No entry found");
@@ -503,8 +504,8 @@ async fn get_contract_data() {
             .await
             .expect("Should not fail");
 
-        assert_eq!(result.key, ledger_key_xdr);
-        assert_eq!(result.xdr, ledger_entry_xdr);
+        assert_eq!(result.to_key(), ledger_key);
+        assert_eq!(result.to_data(), ledger_entry);
         assert_eq!(
             result.live_until_ledger_seq,
             Some(ledger_ttl_entry.live_until_ledger_seq)
@@ -580,7 +581,7 @@ async fn get_transaction() {
         let txresult = s.get_transaction(hash).await;
 
         if let Ok(r) = txresult {
-            assert_eq!(r.status, GetTransactionStatus::SUCCESS);
+            assert_eq!(r.status, GetTransactionStatus::Success);
             assert_eq!(r.latest_ledger, 2540076);
             assert_eq!(r.oldest_ledger, 2538637);
             assert_eq!(r.application_order, Some(1));
@@ -646,7 +647,7 @@ async fn get_transaction() {
         let (s, _m) = get_mocked_server(request, response).await;
         let txresult = s.get_transaction(hash).await;
         if let Ok(r) = txresult {
-            assert_eq!(r.status, GetTransactionStatus::NOT_FOUND);
+            assert_eq!(r.status, GetTransactionStatus::NotFound);
             assert_eq!(r.latest_ledger, 2540099);
             assert_eq!(r.oldest_ledger, 2538660);
             assert_eq!(r.application_order, None);
@@ -691,7 +692,7 @@ async fn get_transaction() {
         let (s, _m) = get_mocked_server(request, response).await;
         let txresult = s.get_transaction(hash).await;
         if let Ok(r) = txresult {
-            assert_eq!(r.status, GetTransactionStatus::FAILED);
+            assert_eq!(r.status, GetTransactionStatus::Failed);
             assert_eq!(r.latest_ledger, 2540124);
             assert_eq!(r.oldest_ledger, 2538685);
             assert_eq!(r.application_order, Some(2));

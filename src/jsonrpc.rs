@@ -102,8 +102,8 @@ mod test {
     use wiremock::MockServer;
     use wiremock::ResponseTemplate;
 
+    use crate::jsonrpc::JsonRpc;
     use crate::jsonrpc::Response;
-    use crate::{jsonrpc::JsonRpc, server::Options};
 
     #[derive(Debug, Deserialize, PartialEq, Eq)]
     struct Data {
