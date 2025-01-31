@@ -6,10 +6,8 @@ use crate::error::*;
 use crate::server::*;
 use crate::soroban_rpc::EventFilter;
 use crate::soroban_rpc::GetHealthResponse;
-use crate::soroban_rpc::GetHealthWrapperResponse;
 use crate::soroban_rpc::GetLatestLedgerResponse;
 use crate::soroban_rpc::GetNetworkResponse;
-use crate::soroban_rpc::GetNetworkResponseWrapper;
 use crate::soroban_rpc::GetTransactionStatus;
 use crate::soroban_rpc::SendTransactionStatus;
 use crate::soroban_rpc::Topic;
@@ -74,7 +72,7 @@ fn server_new() {
     assert!(s1.is_ok(), "https scheme with allow_http None");
 
     let s2 = Server::new(
-        "/rpc",
+        "file://rpc",
         Options {
             allow_http: None,
             timeout: None,
@@ -87,7 +85,7 @@ fn server_new() {
     ));
 
     let s3 = Server::new(
-        "/rpc",
+        "scheme://rpc",
         Options {
             allow_http: Some(true),
             timeout: None,
@@ -119,7 +117,7 @@ fn server_new() {
     );
     assert!(matches!(
         s5.err(),
-        Some(Error::InvalidRpc(InvalidRpcUrl::InvalidUri(_))),
+        Some(Error::InvalidRpc(InvalidRpcUrl::InvalidUri)),
     ));
 
     let s6 = Server::new(
@@ -143,12 +141,8 @@ async fn get_health() {
     let (s, _m) = get_mocked_server(request, response).await;
     let result = s.get_health().await.expect("Should not fail");
 
-    let expect = GetHealthWrapperResponse {
-        jsonrpc: "2.0".to_string(),
-        id: 1,
-        result: GetHealthResponse {
-            status: "healthy".to_string(),
-        },
+    let expect = GetHealthResponse {
+        status: "healthy".to_string(),
     };
 
     assert_eq!(result, expect);
@@ -196,14 +190,10 @@ async fn get_network() {
 
     let (s, _m) = get_mocked_server(request, response).await;
     let result = s.get_network().await.expect("Should not fail");
-    let expect = GetNetworkResponseWrapper {
-        jsonrpc: "2.0".into(),
-        id: 8675309,
-        result: GetNetworkResponse {
-            friendbot_url: Some("https://friendbot-testnet.stellar.org/".into()),
-            passphrase: Some("Test SDF Network ; September 2015".into()),
-            protocol_version: Some(20),
-        },
+    let expect = GetNetworkResponse {
+        friendbot_url: Some("https://friendbot-testnet.stellar.org/".into()),
+        passphrase: Some("Test SDF Network ; September 2015".into()),
+        protocol_version: Some(20),
     };
     assert_eq!(result, expect);
 }
@@ -347,7 +337,7 @@ async fn get_ledger_entries() {
             .get_ledger_entries(vec![ledger_key.clone()])
             .await
             .expect("Should not fail");
-        if let Some(entries) = result.result.entries {
+        if let Some(entries) = result.entries {
             assert_eq!(entries.len(), 1);
             let e = &entries[0];
             assert_eq!(e.last_modified_ledger_seq, Some(2));
@@ -396,7 +386,7 @@ async fn get_ledger_entries() {
             .get_ledger_entries(vec![ledger_key.clone()])
             .await
             .expect("Should not fail");
-        if let Some(entries) = result.result.entries {
+        if let Some(entries) = result.entries {
             assert_eq!(entries.len(), 1);
             let e = &entries[0];
             assert_eq!(e.last_modified_ledger_seq, Some(2));
@@ -443,7 +433,7 @@ async fn get_ledger_entries() {
         let result = s.get_ledger_entries(vec![ledger_key.clone()]).await;
 
         // TODO better error should be used
-        assert!(matches!(result, Err(Error::NetworkError)));
+        assert!(matches!(result, Err(Error::NetworkError(_))));
     }
 }
 
@@ -1236,8 +1226,6 @@ async fn prepare_transaction() {
         let simulation = s.simulate_transaction(tx.clone(), None).await.unwrap();
         let txresult = s.prepare_transaction(tx.clone(), network).await.unwrap();
 
-        //dbg!(txresult);
-
         assert_eq!(txresult.fee, tx.fee + 90353);
         assert_eq!(txresult.soroban_data, simulation.to_transaction_data());
     }
@@ -1278,7 +1266,6 @@ async fn get_events() {
           }
         }
                 );
-        dbg!(&request.to_string());
 
         let response = json!(
         {
@@ -1392,6 +1379,70 @@ async fn get_events() {
                 lo: 10000000
             })
         );
+    }
+    /*
+     * Too much contracts
+     */
+    {
+        let request = json!(
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "getEvents",
+          "params": {
+            "startLedger": 1190000,
+            "filters": [
+              {
+                "type": "contract",
+                "contractIds": [
+                  "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+                  "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+                  "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+                  "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+                  "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+                  "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+                ],
+              }
+            ],
+            "pagination": {
+              "limit": 2
+            }
+          }
+        }
+                );
+        let response = json!(
+            {
+              "jsonrpc": "2.0",
+              "id": 1,
+        "error":      {
+            "code": -32602,
+            "message": "filter 1 invalid: maximum 5 contract IDs per filter",
+        },
+        });
+
+        let (s, _m) = get_mocked_server(request, response).await;
+
+        let ledger = crate::soroban_rpc::EventLedger::From(1190000);
+        let contract_id = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
+        let filters = vec![EventFilter::new(crate::soroban_rpc::EventType::Contract)
+            .contract(contract_id)
+            .contract(contract_id)
+            .contract(contract_id)
+            .contract(contract_id)
+            .contract(contract_id)
+            .contract(contract_id)];
+        let limit = Some(2);
+        let result = s.get_events(ledger, filters, limit).await;
+
+        if let Err(Error::RPCError { code, message }) = result {
+            assert_eq!(code, -32602);
+            assert_eq!(
+                message,
+                "filter 1 invalid: maximum 5 contract IDs per filter"
+            );
+        } else {
+            panic!("Expecting an RPCError")
+        }
     }
     // TODO more tests
 }

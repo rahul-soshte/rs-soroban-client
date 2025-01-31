@@ -1,10 +1,7 @@
 use crate::error::*;
-use crate::http_client::create_client;
-use crate::jsonrpc::post;
+use crate::jsonrpc::{JsonRpc, Response};
 use crate::soroban_rpc::*;
 use crate::transaction::assemble_transaction;
-use futures::TryFutureExt;
-use http::Uri;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::option::Option;
@@ -39,14 +36,13 @@ impl Durability {
 
 pub struct Options {
     pub allow_http: Option<bool>,
-    pub timeout: Option<u32>,
+    pub timeout: Option<u64>,
     pub headers: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug)]
 pub struct Server {
-    server_url: Uri,
-    client: reqwest::Client,
+    client: JsonRpc,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,34 +53,37 @@ pub struct ResourceLeeway {
 
 impl Server {
     pub fn new(server_url: &str, opts: Options) -> Result<Self, Error> {
-        let server_url = Uri::from_str(server_url)
-            .map_err(|e| Error::InvalidRpc(InvalidRpcUrl::InvalidUri(e)))?;
-
+        let server_url = reqwest::Url::from_str(server_url)
+            .map_err(|_e| Error::InvalidRpc(InvalidRpcUrl::InvalidUri))?;
         let allow_http = opts.allow_http.unwrap_or(false);
         match server_url.scheme() {
-            Some(s) if s.as_str() == "http" => {
-                if !allow_http {
-                    return Err(Error::InvalidRpc(InvalidRpcUrl::UnsecureHttpNotAllowed));
-                }
+            "https" => {
+                // good
             }
-            Some(s) if s.as_str() == "https" => {
-                // all good
+            "http" if allow_http => {
+                // good
+            }
+            "http" if !allow_http => {
+                return Err(Error::InvalidRpc(InvalidRpcUrl::UnsecureHttpNotAllowed));
             }
             _ => {
                 return Err(Error::InvalidRpc(InvalidRpcUrl::NotHttpScheme));
             }
-        }
+        };
 
         Ok(Server {
-            server_url,
-            client: create_client(),
+            client: JsonRpc::new(
+                server_url,
+                opts.timeout.unwrap_or(10),
+                opts.headers.unwrap_or_default(),
+            ),
         })
     }
 
     pub async fn get_ledger_entries(
         &self,
         keys: Vec<LedgerKey>,
-    ) -> Result<GetLedgerEntriesResponseWrapper, Error> {
+    ) -> Result<GetLedgerEntriesResponse, Error> {
         let keys: Result<Vec<String>, Error> = keys
             .into_iter()
             .map(|k| k.to_xdr_base64(Limits::none()).map_err(|_| Error::XdrError))
@@ -92,25 +91,11 @@ impl Server {
 
         match keys {
             Ok(keys) => {
-                let payload = json!({
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "getLedgerEntries",
-                    "params": {
-                        "keys": keys
-                    }
-                });
+                let params = json!({"keys": keys});
+                let response: Response<GetLedgerEntriesResponse> =
+                    self.client.post("getLedgerEntries", params).await?;
 
-                self.client
-                    .post(self.server_url.to_string())
-                    .header("Content-Type", "application/json")
-                    .json(&payload)
-                    .send()
-                    .await
-                    .map_err(|_| Error::NetworkError)?
-                    .json::<GetLedgerEntriesResponseWrapper>()
-                    .await
-                    .map_err(|_| Error::NetworkError)
+                handle_response(response)
             }
             Err(err) => Err(err),
         }
@@ -123,7 +108,7 @@ impl Server {
         let ledger_key = LedgerKey::Account(LedgerKeyAccount { account_id });
 
         let resp = self.get_ledger_entries(vec![ledger_key]).await?;
-        let entries = resp.result.entries.unwrap_or_default();
+        let entries = resp.entries.unwrap_or_default();
         if entries.is_empty() {
             return Err(Error::AccountNotFound);
         }
@@ -139,52 +124,28 @@ impl Server {
         }
     }
 
-    pub async fn get_health(&self) -> Result<GetHealthWrapperResponse, Error> {
-        let payload = json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "getHealth"
-        });
-
-        self.client
-            .post(self.server_url.to_string())
-            .header("Content-Type", "application/json")
-            .json(&payload)
-            .send()
-            .map_err(|_| Error::NetworkError)
-            .await?
-            .json::<GetHealthWrapperResponse>()
-            .map_err(|_| Error::NetworkError)
-            .await
+    pub async fn get_health(&self) -> Result<GetHealthResponse, Error> {
+        let response = self
+            .client
+            .post("getHealth", serde_json::Value::Null)
+            .await?;
+        handle_response(response)
     }
 
-    pub async fn get_network(&self) -> Result<GetNetworkResponseWrapper, Error> {
-        let payload = json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "getNetwork"
-        });
-
-        self.client
-            .post(self.server_url.to_string())
-            .header("Content-Type", "application/json")
-            .json(&payload)
-            .send()
-            .map_err(|_| Error::NetworkError)
-            .await?
-            .json::<GetNetworkResponseWrapper>()
-            .map_err(|_| Error::NetworkError)
-            .await
+    pub async fn get_network(&self) -> Result<GetNetworkResponse, Error> {
+        let response = self
+            .client
+            .post("getNetwork", serde_json::Value::Null)
+            .await?;
+        handle_response(response)
     }
 
     pub async fn get_latest_ledger(&self) -> Result<GetLatestLedgerResponse, Error> {
-        post::<GetLatestLedgerResponse>(
-            &self.server_url.to_string(),
-            "getLatestLedger",
-            HashMap::new(),
-        )
-        .map_err(|_| Error::NetworkError)
-        .await
+        let response = self
+            .client
+            .post("getLatestLedger", serde_json::Value::Null)
+            .await?;
+        handle_response(response)
     }
 
     pub async fn simulate_transaction(
@@ -198,40 +159,22 @@ impl Server {
             .to_xdr_base64(Limits::none())
             .map_err(|_| Error::XdrError)?;
 
-        let mut params = json!({
-            "transaction": transaction_xdr
-        });
-
         // Add resource config if provided
-        if let Some(resources) = addl_resources {
-            params = json!({
+        let params = if let Some(resources) = addl_resources {
+            json!({
                 "transaction": transaction_xdr,
                 "resourceConfig": {
                     "instructionLeeway": resources.cpu_instructions
                 }
-            });
-        }
+            })
+        } else {
+            json!({
+                "transaction": transaction_xdr
+            })
+        };
 
-        let payload = json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "simulateTransaction",
-            "params": params
-        });
-
-        let response = self
-            .client
-            .post(self.server_url.to_string())
-            .header("Content-Type", "application/json")
-            .json(&payload)
-            .send()
-            .map_err(|_| Error::NetworkError)
-            .await?;
-
-        let result: SimulateTransactionResponseWrapper =
-            response.json().map_err(|_e| Error::NetworkError).await?;
-
-        Ok(result.result)
+        let response = self.client.post("simulateTransaction", params).await?;
+        handle_response(response)
     }
 
     pub async fn get_contract_data(
@@ -258,7 +201,7 @@ impl Server {
 
         let response = self.get_ledger_entries(val).await?;
 
-        if let Some(entries) = response.result.entries {
+        if let Some(entries) = response.entries {
             if let Some(entry) = entries.first() {
                 Ok(entry.clone())
             } else {
@@ -270,28 +213,12 @@ impl Server {
     }
 
     pub async fn get_transaction(&self, hash: &str) -> Result<GetTransactionResponse, Error> {
-        let payload = json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "getTransaction",
-            "params": {
+        let params = json!({
                 "hash": hash
-            }
         });
 
-        let r = self
-            .client
-            .post(self.server_url.to_string())
-            .header("Content-Type", "application/json")
-            .json(&payload)
-            .send()
-            .map_err(|_| Error::NetworkError)
-            .await?;
-
-        Ok(r.json::<GetTransactionResponseWrapper>()
-            .map_err(|_| Error::NetworkError)
-            .await?
-            .result)
+        let response = self.client.post("getTransaction", params).await?;
+        handle_response(response)
     }
 
     pub async fn prepare_transaction(
@@ -314,27 +241,12 @@ impl Server {
             .to_xdr_base64(Limits::none())
             .map_err(|_| Error::XdrError)?;
 
-        let payload = json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "sendTransaction",
-            "params": {
+        let params = json!({
                 "transaction": transaction_xdr
             }
-        });
-
-        let response = self
-            .client
-            .post(self.server_url.to_string())
-            .header("Content-Type", "application/json")
-            .json(&payload)
-            .send()
-            .map_err(|_| Error::NetworkError)
-            .await?;
-
-        let result: JsonRpcResponse = response.json().map_err(|_| Error::NetworkError).await?;
-
-        Ok(result.result)
+        );
+        let response = self.client.post("sendTransaction", params).await?;
+        handle_response(response)
     }
 
     pub async fn get_events(
@@ -360,38 +272,34 @@ impl Server {
             })
             .collect::<Vec<serde_json::Value>>();
 
-        //
-        let payload = json!(
+        let params = json!(
         {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "getEvents",
-            "params": {
-                "startLedger": start_ledger,
-                "endLedger": end_ledger,
-                "filters": filters,
-                "pagination": {
-                    "cursor": cursor,
-                    "limit": limit
-                }
+            "startLedger": start_ledger,
+            "endLedger": end_ledger,
+            "filters": filters,
+            "pagination": {
+                "cursor": cursor,
+                "limit": limit
             }
-        });
+        }
+        );
 
-        let response = self
-            .client
-            .post(self.server_url.to_string())
-            .header("Content-Type", "application/json")
-            .json(&payload)
-            .send()
-            .map_err(|_| Error::NetworkError)
-            .await?;
-
-        let result: GetEventsResponseWrapper =
-            response.json().map_err(|_e| Error::NetworkError).await?;
-
-        Ok(result.result)
+        let response = self.client.post("getEvents", params).await?;
+        handle_response(response)
     }
     //TODO: request airdrop
+}
+fn handle_response<T>(response: Response<T>) -> Result<T, Error> {
+    if let Some(result) = response.result {
+        Ok(result)
+    } else if let Some(error) = response.error {
+        Err(Error::RPCError {
+            code: error.code,
+            message: error.message.unwrap_or_default(),
+        })
+    } else {
+        Err(Error::UnexpectedError)
+    }
 }
 
 #[cfg(test)]

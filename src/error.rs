@@ -7,7 +7,7 @@ pub enum Error {
     #[error("XdrError")]
     XdrError,
     #[error("NetworkError")]
-    NetworkError,
+    NetworkError(#[from] reqwest::Error),
     #[error("AccountError")]
     AccountNotFound,
     #[error("ContractError")]
@@ -20,6 +20,10 @@ pub enum Error {
     SimulationFailed,
     #[error("RestorationRequired")]
     RestorationRequired,
+    #[error("RPCError {code}: {message}")]
+    RPCError { code: i32, message: String },
+    #[error("UnexpectedError: should not happen, please report a bug")]
+    UnexpectedError,
 }
 
 #[derive(Error, Debug)]
@@ -28,6 +32,6 @@ pub enum InvalidRpcUrl {
     NotHttpScheme,
     #[error("Http scheme requires the option allow_http: true")]
     UnsecureHttpNotAllowed,
-    #[error(transparent)]
-    InvalidUri(#[from] http::uri::InvalidUri),
+    #[error("InvalidUrl")]
+    InvalidUri,
 }

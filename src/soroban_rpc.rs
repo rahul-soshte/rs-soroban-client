@@ -1,5 +1,4 @@
 #![allow(non_snake_case)]
-use std::collections::HashMap;
 use stellar_baselib::{
     soroban_data_builder::{SorobanDataBuilder, SorobanDataBuilderBehavior},
     xdr::{
@@ -31,13 +30,6 @@ pub struct Cost {
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
-pub struct GetHealthWrapperResponse {
-    pub jsonrpc: String,
-    pub id: u32,
-    pub result: GetHealthResponse,
-}
-
-#[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct GetHealthResponse {
     pub status: String, // Can be an enum if the number of statuses is known
                         /*
@@ -56,24 +48,10 @@ pub struct LedgerEntryResult {
     pub live_until_ledger_seq: Option<u32>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct GetLedgerEntriesResponse {
     pub entries: Option<Vec<LedgerEntryResult>>,
     pub latestLedger: i32,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct GetLedgerEntriesResponseWrapper {
-    pub jsonrpc: String,
-    pub id: u32,
-    pub result: GetLedgerEntriesResponse,
-}
-
-#[derive(Debug, Deserialize, PartialEq, Eq)]
-pub struct GetNetworkResponseWrapper {
-    pub jsonrpc: String,
-    pub id: u32,
-    pub result: GetNetworkResponse,
 }
 
 #[derive(Deserialize, Debug, PartialEq, Eq)]
@@ -98,13 +76,6 @@ pub enum GetTransactionStatus {
     SUCCESS,
     NOT_FOUND,
     FAILED,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct GetTransactionResponseWrapper {
-    pub jsonrpc: String,
-    pub id: u32,
-    pub result: GetTransactionResponse,
 }
 
 #[derive(Debug, Deserialize)]
@@ -252,13 +223,6 @@ impl EventFilter {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct GetEventsResponseWrapper {
-    pub jsonrpc: String,
-    pub id: serde_json::Value,
-    pub result: GetEventsResponse,
-}
-
-#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetEventsResponse {
     pub latest_ledger: u64,
@@ -298,15 +262,6 @@ impl EventResponse {
 pub struct RequestAirdropResponse {
     pub transaction_id: String,
 }
-
-// #[derive(Clone, Debug, Deserialize)]
-// #[allow(non_camel_case_types)]
-// pub enum SendTransactionStatus {
-//     PENDING,
-//     DUPLICATE,
-//     TRY_AGAIN_LATER,
-//     ERROR,
-// }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -394,13 +349,6 @@ pub struct StateChange {
     pub key: LedgerKey,
     pub before: Option<LedgerEntry>,
     pub after: Option<LedgerEntry>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SimulateTransactionResponseWrapper {
-    pub jsonrpc: String,
-    pub id: u32,
-    pub result: SimulateTransactionResponse,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
