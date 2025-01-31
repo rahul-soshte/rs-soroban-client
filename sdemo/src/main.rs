@@ -26,17 +26,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             allow_http: None,
             timeout: Some(1000),
             headers: None,
+            ..Default::default()
         },
     )
     .expect("Cannot create Server");
 
     // Set up source account
-    let source_secret_key = "SCZQNYPL4LIZWJBM45R3MBMYX4PXRBZJYJGFI6EPBCRGJTVQW2SEDYO2"; // GDIIRYKAHQJJEGC6DAIWTSDT5TX6OASPT3BE4QO72DXFBR7W43HKUHCL
-    let source_keypair = Keypair::from_secret(source_secret_key).expect("Invalid secret key");
-    let source_public_key = "GDIIRYKAHQJJEGC6DAIWTSDT5TX6OASPT3BE4QO72DXFBR7W43HKUHCL";
+    let source_keypair = Keypair::random().unwrap();
+    let source_public_key = &source_keypair.public_key();
 
     // Get account information from server
-    let account_data = server.get_account(source_public_key).await?;
+    let account_data = server.request_airdrop(source_public_key).await?;
     let source_account = Rc::new(RefCell::new(
         Account::new(source_public_key, &account_data.sequence_number()).unwrap(),
     ));
@@ -77,7 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let response = server.get_transaction(&hash).await;
                 if let Ok(tx_result) = response {
                     match tx_result.status {
-                        GetTransactionStatus::SUCCESS => {
+                        GetTransactionStatus::Success => {
                             println!("Transaction successful!");
                             if let Some(ledger) = tx_result.ledger {
                                 println!("Confirmed in ledger: {}", ledger);
@@ -89,14 +89,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             break;
                         }
-                        GetTransactionStatus::NOT_FOUND => {
+                        GetTransactionStatus::NotFound => {
                             println!(
                                 "Waiting for transaction confirmation... Latest ledger: {}",
                                 tx_result.latest_ledger
                             );
                             tokio::time::sleep(Duration::from_secs(1)).await;
                         }
-                        GetTransactionStatus::FAILED => {
+                        GetTransactionStatus::Failed => {
                             if let Some(result) = tx_result.get_result() {
                                 eprintln!("Transaction failed with result: {:?}", result);
                             } else {

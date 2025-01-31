@@ -24,6 +24,8 @@ pub enum Error {
     RPCError { code: i32, message: String },
     #[error("UnexpectedError: should not happen, please report a bug")]
     UnexpectedError,
+    #[error("NoFriendbot: No friendbot on current network")]
+    NoFriendbot,
 }
 
 #[derive(Error, Debug)]

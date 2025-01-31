@@ -56,30 +56,17 @@ use stellar_baselib::xdr::WriteXdr;
 use wiremock::matchers;
 use wiremock::matchers::method;
 use wiremock::matchers::path;
+use wiremock::matchers::query_param;
 use wiremock::Mock;
 use wiremock::MockServer;
 use wiremock::ResponseTemplate;
 
 #[test]
 fn server_new() {
-    let s1 = Server::new(
-        "https://rpc",
-        Options {
-            allow_http: None,
-            timeout: None,
-            headers: None,
-        },
-    );
+    let s1 = Server::new("https://rpc", Default::default());
     assert!(s1.is_ok(), "https scheme with allow_http None");
 
-    let s2 = Server::new(
-        "file://rpc",
-        Options {
-            allow_http: None,
-            timeout: None,
-            headers: None,
-        },
-    );
+    let s2 = Server::new("file://rpc", Default::default());
     assert!(matches!(
         s2.err(),
         Some(Error::InvalidRpc(InvalidRpcUrl::NotHttpScheme)),
@@ -89,8 +76,7 @@ fn server_new() {
         "scheme://rpc",
         Options {
             allow_http: Some(true),
-            timeout: None,
-            headers: None,
+            ..Default::default()
         },
     );
     assert!(matches!(
@@ -102,8 +88,7 @@ fn server_new() {
         "http://rpc",
         Options {
             allow_http: Some(true),
-            timeout: None,
-            headers: None,
+            ..Default::default()
         },
     );
     assert!(s4.is_ok(), "http scheme with allow_http true");
@@ -112,8 +97,7 @@ fn server_new() {
         "",
         Options {
             allow_http: Some(true),
-            timeout: None,
-            headers: None,
+            ..Default::default()
         },
     );
     assert!(matches!(
@@ -125,8 +109,7 @@ fn server_new() {
         "http://rpc",
         Options {
             allow_http: Some(false),
-            timeout: None,
-            headers: None,
+            ..Default::default()
         },
     );
     assert!(matches!(
@@ -1538,7 +1521,6 @@ async fn get_fee_stats() {
 }
 
 #[tokio::test]
-
 async fn get_version_info() {
     let request = json!({
       "jsonrpc": "2.0",
@@ -1568,6 +1550,122 @@ async fn get_version_info() {
     assert_eq!(response.protocol_version, 21);
 }
 
+#[tokio::test]
+async fn request_airdrop() {
+    /*
+     * No friendbot on mainnet
+     */
+    {
+        let request = json!({"method": "getNetwork"});
+        let response = json!(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "passphrase": "Public Global Stellar Network ; September 2015",
+                    "protocolVersion": 22,
+            }
+        }
+        );
+        let (s, _m) = get_mocked_server(request, response).await;
+        let kp = Keypair::random().unwrap();
+        let account_id = kp.public_key();
+        let result = s.request_airdrop(&account_id).await;
+        assert!(matches!(result.err(), Some(Error::NoFriendbot)));
+    }
+    /*
+     * Failed tx
+     */
+    {
+        let account_id = "GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI";
+        let friendly_server = get_friendbot_server(account_id, json!({"successful": false})).await;
+        let uri = friendly_server.uri();
+        let request = json!({"method": "getNetwork"});
+        let response = json!(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "friendbotUrl": uri,
+                    "passphrase": "Test SDF Network ; September 2015",
+                    "protocolVersion": 20
+                }
+            }
+        );
+        let (s, _m) = get_mocked_server(request, response).await;
+        let result = s.request_airdrop(account_id).await;
+        assert!(matches!(result.err(), Some(Error::AccountNotFound)));
+    }
+    /*
+     * Found url from testnet
+     */
+    {
+        let account_id = "GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI";
+
+        let friendly_server = get_friendbot_server(account_id, json!({"successful": true})).await;
+        let uri = friendly_server.uri();
+        let request = json!({"method": "getNetwork"});
+        let response = json!(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "friendbotUrl": uri,
+                    "passphrase": "Test SDF Network ; September 2015",
+                    "protocolVersion": 20
+                }
+            }
+        );
+        let (s, mock_server) = get_mocked_server(request, response).await;
+
+        let account_id_xdr = Keypair::from_public_key(account_id)
+            .expect("Should not fail")
+            .xdr_account_id();
+        let key = LedgerKey::Account(LedgerKeyAccount {
+            account_id: account_id_xdr,
+        });
+        let account_entry = "AAAAAAAAAABzdv3ojkzWHMD7KUoXhrPx0GH18vHKV0ZfqpMiEblG1g3gtpoE608YAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAADAAAAAAAAAAQAAAAAY9D8iA";
+
+        let value = base64::prelude::BASE64_STANDARD.encode(key.to_xdr(Limits::none()).unwrap());
+        let request = json!(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getLedgerEntries",
+                "params": { "keys": [value] },
+        }
+        );
+        let response = json!(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                "entries": [
+                {
+                    "key": value,
+                    "xdr": account_entry,
+                    "lastModifiedLedgerSeq": 2552504
+                }
+            ],
+                "latestLedger": 2552990
+            }
+        }
+        );
+        let response = ResponseTemplate::new(200).set_body_json(response);
+        Mock::given(method("POST"))
+            .and(path("/"))
+            .and(matchers::body_partial_json(request))
+            .respond_with(response)
+            .expect(1..)
+            .mount(&mock_server)
+            .await;
+
+        let result = s.request_airdrop(account_id).await.unwrap();
+        assert_eq!(result.sequence_number(), "1");
+        assert_eq!(result.account_id(), account_id);
+    }
+}
+
 // Create a Server that will reply `response` for a json `request` partially matching
 async fn get_mocked_server(
     request: serde_json::Value,
@@ -1589,11 +1687,24 @@ async fn get_mocked_server(
         &server_url,
         Options {
             allow_http: Some(true),
-            timeout: None,
-            headers: None,
+            ..Default::default()
         },
     )
     .expect("Configuration should not fail");
 
     (server, mock_server)
+}
+async fn get_friendbot_server(account_id: &str, response: serde_json::Value) -> MockServer {
+    let mock_server = MockServer::start().await;
+
+    let response = ResponseTemplate::new(200).set_body_json(response);
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .and(query_param("addr", account_id))
+        .respond_with(response)
+        .expect(1..)
+        .mount(&mock_server)
+        .await;
+
+    mock_server
 }

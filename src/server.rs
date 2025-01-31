@@ -1,7 +1,8 @@
-use crate::error::*;
 use crate::jsonrpc::{JsonRpc, Response};
 use crate::soroban_rpc::*;
 use crate::transaction::assemble_transaction;
+use crate::{error::*, friendbot};
+use futures::TryFutureExt;
 use serde_json::json;
 use std::option::Option;
 use std::{collections::HashMap, str::FromStr};
@@ -33,15 +34,18 @@ impl Durability {
     }
 }
 
+#[derive(Debug, Default)]
 pub struct Options {
     pub allow_http: Option<bool>,
     pub timeout: Option<u64>,
     pub headers: Option<HashMap<String, String>>,
+    pub friendbot_url: Option<String>,
 }
 
 #[derive(Debug)]
 pub struct Server {
     client: JsonRpc,
+    friendbot_url: Option<String>,
 }
 
 impl Server {
@@ -70,6 +74,7 @@ impl Server {
                 opts.timeout.unwrap_or(10),
                 opts.headers.unwrap_or_default(),
             ),
+            friendbot_url: opts.friendbot_url,
         })
     }
 
@@ -292,7 +297,43 @@ impl Server {
             .await?;
         handle_response(response)
     }
-    //TODO: request airdrop
+
+    pub async fn request_airdrop(&self, account_id: &str) -> Result<Account, Error> {
+        let friendbot_url = if let Some(url) = self.friendbot_url.clone() {
+            url
+        } else {
+            let network = self.get_network().await?;
+            if let Some(url) = network.friendbot_url {
+                url
+            } else {
+                return Err(Error::NoFriendbot);
+            }
+        };
+
+        let client = reqwest::ClientBuilder::new()
+            .build()
+            .map_err(Error::NetworkError)?;
+
+        let response = client
+            .get(friendbot_url + "?addr=" + account_id)
+            .send()
+            .map_err(Error::NetworkError)
+            .await?;
+
+        let data: friendbot::FriendbotResponse =
+            response.json().map_err(Error::NetworkError).await?;
+
+        if let Some(success) = data.successful {
+            if success {
+                self.get_account(account_id).await
+            } else {
+                Err(Error::AccountNotFound)
+            }
+        } else {
+            // If we don't get a success, it can be already funded
+            self.get_account(account_id).await
+        }
+    }
 }
 
 fn handle_response<T>(response: Response<T>) -> Result<T, Error> {
