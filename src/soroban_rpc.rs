@@ -442,3 +442,32 @@ impl SimulateTransactionResponse {
         }
     }
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetFeeStatsResponse {
+    pub soroban_inclusion_fee: InclusionFee,
+    pub inclusion_fee: InclusionFee,
+    pub latest_ledger: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InclusionFee {
+    pub max: String,
+    pub min: String,
+    pub mode: String,
+    pub p10: String,
+    pub p20: String,
+    pub p30: String,
+    pub p40: String,
+    pub p50: String,
+    pub p60: String,
+    pub p70: String,
+    pub p80: String,
+    pub p90: String,
+    pub p95: String,
+    pub p99: String,
+    pub transaction_count: String,
+    pub ledger_count: u64,
+}

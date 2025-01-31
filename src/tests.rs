@@ -1447,6 +1447,95 @@ async fn get_events() {
     // TODO more tests
 }
 
+#[tokio::test]
+async fn get_fee_stats() {
+    let request = json!({
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "getFeeStats"
+    });
+    let response = json!({
+      "jsonrpc": "2.0",
+      "id": 1,
+      "result": {
+        "sorobanInclusionFee": {
+          "max": "210",
+          "min": "100",
+          "mode": "100",
+          "p10": "100",
+          "p20": "100",
+          "p30": "100",
+          "p40": "100",
+          "p50": "100",
+          "p60": "100",
+          "p70": "100",
+          "p80": "100",
+          "p90": "120",
+          "p95": "190",
+          "p99": "200",
+          "transactionCount": "10",
+          "ledgerCount": 50
+        },
+        "inclusionFee": {
+          "max": "100",
+          "min": "100",
+          "mode": "100",
+          "p10": "100",
+          "p20": "100",
+          "p30": "100",
+          "p40": "100",
+          "p50": "100",
+          "p60": "100",
+          "p70": "100",
+          "p80": "100",
+          "p90": "100",
+          "p95": "100",
+          "p99": "100",
+          "transactionCount": "7",
+          "ledgerCount": 10
+        },
+        "latestLedger": 4519945
+      }
+    });
+
+    let (s, _m) = get_mocked_server(request, response).await;
+    let response = s.get_fee_stats().await.unwrap();
+
+    assert_eq!(response.inclusion_fee.ledger_count, 10);
+    assert_eq!(response.inclusion_fee.transaction_count, "7");
+    assert_eq!(response.inclusion_fee.max, "100");
+    assert_eq!(response.inclusion_fee.min, "100");
+    assert_eq!(response.inclusion_fee.mode, "100");
+    assert_eq!(response.inclusion_fee.p10, "100");
+    assert_eq!(response.inclusion_fee.p20, "100");
+    assert_eq!(response.inclusion_fee.p30, "100");
+    assert_eq!(response.inclusion_fee.p40, "100");
+    assert_eq!(response.inclusion_fee.p50, "100");
+    assert_eq!(response.inclusion_fee.p60, "100");
+    assert_eq!(response.inclusion_fee.p70, "100");
+    assert_eq!(response.inclusion_fee.p80, "100");
+    assert_eq!(response.inclusion_fee.p90, "100");
+    assert_eq!(response.inclusion_fee.p95, "100");
+    assert_eq!(response.inclusion_fee.p99, "100");
+
+    assert_eq!(response.soroban_inclusion_fee.ledger_count, 50);
+    assert_eq!(response.soroban_inclusion_fee.transaction_count, "10");
+    assert_eq!(response.soroban_inclusion_fee.max, "210");
+    assert_eq!(response.soroban_inclusion_fee.min, "100");
+    assert_eq!(response.soroban_inclusion_fee.mode, "100");
+    assert_eq!(response.soroban_inclusion_fee.p10, "100");
+    assert_eq!(response.soroban_inclusion_fee.p20, "100");
+    assert_eq!(response.soroban_inclusion_fee.p30, "100");
+    assert_eq!(response.soroban_inclusion_fee.p40, "100");
+    assert_eq!(response.soroban_inclusion_fee.p50, "100");
+    assert_eq!(response.soroban_inclusion_fee.p60, "100");
+    assert_eq!(response.soroban_inclusion_fee.p70, "100");
+    assert_eq!(response.soroban_inclusion_fee.p80, "100");
+    assert_eq!(response.soroban_inclusion_fee.p90, "120");
+    assert_eq!(response.soroban_inclusion_fee.p95, "190");
+    assert_eq!(response.soroban_inclusion_fee.p99, "200");
+}
+
 // Create a Server that will reply `response` for a json `request` partially matching
 async fn get_mocked_server(
     request: serde_json::Value,

@@ -287,6 +287,14 @@ impl Server {
         let response = self.client.post("getEvents", params).await?;
         handle_response(response)
     }
+
+    pub async fn get_fee_stats(&self) -> Result<GetFeeStatsResponse, Error> {
+        let response = self
+            .client
+            .post("getFeeStats", serde_json::Value::Null)
+            .await?;
+        handle_response(response)
+    }
     //TODO: request airdrop
 }
 fn handle_response<T>(response: Response<T>) -> Result<T, Error> {
