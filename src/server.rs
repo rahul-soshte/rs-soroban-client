@@ -295,6 +295,14 @@ impl Server {
             .await?;
         handle_response(response)
     }
+
+    pub async fn get_version_info(&self) -> Result<GetVersionInfoResponse, Error> {
+        let response = self
+            .client
+            .post("getVersionInfo", serde_json::Value::Null)
+            .await?;
+        handle_response(response)
+    }
     //TODO: request airdrop
 }
 fn handle_response<T>(response: Response<T>) -> Result<T, Error> {

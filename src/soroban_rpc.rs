@@ -471,3 +471,12 @@ pub struct InclusionFee {
     pub transaction_count: String,
     pub ledger_count: u64,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct GetVersionInfoResponse {
+    pub version: String,
+    pub commit_hash: String,
+    pub build_time_stamp: String,
+    pub captive_core_version: String,
+    pub protocol_version: u32,
+}

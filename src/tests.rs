@@ -1536,6 +1536,37 @@ async fn get_fee_stats() {
     assert_eq!(response.soroban_inclusion_fee.p99, "200");
 }
 
+#[tokio::test]
+
+async fn get_version_info() {
+    let request = json!({
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "getVersionInfo"
+    });
+    let response = json!({
+      "jsonrpc": "2.0",
+      "id": 1,
+      "result": {
+        "version": "21.1.0",
+        "commit_hash": "fcd2f0523f04279bae4502f3e3fa00ca627e6f6a",
+        "build_time_stamp": "2024-05-10T11:18:38",
+        "captive_core_version": "stellar-core 21.0.0.rc2 (c6f474133738ae5f6d11b07963ca841909210273)",
+        "protocol_version": 21
+      }
+    });
+
+    let (s, _m) = get_mocked_server(request, response).await;
+    let response = s.get_version_info().await.unwrap();
+
+    assert_eq!(response.version, "21.1.0");
+    assert_eq!(
+        response.commit_hash,
+        "fcd2f0523f04279bae4502f3e3fa00ca627e6f6a"
+    );
+    assert_eq!(response.protocol_version, 21);
+}
+
 // Create a Server that will reply `response` for a json `request` partially matching
 async fn get_mocked_server(
     request: serde_json::Value,
