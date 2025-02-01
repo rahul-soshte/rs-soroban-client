@@ -60,6 +60,7 @@ pub struct Server {
 }
 
 impl Server {
+    /// # Instantiate a new [Server]
     pub fn new(server_url: &str, opts: Options) -> Result<Self, Error> {
         let server_url = reqwest::Url::from_str(server_url)
             .map_err(|_e| Error::InvalidRpc(InvalidRpcUrl::InvalidUri))?;
@@ -85,8 +86,45 @@ impl Server {
         })
     }
 
-    // Non-RPC method implementations -------------------------------
+    // RPC method implementations -------------------------------
 
+    /// # Call to RPC method [getEvents]
+    ///
+    /// Clients can request a filtered list of events emitted by a given ledger range.
+    ///
+    /// Stellar-RPC will support querying within a maximum 7 days of recent ledgers.
+    ///
+    /// Note, this could be used by the client to only prompt a refresh when there is a new ledger
+    /// with relevant events. It should also be used by backend Dapp components to "ingest" events
+    /// into their own database for querying and serving.
+    ///
+    /// If making multiple requests, clients should deduplicate any events received, based on the
+    /// event's unique id field. This prevents double-processing in the case of duplicate events
+    /// being received.
+    ///
+    /// By default stellar-rpc retains the most recent 24 hours of events.
+    ///
+    /// # Example
+    /// ```rust
+    /// // Fetch 12 events from ledger 67000 for contract "CAA..."
+    /// # use soroban_client::soroban_rpc::*;
+    /// # use soroban_client::server::*;
+    /// # use soroban_client::error::Error;
+    /// # async fn events() -> Result<(), Error> {
+    /// # let server = Server::new("https://rpc.server", Options::default())?;
+    /// let events = server.get_events(
+    ///     EventLedger::From(67000),
+    ///     vec![
+    ///         EventFilter::new(EventType::All).contract("CAA...")
+    ///     ],
+    ///     Some(12)
+    /// ).await?;
+    /// # return Ok(()); }
+    ///
+    /// ```
+    ///
+    /// [getEvents]: https://developers.stellar.org/docs/data/rpc/api-reference/methods/getEvents
+    ///
     pub async fn get_events(
         &self,
         ledger: EventLedger,
@@ -126,6 +164,16 @@ impl Server {
         handle_response(response)
     }
 
+    /// # Call to RPC method [getFeeStats]
+    ///
+    /// Statistics for charged inclusion fees. The inclusion fee statistics are calculated from
+    /// the inclusion fees that were paid for the transactions to be included onto the ledger. For
+    /// Soroban transactions and Stellar transactions, they each have their own inclusion fees and
+    /// own surge pricing. Inclusion fees are used to prevent spam and prioritize transactions
+    /// during network traffic surge.
+    ///
+    /// [getFeeStats]: https://developers.stellar.org/docs/data/rpc/api-reference/methods/getFeeStats
+    ///
     pub async fn get_fee_stats(&self) -> Result<GetFeeStatsResponse, Error> {
         let response = self
             .client
@@ -134,6 +182,12 @@ impl Server {
         handle_response(response)
     }
 
+    /// # Call to RPC method [getHealth]
+    ///
+    /// General node health check.
+    ///
+    /// [getHealth]: https://developers.stellar.org/docs/data/rpc/api-reference/methods/getHealth
+    ///
     pub async fn get_health(&self) -> Result<GetHealthResponse, Error> {
         let response = self
             .client
@@ -142,6 +196,13 @@ impl Server {
         handle_response(response)
     }
 
+    /// # Call to RPC method [getLatestLedger]
+    ///
+    /// For finding out the current latest known ledger of this node. This is a subset of the
+    /// ledger info from Horizon.
+    ///
+    /// [getLatestLedger]: https://developers.stellar.org/docs/data/rpc/api-reference/methods/getLatestLedger
+    ///
     pub async fn get_latest_ledger(&self) -> Result<GetLatestLedgerResponse, Error> {
         let response = self
             .client
@@ -150,6 +211,21 @@ impl Server {
         handle_response(response)
     }
 
+    /// # Call to RPC method [getLedgerEntries]
+    ///
+    /// For reading the current value of ledger entries directly.
+    ///
+    /// This method enables the retrieval of various ledger states, such as accounts, trustlines,
+    /// offers, data, claimable balances, and liquidity pools. It also provides direct access to
+    /// inspect a contract's current state, its code, or any other ledger entry. This serves as a
+    /// primary method to access your contract data which may not be available via
+    /// [events][Server::get_events] or
+    /// [simulate_transaction][Server::simulate_transaction].
+    ///
+    /// To fetch contract wasm byte-code, use the ContractCode ledger entry key.
+    ///
+    /// [getLedgerEntries]: https://developers.stellar.org/docs/data/rpc/api-reference/methods/getLedgerEntries
+    ///
     pub async fn get_ledger_entries(
         &self,
         keys: Vec<LedgerKey>,
@@ -173,6 +249,12 @@ impl Server {
 
     // TODO get_ledgers
 
+    /// # Call to RPC method [getNetwork]
+    ///
+    /// General information about the currently configured network. This response will contain all
+    /// the information needed to successfully submit transactions to the network this node serves.
+    ///
+    /// [getNetwork]: https://developers.stellar.org/docs/data/rpc/api-reference/methods/getNetwork
     pub async fn get_network(&self) -> Result<GetNetworkResponse, Error> {
         let response = self
             .client
@@ -181,6 +263,23 @@ impl Server {
         handle_response(response)
     }
 
+    // # Call to RPC method [getTransaction]
+    //
+    // The getTransaction method provides details about the specified transaction.
+    //
+    // Clients are expected to periodically query this method to ascertain when a transaction has
+    // been successfully recorded on the blockchain. The stellar-rpc system maintains a restricted
+    // history of recently processed transactions, with the default retention window set at 24
+    // hours.
+    //
+    // For private soroban-rpc instances, it is possible to modify the retention window
+    // value by adjusting the transaction-retention-window configuration setting, but we do not
+    // recommend values longer than 7 days. For debugging needs that extend beyond this timeframe,
+    // it is advisable to index this data yourself, employ a third-party indexer, or query Hubble
+    // (our public BigQuery data set).
+    //
+    // [getTransaction]: https://developers.stellar.org/docs/data/rpc/api-reference/methods/getTransaction
+    //
     pub async fn get_transaction(&self, hash: &str) -> Result<GetTransactionResponse, Error> {
         let params = json!({
                 "hash": hash
@@ -192,6 +291,13 @@ impl Server {
 
     // TODO get_transactions
 
+    /// # Call to RPC method [getVersionInfo]
+    ///
+    /// Version information about the RPC and Captive core. RPC manages its own, pared-down
+    /// version of Stellar Core optimized for its own subset of needs. we'll refer to this as
+    /// a "Captive Core" instance.
+    ///
+    /// [getVersionInfo]: https://developers.stellar.org/docs/data/rpc/api-reference/methods/getVersionInfo
     pub async fn get_version_info(&self) -> Result<GetVersionInfoResponse, Error> {
         let response = self
             .client
@@ -200,6 +306,19 @@ impl Server {
         handle_response(response)
     }
 
+    /// # Call to RPC method [sendTransaction]
+    ///
+    /// Submit a real transaction to the Stellar network. This is the only way to make changes
+    /// on-chain.
+    ///
+    /// Unlike Horizon, this does not wait for transaction completion. It simply validates and
+    /// enqueues the transaction. Clients should call getTransaction to learn about transaction
+    /// success/failure.
+    ///
+    /// This supports all transactions, not only smart contract-related transactions.
+    ///
+    /// [sendTransaction]: https://developers.stellar.org/docs/data/rpc/api-reference/methods/sendTransaction
+    ///
     pub async fn send_transaction(
         &self,
         transaction: Transaction,
@@ -218,6 +337,14 @@ impl Server {
         handle_response(response)
     }
 
+    /// # Call to RPC method [simulateTransaction]
+    ///
+    /// Submit a trial contract invocation to simulate how it would be executed by the network.
+    /// This endpoint calculates the effective transaction data, required authorizations, and
+    /// minimal resource fee. It provides a way to test and analyze the potential outcomes of a
+    /// transaction without actually submitting it to the network.
+    ///
+    /// [simulateTransaction]: https://developers.stellar.org/docs/data/rpc/api-reference/methods/simulateTransaction
     pub async fn simulate_transaction(
         &self,
         transaction: Transaction,
