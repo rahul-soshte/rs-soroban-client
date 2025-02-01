@@ -34,12 +34,23 @@ impl Durability {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Options {
-    pub allow_http: Option<bool>,
-    pub timeout: Option<u64>,
-    pub headers: Option<HashMap<String, String>>,
+    pub allow_http: bool,
+    pub timeout: u64,
+    pub headers: HashMap<String, String>,
     pub friendbot_url: Option<String>,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            allow_http: false,
+            timeout: 10,
+            headers: Default::default(),
+            friendbot_url: None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -52,7 +63,7 @@ impl Server {
     pub fn new(server_url: &str, opts: Options) -> Result<Self, Error> {
         let server_url = reqwest::Url::from_str(server_url)
             .map_err(|_e| Error::InvalidRpc(InvalidRpcUrl::InvalidUri))?;
-        let allow_http = opts.allow_http.unwrap_or(false);
+        let allow_http = opts.allow_http;
         match server_url.scheme() {
             "https" => {
                 // good
@@ -69,11 +80,7 @@ impl Server {
         };
 
         Ok(Server {
-            client: JsonRpc::new(
-                server_url,
-                opts.timeout.unwrap_or(10),
-                opts.headers.unwrap_or_default(),
-            ),
+            client: JsonRpc::new(server_url, opts.timeout, opts.headers),
             friendbot_url: opts.friendbot_url,
         })
     }

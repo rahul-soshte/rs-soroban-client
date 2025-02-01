@@ -75,7 +75,7 @@ fn server_new() {
     let s3 = Server::new(
         "scheme://rpc",
         Options {
-            allow_http: Some(true),
+            allow_http: true,
             ..Default::default()
         },
     );
@@ -87,7 +87,7 @@ fn server_new() {
     let s4 = Server::new(
         "http://rpc",
         Options {
-            allow_http: Some(true),
+            allow_http: true,
             ..Default::default()
         },
     );
@@ -96,7 +96,7 @@ fn server_new() {
     let s5 = Server::new(
         "",
         Options {
-            allow_http: Some(true),
+            allow_http: true,
             ..Default::default()
         },
     );
@@ -108,7 +108,7 @@ fn server_new() {
     let s6 = Server::new(
         "http://rpc",
         Options {
-            allow_http: Some(false),
+            allow_http: false,
             ..Default::default()
         },
     );
@@ -1686,7 +1686,7 @@ async fn get_mocked_server(
     let server = Server::new(
         &server_url,
         Options {
-            allow_http: Some(true),
+            allow_http: true,
             ..Default::default()
         },
     )
