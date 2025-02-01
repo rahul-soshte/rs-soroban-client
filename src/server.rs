@@ -85,170 +85,7 @@ impl Server {
         })
     }
 
-    pub async fn get_ledger_entries(
-        &self,
-        keys: Vec<LedgerKey>,
-    ) -> Result<GetLedgerEntriesResponse, Error> {
-        let keys: Result<Vec<String>, Error> = keys
-            .into_iter()
-            .map(|k| k.to_xdr_base64(Limits::none()).map_err(|_| Error::XdrError))
-            .collect();
-
-        match keys {
-            Ok(keys) => {
-                let params = json!({"keys": keys});
-                let response: Response<GetLedgerEntriesResponse> =
-                    self.client.post("getLedgerEntries", params).await?;
-
-                handle_response(response)
-            }
-            Err(err) => Err(err),
-        }
-    }
-
-    pub async fn get_account(&self, address: &str) -> Result<Account, Error> {
-        let account_id = stellar_baselib::keypair::Keypair::from_public_key(address)
-            .map_err(|_| Error::AccountNotFound)?
-            .xdr_account_id();
-        let ledger_key = LedgerKey::Account(LedgerKeyAccount { account_id });
-
-        let resp = self.get_ledger_entries(vec![ledger_key]).await?;
-        let entries = resp.entries.unwrap_or_default();
-        if entries.is_empty() {
-            return Err(Error::AccountNotFound);
-        }
-
-        if let LedgerEntryData::Account(account_entry) = entries[0].to_data() {
-            Ok(Account::new(address, &account_entry.seq_num.0.to_string()).unwrap())
-        } else {
-            Err(Error::AccountNotFound)
-        }
-    }
-
-    pub async fn get_health(&self) -> Result<GetHealthResponse, Error> {
-        let response = self
-            .client
-            .post("getHealth", serde_json::Value::Null)
-            .await?;
-        handle_response(response)
-    }
-
-    pub async fn get_network(&self) -> Result<GetNetworkResponse, Error> {
-        let response = self
-            .client
-            .post("getNetwork", serde_json::Value::Null)
-            .await?;
-        handle_response(response)
-    }
-
-    pub async fn get_latest_ledger(&self) -> Result<GetLatestLedgerResponse, Error> {
-        let response = self
-            .client
-            .post("getLatestLedger", serde_json::Value::Null)
-            .await?;
-        handle_response(response)
-    }
-
-    pub async fn simulate_transaction(
-        &self,
-        transaction: Transaction,
-        addl_resources: Option<ResourceLeeway>,
-    ) -> Result<SimulateTransactionResponse, Error> {
-        let transaction_xdr = transaction
-            .to_envelope()
-            .map_err(|_| Error::TransactionError)?
-            .to_xdr_base64(Limits::none())
-            .map_err(|_| Error::XdrError)?;
-
-        // Add resource config if provided
-        let params = if let Some(resources) = addl_resources {
-            json!({
-                "transaction": transaction_xdr,
-                "resourceConfig": {
-                    "instructionLeeway": resources.cpu_instructions
-                }
-            })
-        } else {
-            json!({
-                "transaction": transaction_xdr
-            })
-        };
-
-        let response = self.client.post("simulateTransaction", params).await?;
-        handle_response(response)
-    }
-
-    pub async fn get_contract_data(
-        &self,
-        contract: &str,
-        key: ScVal,
-        durability: Durability,
-    ) -> Result<LedgerEntryResult, Error> {
-        let hex_contract_val = &hex::encode(Sha256Hasher::hash(contract.as_bytes()));
-        let hex_id = hex_contract_val.as_bytes();
-        let mut array = [0u8; 32];
-        array.copy_from_slice(&hex_id[0..32]);
-
-        let sc_address =
-            ScAddress::Contract(Hash::from_str(hex_contract_val).map_err(|_| Error::XdrError)?);
-
-        let contract_key = LedgerKey::ContractData(LedgerKeyContractData {
-            key: key.clone(),
-            contract: sc_address.clone(),
-            durability: durability.to_xdr(),
-        });
-
-        let val = vec![contract_key];
-
-        let response = self.get_ledger_entries(val).await?;
-
-        if let Some(entries) = response.entries {
-            if let Some(entry) = entries.first() {
-                Ok(entry.clone())
-            } else {
-                Err(Error::ContractDataNotFound)
-            }
-        } else {
-            Err(Error::ContractDataNotFound)
-        }
-    }
-
-    pub async fn get_transaction(&self, hash: &str) -> Result<GetTransactionResponse, Error> {
-        let params = json!({
-                "hash": hash
-        });
-
-        let response = self.client.post("getTransaction", params).await?;
-        handle_response(response)
-    }
-
-    pub async fn prepare_transaction(
-        &self,
-        transaction: Transaction,
-        network_passphrase: &str,
-    ) -> Result<Transaction, Error> {
-        let sim_response = self.simulate_transaction(transaction.clone(), None).await?;
-
-        Ok(assemble_transaction(transaction, network_passphrase, sim_response)?.build())
-    }
-
-    pub async fn send_transaction(
-        &self,
-        transaction: Transaction,
-    ) -> Result<SendTransactionResponse, Error> {
-        let transaction_xdr = transaction
-            .to_envelope()
-            .map_err(|_| Error::TransactionError)?
-            .to_xdr_base64(Limits::none())
-            .map_err(|_| Error::XdrError)?;
-
-        let params = json!({
-                "transaction": transaction_xdr
-            }
-        );
-        let response = self.client.post("sendTransaction", params).await?;
-        handle_response(response)
-    }
+    // Non-RPC method implementations -------------------------------
 
     pub async fn get_events(
         &self,
@@ -297,12 +134,183 @@ impl Server {
         handle_response(response)
     }
 
+    pub async fn get_health(&self) -> Result<GetHealthResponse, Error> {
+        let response = self
+            .client
+            .post("getHealth", serde_json::Value::Null)
+            .await?;
+        handle_response(response)
+    }
+
+    pub async fn get_latest_ledger(&self) -> Result<GetLatestLedgerResponse, Error> {
+        let response = self
+            .client
+            .post("getLatestLedger", serde_json::Value::Null)
+            .await?;
+        handle_response(response)
+    }
+
+    pub async fn get_ledger_entries(
+        &self,
+        keys: Vec<LedgerKey>,
+    ) -> Result<GetLedgerEntriesResponse, Error> {
+        let keys: Result<Vec<String>, Error> = keys
+            .into_iter()
+            .map(|k| k.to_xdr_base64(Limits::none()).map_err(|_| Error::XdrError))
+            .collect();
+
+        match keys {
+            Ok(keys) => {
+                let params = json!({"keys": keys});
+                let response: Response<GetLedgerEntriesResponse> =
+                    self.client.post("getLedgerEntries", params).await?;
+
+                handle_response(response)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    // TODO get_ledgers
+
+    pub async fn get_network(&self) -> Result<GetNetworkResponse, Error> {
+        let response = self
+            .client
+            .post("getNetwork", serde_json::Value::Null)
+            .await?;
+        handle_response(response)
+    }
+
+    pub async fn get_transaction(&self, hash: &str) -> Result<GetTransactionResponse, Error> {
+        let params = json!({
+                "hash": hash
+        });
+
+        let response = self.client.post("getTransaction", params).await?;
+        handle_response(response)
+    }
+
+    // TODO get_transactions
+
     pub async fn get_version_info(&self) -> Result<GetVersionInfoResponse, Error> {
         let response = self
             .client
             .post("getVersionInfo", serde_json::Value::Null)
             .await?;
         handle_response(response)
+    }
+
+    pub async fn send_transaction(
+        &self,
+        transaction: Transaction,
+    ) -> Result<SendTransactionResponse, Error> {
+        let transaction_xdr = transaction
+            .to_envelope()
+            .map_err(|_| Error::TransactionError)?
+            .to_xdr_base64(Limits::none())
+            .map_err(|_| Error::XdrError)?;
+
+        let params = json!({
+                "transaction": transaction_xdr
+            }
+        );
+        let response = self.client.post("sendTransaction", params).await?;
+        handle_response(response)
+    }
+
+    pub async fn simulate_transaction(
+        &self,
+        transaction: Transaction,
+        addl_resources: Option<ResourceLeeway>,
+    ) -> Result<SimulateTransactionResponse, Error> {
+        let transaction_xdr = transaction
+            .to_envelope()
+            .map_err(|_| Error::TransactionError)?
+            .to_xdr_base64(Limits::none())
+            .map_err(|_| Error::XdrError)?;
+
+        // Add resource config if provided
+        let params = if let Some(resources) = addl_resources {
+            json!({
+                "transaction": transaction_xdr,
+                "resourceConfig": {
+                    "instructionLeeway": resources.cpu_instructions
+                }
+            })
+        } else {
+            json!({
+                "transaction": transaction_xdr
+            })
+        };
+
+        let response = self.client.post("simulateTransaction", params).await?;
+        handle_response(response)
+    }
+
+    // Non-RPC method implementations -------------------------------
+
+    pub async fn get_account(&self, address: &str) -> Result<Account, Error> {
+        let account_id = stellar_baselib::keypair::Keypair::from_public_key(address)
+            .map_err(|_| Error::AccountNotFound)?
+            .xdr_account_id();
+        let ledger_key = LedgerKey::Account(LedgerKeyAccount { account_id });
+
+        let resp = self.get_ledger_entries(vec![ledger_key]).await?;
+        let entries = resp.entries.unwrap_or_default();
+        if entries.is_empty() {
+            return Err(Error::AccountNotFound);
+        }
+
+        if let LedgerEntryData::Account(account_entry) = entries[0].to_data() {
+            Ok(Account::new(address, &account_entry.seq_num.0.to_string()).unwrap())
+        } else {
+            Err(Error::AccountNotFound)
+        }
+    }
+
+    pub async fn get_contract_data(
+        &self,
+        contract: &str,
+        key: ScVal,
+        durability: Durability,
+    ) -> Result<LedgerEntryResult, Error> {
+        let hex_contract_val = &hex::encode(Sha256Hasher::hash(contract.as_bytes()));
+        let hex_id = hex_contract_val.as_bytes();
+        let mut array = [0u8; 32];
+        array.copy_from_slice(&hex_id[0..32]);
+
+        let sc_address =
+            ScAddress::Contract(Hash::from_str(hex_contract_val).map_err(|_| Error::XdrError)?);
+
+        let contract_key = LedgerKey::ContractData(LedgerKeyContractData {
+            key: key.clone(),
+            contract: sc_address.clone(),
+            durability: durability.to_xdr(),
+        });
+
+        let val = vec![contract_key];
+
+        let response = self.get_ledger_entries(val).await?;
+
+        if let Some(entries) = response.entries {
+            if let Some(entry) = entries.first() {
+                Ok(entry.clone())
+            } else {
+                Err(Error::ContractDataNotFound)
+            }
+        } else {
+            Err(Error::ContractDataNotFound)
+        }
+    }
+
+    pub async fn prepare_transaction(
+        &self,
+        transaction: Transaction,
+        network_passphrase: &str,
+    ) -> Result<Transaction, Error> {
+        let sim_response = self.simulate_transaction(transaction.clone(), None).await?;
+
+        Ok(assemble_transaction(transaction, network_passphrase, sim_response)?.build())
     }
 
     pub async fn request_airdrop(&self, account_id: &str) -> Result<Account, Error> {
