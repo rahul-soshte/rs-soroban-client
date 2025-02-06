@@ -11,6 +11,7 @@ use crate::soroban_rpc::GetNetworkResponse;
 use crate::soroban_rpc::GetTransactionStatus;
 use crate::soroban_rpc::ResourceLeeway;
 use crate::soroban_rpc::SendTransactionStatus;
+use crate::soroban_rpc::StateChangeKind;
 use crate::soroban_rpc::Topic;
 use base64::Engine;
 use serde_json::json;
@@ -920,7 +921,259 @@ async fn simulate_transaction() {
         }
     }
     // TODO test for restore_preamble
-    // TODO test for state changes
+    /*
+     * State changes
+     */
+    {
+        let tx_xdr = "AAAAAgAAAAD/RDKqj6Kdnakmnlac+iWBROMjeE9F/5bQmfT4G8DlcwX14QAAD1DYAAAAAgAAAAAAAAAAAAAAAQAAAAAAAAAYAAAAAAAAAAEkIK54Itc3IZGRtBind27TuweJ+klDiPyK5NXu67CaaAAAAAhpbmNfYXV0aAAAAAEAAAASAAAAAAAAAAD/RDKqj6Kdnakmnlac+iWBROMjeE9F/5bQmfT4G8DlcwAAAAAAAAAAAAAAAA==";
+        let request = json!(
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "simulateTransaction",
+          "params": {
+            "transaction": tx_xdr,
+          }
+        });
+        let response = json!(
+        {
+          "jsonrpc": "2.0",
+          "id": 8675309,
+          "result": {
+            "transactionData": "AAAAAAAAAAIAAAAGAAAAASQgrngi1zchkZG0GKd3btO7B4n6SUOI/Irk1e7rsJpoAAAAFAAAAAEAAAAHcOiuro2Kjk7NwMT6FDrXvb/h7SFI2ZYIxVt7UQy0M6EAAAABAAAABgAAAAEkIK54Itc3IZGRtBind27TuweJ+klDiPyK5NXu67CaaAAAABAAAAABAAAAAgAAAA8AAAALQ291bnRlckF1dGgAAAAAEgAAAAAAAAAA/0Qyqo+inZ2pJp5WnPolgUTjI3hPRf+W0Jn0+BvA5XMAAAAAAA0kKAAABrAAAACMAAAAAAABxsc=",
+            "minResourceFee": "116423",
+            "events": [
+                    "AAAAAQAAAAAAAAAAAAAAAgAAAAAAAAADAAAADwAAAAdmbl9jYWxsAAAAAA0AAAAgJCCueCLXNyGRkbQYp3du07sHifpJQ4j8iuTV7uuwmmgAAAAPAAAACGluY19hdXRoAAAAEgAAAAAAAAAA/0Qyqo+inZ2pJp5WnPolgUTjI3hPRf+W0Jn0+BvA5XM=",
+                    "AAAAAQAAAAAAAAABJCCueCLXNyGRkbQYp3du07sHifpJQ4j8iuTV7uuwmmgAAAABAAAAAAAAAAEAAAAPAAAAB2NvdW50ZXIAAAAAEAAAAAEAAAACAAAAEAAAAAEAAAACAAAADwAAAAtDb3VudGVyQXV0aAAAAAASAAAAAAAAAAD/RDKqj6Kdnakmnlac+iWBROMjeE9F/5bQmfT4G8DlcwAAAAMAAAAB",
+                    "AAAAAQAAAAAAAAABJCCueCLXNyGRkbQYp3du07sHifpJQ4j8iuTV7uuwmmgAAAACAAAAAAAAAAIAAAAPAAAACWZuX3JldHVybgAAAAAAAA8AAAAIaW5jX2F1dGgAAAADAAAAAQ==",
+            ],
+            "results": [
+              {
+                "auth": [
+                            "AAAAAAAAAAAAAAABJCCueCLXNyGRkbQYp3du07sHifpJQ4j8iuTV7uuwmmgAAAAIaW5jX2F1dGgAAAABAAAAEgAAAAAAAAAA/0Qyqo+inZ2pJp5WnPolgUTjI3hPRf+W0Jn0+BvA5XMAAAAA",
+                        ],
+                "xdr": "AAAAAwAAAAE=",
+              }
+            ],
+            "stateChanges":
+                [
+                    {
+                        "type": 1,
+                        "key": "AAAABgAAAAEkIK54Itc3IZGRtBind27TuweJ+klDiPyK5NXu67CaaAAAABAAAAABAAAAAgAAAA8AAAALQ291bnRlckF1dGgAAAAAEgAAAAAAAAAA/0Qyqo+inZ2pJp5WnPolgUTjI3hPRf+W0Jn0+BvA5XMAAAAA",
+                        "before": null,
+                        "after":
+                            "AAAAAAAAAAYAAAAAAAAAASQgrngi1zchkZG0GKd3btO7B4n6SUOI/Irk1e7rsJpoAAAAEAAAAAEAAAACAAAADwAAAAtDb3VudGVyQXV0aAAAAAASAAAAAAAAAAD/RDKqj6Kdnakmnlac+iWBROMjeE9F/5bQmfT4G8DlcwAAAAAAAAADAAAAAQAAAAA=",
+                    },
+                ],
+            "latestLedger": 2552139
+          }
+        });
+
+        let source_account = Rc::new(RefCell::new(
+            Account::new(
+                "GD7UIMVKR6RJ3HNJE2PFNHH2EWAUJYZDPBHUL74W2CM7J6A3YDSXGPJN",
+                "4311013293817858",
+            )
+            .unwrap(),
+        ));
+        let network = Networks::testnet();
+
+        let contract =
+            Contracts::new("CASCBLTYELLTOIMRSG2BRJ3XN3J3WB4J7JEUHCH4RLSNL3XLWCNGRTCR").unwrap();
+        let op = contract.call(
+            "inc_auth",
+            Some(vec![Address::new(
+                "GD7UIMVKR6RJ3HNJE2PFNHH2EWAUJYZDPBHUL74W2CM7J6A3YDSXGPJN",
+            )
+            .unwrap()
+            .to_sc_val()
+            .unwrap()]),
+        );
+
+        let mut tx_builder = TransactionBuilder::new(source_account, network, None);
+        tx_builder.add_operation(op);
+        tx_builder.fee(100000000u32);
+
+        let tx = tx_builder.build();
+        let xdr = tx
+            .to_envelope()
+            .unwrap()
+            .to_xdr_base64(Limits::none())
+            .unwrap();
+        assert_eq!(xdr, tx_xdr);
+
+        let (s, _m) = get_mocked_server(request, response).await;
+        let txresult = s.simulate_transaction(tx, None).await.unwrap();
+        let state_changes = txresult.to_state_changes();
+        assert_eq!(state_changes.len(), 1);
+        assert!(matches!(&state_changes[0].kind, StateChangeKind::Created));
+    }
+    /*
+     * Updated
+     */
+    {
+        let tx_xdr = "AAAAAgAAAAD/RDKqj6Kdnakmnlac+iWBROMjeE9F/5bQmfT4G8DlcwX14QAAD1DYAAAAAwAAAAAAAAAAAAAAAQAAAAAAAAAYAAAAAAAAAAEkIK54Itc3IZGRtBind27TuweJ+klDiPyK5NXu67CaaAAAAAhpbmNfYXV0aAAAAAEAAAASAAAAAAAAAAD/RDKqj6Kdnakmnlac+iWBROMjeE9F/5bQmfT4G8DlcwAAAAAAAAAAAAAAAA==";
+        let request = json!(
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "simulateTransaction",
+          "params": {
+            "transaction": tx_xdr,
+          }
+        });
+        let response = json!(
+        {
+          "jsonrpc": "2.0",
+          "id": 8675309,
+          "result": {
+            "transactionData": "AAAAAAAAAAIAAAAGAAAAASQgrngi1zchkZG0GKd3btO7B4n6SUOI/Irk1e7rsJpoAAAAFAAAAAEAAAAHcOiuro2Kjk7NwMT6FDrXvb/h7SFI2ZYIxVt7UQy0M6EAAAABAAAABgAAAAEkIK54Itc3IZGRtBind27TuweJ+klDiPyK5NXu67CaaAAAABAAAAABAAAAAgAAAA8AAAALQ291bnRlckF1dGgAAAAAEgAAAAAAAAAA/0Qyqo+inZ2pJp5WnPolgUTjI3hPRf+W0Jn0+BvA5XMAAAAAAA0kKAAABrAAAACMAAAAAAABxsc=",
+            "minResourceFee": "116423",
+            "results": [
+              {
+                "auth": [
+                           "AAAAAAAAAAAAAAABJCCueCLXNyGRkbQYp3du07sHifpJQ4j8iuTV7uuwmmgAAAAIaW5jX2F1dGgAAAABAAAAEgAAAAAAAAAA/0Qyqo+inZ2pJp5WnPolgUTjI3hPRf+W0Jn0+BvA5XMAAAAA",
+                        ],
+                "xdr": "AAAAAwAAAAI=",
+              }
+            ],
+            "stateChanges":
+                [
+                    {
+                        "type": 2,
+                        "key": "AAAABgAAAAEkIK54Itc3IZGRtBind27TuweJ+klDiPyK5NXu67CaaAAAABAAAAABAAAAAgAAAA8AAAALQ291bnRlckF1dGgAAAAAEgAAAAAAAAAA/0Qyqo+inZ2pJp5WnPolgUTjI3hPRf+W0Jn0+BvA5XMAAAAA",
+                        "before":
+                            "AA9Q2wAAAAYAAAAAAAAAASQgrngi1zchkZG0GKd3btO7B4n6SUOI/Irk1e7rsJpoAAAAEAAAAAEAAAACAAAADwAAAAtDb3VudGVyQXV0aAAAAAASAAAAAAAAAAD/RDKqj6Kdnakmnlac+iWBROMjeE9F/5bQmfT4G8DlcwAAAAAAAAADAAAAAQAAAAA=",
+                        "after":
+                            "AA9Q2wAAAAYAAAAAAAAAASQgrngi1zchkZG0GKd3btO7B4n6SUOI/Irk1e7rsJpoAAAAEAAAAAEAAAACAAAADwAAAAtDb3VudGVyQXV0aAAAAAASAAAAAAAAAAD/RDKqj6Kdnakmnlac+iWBROMjeE9F/5bQmfT4G8DlcwAAAAAAAAADAAAAAgAAAAA=",
+                    },
+                ],
+            "latestLedger": 2552139
+          }
+        });
+
+        let source_account = Rc::new(RefCell::new(
+            Account::new(
+                "GD7UIMVKR6RJ3HNJE2PFNHH2EWAUJYZDPBHUL74W2CM7J6A3YDSXGPJN",
+                "4311013293817859",
+            )
+            .unwrap(),
+        ));
+        let network = Networks::testnet();
+
+        let contract =
+            Contracts::new("CASCBLTYELLTOIMRSG2BRJ3XN3J3WB4J7JEUHCH4RLSNL3XLWCNGRTCR").unwrap();
+        let op = contract.call(
+            "inc_auth",
+            Some(vec![Address::new(
+                "GD7UIMVKR6RJ3HNJE2PFNHH2EWAUJYZDPBHUL74W2CM7J6A3YDSXGPJN",
+            )
+            .unwrap()
+            .to_sc_val()
+            .unwrap()]),
+        );
+
+        let mut tx_builder = TransactionBuilder::new(source_account, network, None);
+        tx_builder.add_operation(op);
+        tx_builder.fee(100000000u32);
+
+        let tx = tx_builder.build();
+        let xdr = tx
+            .to_envelope()
+            .unwrap()
+            .to_xdr_base64(Limits::none())
+            .unwrap();
+        assert_eq!(xdr, tx_xdr);
+
+        let (s, _m) = get_mocked_server(request, response).await;
+        let txresult = s.simulate_transaction(tx, None).await.unwrap();
+        let state_changes = txresult.to_state_changes();
+        assert_eq!(state_changes.len(), 1);
+        assert!(matches!(&state_changes[0].kind, StateChangeKind::Updated));
+    }
+    /*
+     * Deleted
+     */
+    {
+        let tx_xdr = "AAAAAgAAAAD/RDKqj6Kdnakmnlac+iWBROMjeE9F/5bQmfT4G8DlcwX14QAAD1DYAAAABAAAAAAAAAAAAAAAAQAAAAAAAAAYAAAAAAAAAAEkIK54Itc3IZGRtBind27TuweJ+klDiPyK5NXu67CaaAAAAAhpbmNfYXV0aAAAAAEAAAASAAAAAAAAAAD/RDKqj6Kdnakmnlac+iWBROMjeE9F/5bQmfT4G8DlcwAAAAAAAAAAAAAAAA==";
+        let request = json!(
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "simulateTransaction",
+          "params": {
+            "transaction": tx_xdr,
+          }
+        });
+        let response = json!(
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "transactionData": "AAAAAAAAAAIAAAAGAAAAASQgrngi1zchkZG0GKd3btO7B4n6SUOI/Irk1e7rsJpoAAAAFAAAAAEAAAAHcOiuro2Kjk7NwMT6FDrXvb/h7SFI2ZYIxVt7UQy0M6EAAAABAAAABgAAAAEkIK54Itc3IZGRtBind27TuweJ+klDiPyK5NXu67CaaAAAABAAAAABAAAAAgAAAA8AAAALQ291bnRlckF1dGgAAAAAEgAAAAAAAAAA/0Qyqo+inZ2pJp5WnPolgUTjI3hPRf+W0Jn0+BvA5XMAAAAAAA0H8gAABzwAAAAAAAAAAAABdsc=",
+            "minResourceFee": "116423",
+            "results": [
+              {
+                "auth": [
+                            "AAAAAAAAAAAAAAABJCCueCLXNyGRkbQYp3du07sHifpJQ4j8iuTV7uuwmmgAAAAIaW5jX2F1dGgAAAABAAAAEgAAAAAAAAAA/0Qyqo+inZ2pJp5WnPolgUTjI3hPRf+W0Jn0+BvA5XMAAAAA",
+                        ],
+                "xdr": "AAAAAwAAAAM=",
+              }
+            ],
+            "stateChanges":
+                [
+                    {
+                        "type": 3,
+                        "key": "AAAABgAAAAEkIK54Itc3IZGRtBind27TuweJ+klDiPyK5NXu67CaaAAAABAAAAABAAAAAgAAAA8AAAALQ291bnRlckF1dGgAAAAAEgAAAAAAAAAA/0Qyqo+inZ2pJp5WnPolgUTjI3hPRf+W0Jn0+BvA5XMAAAAA",
+                        "before":
+                            "AA9Q3AAAAAYAAAAAAAAAASQgrngi1zchkZG0GKd3btO7B4n6SUOI/Irk1e7rsJpoAAAAEAAAAAEAAAACAAAADwAAAAtDb3VudGVyQXV0aAAAAAASAAAAAAAAAAD/RDKqj6Kdnakmnlac+iWBROMjeE9F/5bQmfT4G8DlcwAAAAAAAAADAAAAAgAAAAA=",
+                        "after": null,
+                    },
+                ],
+            "latestLedger": 2552139
+          }
+        });
+
+        let source_account = Rc::new(RefCell::new(
+            Account::new(
+                "GD7UIMVKR6RJ3HNJE2PFNHH2EWAUJYZDPBHUL74W2CM7J6A3YDSXGPJN",
+                "4311013293817860",
+            )
+            .unwrap(),
+        ));
+        let network = Networks::testnet();
+
+        let contract =
+            Contracts::new("CASCBLTYELLTOIMRSG2BRJ3XN3J3WB4J7JEUHCH4RLSNL3XLWCNGRTCR").unwrap();
+        let op = contract.call(
+            "inc_auth",
+            Some(vec![Address::new(
+                "GD7UIMVKR6RJ3HNJE2PFNHH2EWAUJYZDPBHUL74W2CM7J6A3YDSXGPJN",
+            )
+            .unwrap()
+            .to_sc_val()
+            .unwrap()]),
+        );
+
+        let mut tx_builder = TransactionBuilder::new(source_account, network, None);
+        tx_builder.add_operation(op);
+        tx_builder.fee(100000000u32);
+
+        let tx = tx_builder.build();
+        let xdr = tx
+            .to_envelope()
+            .unwrap()
+            .to_xdr_base64(Limits::none())
+            .unwrap();
+        assert_eq!(xdr, tx_xdr);
+
+        let (s, _m) = get_mocked_server(request, response).await;
+        let txresult = s.simulate_transaction(tx, None).await.unwrap();
+        let state_changes = txresult.to_state_changes();
+        assert_eq!(state_changes.len(), 1);
+        assert!(matches!(&state_changes[0].kind, StateChangeKind::Deleted));
+        // TODO more test
+    }
 }
 
 #[tokio::test]

@@ -39,6 +39,7 @@ pub fn assemble_transaction(
     // Calculate fees
     let classic_fee_num = tx.fee;
 
+    // FIXME Check if some auth were already provided in the tx 
     let auth = if let Some((_, a)) = simulation.to_result() {
         Some(a.try_into().expect("Cannot convert Vec to VecM"))
     } else {
@@ -104,11 +105,6 @@ fn is_soroban_transaction(tx: &Transaction) -> bool {
     false
 }
 
-#[derive(Clone, Debug)]
-pub enum Either<L, R> {
-    Left(L),
-    Right(R),
-}
 
 #[cfg(test)]
 mod test {

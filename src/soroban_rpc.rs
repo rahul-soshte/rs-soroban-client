@@ -339,17 +339,18 @@ pub struct RawSimulateHostFunctionResult {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Copy)]
-#[serde(rename_all = "lowercase")]
+#[repr(u8)]
 pub enum StateChangeKind {
-    Create = 1,
+    Created = 1,
     Updated = 2,
     Deleted = 3,
+    Unknown = 255,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct RawStateChanges {
     #[serde(rename = "type")]
-    kind: StateChangeKind,
+    kind: u8,
     key: String,
     before: Option<String>,
     after: Option<String>,
@@ -360,6 +361,16 @@ pub struct StateChange {
     pub key: LedgerKey,
     pub before: Option<LedgerEntry>,
     pub after: Option<LedgerEntry>,
+}
+impl From<u8> for StateChangeKind {
+    fn from(value: u8) -> Self {
+        match value {
+            1 => StateChangeKind::Created,
+            2 => StateChangeKind::Updated,
+            3 => StateChangeKind::Deleted,
+            _ => StateChangeKind::Unknown, // Default case
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -441,7 +452,7 @@ impl SimulateTransactionResponse {
             changes
                 .iter()
                 .map(|c| StateChange {
-                    kind: c.kind,
+                    kind: StateChangeKind::from(c.kind),
                     key: LedgerKey::from_xdr_base64(&c.key, Limits::none())
                         .expect("Invalid LedgerKey"),
                     before: c.before.as_ref().map(|e| {
