@@ -48,6 +48,8 @@ use stellar_baselib::xdr::ScString;
 use stellar_baselib::xdr::ScSymbol;
 use stellar_baselib::xdr::ScVal;
 use stellar_baselib::xdr::ScVec;
+use stellar_baselib::xdr::SorobanResources;
+use stellar_baselib::xdr::SorobanTransactionData;
 use stellar_baselib::xdr::TimeBounds;
 use stellar_baselib::xdr::TimePoint;
 use stellar_baselib::xdr::TransactionResult;
@@ -920,7 +922,6 @@ async fn simulate_transaction() {
             panic!("Simulation failed")
         }
     }
-    // TODO test for restore_preamble
     /*
      * State changes
      */
@@ -1465,6 +1466,129 @@ async fn prepare_transaction() {
 
         assert_eq!(txresult.fee, tx.fee + 90353);
         assert_eq!(txresult.soroban_data, simulation.to_transaction_data());
+    }
+    {
+        let source_account = Rc::new(RefCell::new(
+            Account::new(
+                "GAQODVWAY3AYAGEAT4CG3YSPM4FBTBB2QSXCYJLM3HVIV5ILTP5BRXCD",
+                "10911149667123217",
+            )
+            .unwrap(),
+        ));
+        let network = Networks::testnet();
+        let time_bounds = TimeBounds {
+            min_time: TimePoint(0),
+            max_time: TimePoint(0),
+        };
+
+        let contract =
+            Contracts::new("CDGAH7TU7UH3BXGYXRIXLJX63LYRIF6APZPIG64ZAW3NNDCPJ7AAWVTZ").unwrap();
+        let op = contract.call(
+            "increment",
+            Some(vec![
+                Address::new("GAQODVWAY3AYAGEAT4CG3YSPM4FBTBB2QSXCYJLM3HVIV5ILTP5BRXCD")
+                    .unwrap()
+                    .to_sc_val()
+                    .unwrap(),
+                ScVal::U32(3),
+            ]),
+        );
+
+        /*
+         * This is some fake data
+         */
+        let key_to_restore = ScVal::Vec(Some(ScVec(
+            [ScVal::Symbol("to_restore".try_into().unwrap())]
+                .try_into()
+                .unwrap(),
+        )));
+        let contract_data = LedgerKey::ContractData(LedgerKeyContractData {
+            contract: contract.address().to_sc_address().unwrap(),
+            key: key_to_restore,
+            durability: stellar_baselib::xdr::ContractDataDurability::Persistent,
+        });
+        let soroban_data = SorobanTransactionData {
+            ext: stellar_baselib::xdr::SorobanTransactionDataExt::V0,
+            resources: SorobanResources {
+                footprint: stellar_baselib::xdr::LedgerFootprint {
+                    read_only: Vec::new().try_into().unwrap(),
+                    read_write: vec![contract_data].try_into().unwrap(),
+                },
+                instructions: 0,
+                read_bytes: 0,
+                write_bytes: 0,
+            },
+            resource_fee: 0,
+        };
+        let restore_data_xdr = soroban_data.to_xdr_base64(Limits::none()).unwrap();
+
+        let tx_xdr = "AAAAAgAAAAAg4dbAxsGAGICfBG3iT2cKGYQ6hK4sJWzZ6or1C5v6GAAAAGQAJsOiAAAAEQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABzAP+dP0PsNzYvFF1pv7a8RQXwH5eg3uZBbbWjE9PwAsAAAAJaW5jcmVtZW50AAAAAAAAAgAAABIAAAAAAAAAACDh1sDGwYAYgJ8EbeJPZwoZhDqEriwlbNnqivULm/oYAAAAAwAAAAMAAAAAAAAAAAAAAAA=";
+        let request = json!(
+                {
+                  "jsonrpc": "2.0",
+                  "id": 1,
+                  "method": "simulateTransaction",
+                  "params": {
+                    "transaction": tx_xdr,
+                  }
+                }
+                /*
+                    "resourceConfig": {
+                      "instructionLeeway": 3000000
+                    }
+        */
+                                );
+        let response = json!(
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "transactionData": "AAAAAAAAAAIAAAAGAAAAAcwD/nT9D7Dc2LxRdab+2vEUF8B+XoN7mQW21oxPT8ALAAAAFAAAAAEAAAAHy8vNUZ8vyZ2ybPHW0XbSrRtP7gEWsJ6zDzcfY9P8z88AAAABAAAABgAAAAHMA/50/Q+w3Ni8UXWm/trxFBfAfl6De5kFttaMT0/ACwAAABAAAAABAAAAAgAAAA8AAAAHQ291bnRlcgAAAAASAAAAAAAAAAAg4dbAxsGAGICfBG3iT2cKGYQ6hK4sJWzZ6or1C5v6GAAAAAEAHfKyAAAFiAAAAIgAAAAAAAAAAw==",
+            "minResourceFee": "90353",
+            "events": [
+              "AAAAAQAAAAAAAAAAAAAAAgAAAAAAAAADAAAADwAAAAdmbl9jYWxsAAAAAA0AAAAgzAP+dP0PsNzYvFF1pv7a8RQXwH5eg3uZBbbWjE9PwAsAAAAPAAAACWluY3JlbWVudAAAAAAAABAAAAABAAAAAgAAABIAAAAAAAAAACDh1sDGwYAYgJ8EbeJPZwoZhDqEriwlbNnqivULm/oYAAAAAwAAAAM=",
+              "AAAAAQAAAAAAAAABzAP+dP0PsNzYvFF1pv7a8RQXwH5eg3uZBbbWjE9PwAsAAAACAAAAAAAAAAIAAAAPAAAACWZuX3JldHVybgAAAAAAAA8AAAAJaW5jcmVtZW50AAAAAAAAAwAAAAw="
+            ],
+            "results": [
+              {
+                "auth": [],
+                "xdr": "AAAAAwAAAAw="
+              }
+            ],
+            "restorePreamble": {
+                "minResourceFee" : "12345",
+                "transactionData": restore_data_xdr,
+            },
+            "cost": {
+              "cpuInsns": "1635562",
+              "memBytes": "1295756"
+            },
+            "latestLedger": 2552139
+          }
+        }
+                );
+
+        let mut tx_builder = TransactionBuilder::new(source_account, network, Some(time_bounds));
+        tx_builder.add_operation(op);
+        tx_builder.fee(100u32);
+
+        let tx = tx_builder.build();
+        let xdr = tx
+            .to_envelope()
+            .unwrap()
+            .to_xdr_base64(Limits::none())
+            .unwrap();
+        assert_eq!(xdr, tx_xdr);
+
+        let (s, _m) = get_mocked_server(request, response).await;
+        let txresult = s.prepare_transaction(tx, network).await;
+
+        if let Err(Error::RestorationRequired(min_fee, transaction_data)) = txresult {
+            assert_eq!(min_fee, 12345);
+            assert_eq!(transaction_data, soroban_data);
+        } else {
+            panic!("Expecting a restore preamble")
+        }
     }
 }
 

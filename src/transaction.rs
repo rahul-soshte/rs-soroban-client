@@ -15,9 +15,7 @@ pub use stellar_baselib::{
     },
 };
 
-// use stellar_baselib::operation::Operation
 
-//TODO: Assemble Transaction Tests
 pub fn assemble_transaction(
     tx: Transaction,
     network_passphrase: &str,
@@ -32,8 +30,8 @@ pub fn assemble_transaction(
         return Err(Error::SimulationFailed);
     }
 
-    if let Some((_, _restore)) = simulation.to_restore_transaction_data() {
-        return Err(Error::RestorationRequired);
+    if let Some((min_fee, restore)) = simulation.to_restore_transaction_data() {
+        return Err(Error::RestorationRequired(min_fee, restore));
     }
 
     // Calculate fees
@@ -43,7 +41,7 @@ pub fn assemble_transaction(
     let auth = if let Some((_, a)) = simulation.to_result() {
         Some(a.try_into().expect("Cannot convert Vec to VecM"))
     } else {
-        None
+        None 
     };
 
     let min_resource_fee = simulation
@@ -191,7 +189,6 @@ mod test {
 
         assert!(
             !is_soroban_transaction(&tx),
-            "CreateAccountOp is not a soroban op"
         );
 
         let simulation: SimulateTransactionResponse = serde_json::from_value(json!(
@@ -251,7 +248,6 @@ mod test {
 
         assert!(
             is_soroban_transaction(&tx),
-            "InvokeHostFunction is a soroban op"
         );
     }
 
@@ -286,7 +282,6 @@ mod test {
 
         assert!(
             !is_soroban_transaction(&tx),
-            "2 operations even InvokeHostFunction is not valid"
         );
     }
     #[test]
@@ -304,6 +299,6 @@ mod test {
         builder.fee(1000u32).set_timeout(30).unwrap();
         let tx = builder.build();
 
-        assert!(!is_soroban_transaction(&tx), "no ops is not valid");
+        assert!(!is_soroban_transaction(&tx), );
     }
 }

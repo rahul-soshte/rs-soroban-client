@@ -1,3 +1,4 @@
+use stellar_baselib::xdr::SorobanTransactionData;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -19,7 +20,7 @@ pub enum Error {
     #[error("SimulationFailed")]
     SimulationFailed,
     #[error("RestorationRequired")]
-    RestorationRequired,
+    RestorationRequired(i64, SorobanTransactionData),
     #[error("RPCError {code}: {message}")]
     RPCError { code: i32, message: String },
     #[error("UnexpectedError: should not happen, please report a bug")]
