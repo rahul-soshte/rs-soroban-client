@@ -420,7 +420,7 @@ async fn get_ledger_entries() {
         let result = s.get_ledger_entries(vec![ledger_key.clone()]).await;
 
         // TODO better error should be used
-        assert!(matches!(result, Err(Error::NetworkError(_))));
+        assert!(matches!(result, Err(Error::JsonError(_))));
     }
 }
 
@@ -959,7 +959,7 @@ async fn simulate_transaction() {
             "stateChanges":
                 [
                     {
-                        "type": 1,
+                        "type": "created",
                         "key": "AAAABgAAAAEkIK54Itc3IZGRtBind27TuweJ+klDiPyK5NXu67CaaAAAABAAAAABAAAAAgAAAA8AAAALQ291bnRlckF1dGgAAAAAEgAAAAAAAAAA/0Qyqo+inZ2pJp5WnPolgUTjI3hPRf+W0Jn0+BvA5XMAAAAA",
                         "before": null,
                         "after":
@@ -1041,7 +1041,7 @@ async fn simulate_transaction() {
             "stateChanges":
                 [
                     {
-                        "type": 2,
+                        "type": "updated",
                         "key": "AAAABgAAAAEkIK54Itc3IZGRtBind27TuweJ+klDiPyK5NXu67CaaAAAABAAAAABAAAAAgAAAA8AAAALQ291bnRlckF1dGgAAAAAEgAAAAAAAAAA/0Qyqo+inZ2pJp5WnPolgUTjI3hPRf+W0Jn0+BvA5XMAAAAA",
                         "before":
                             "AA9Q2wAAAAYAAAAAAAAAASQgrngi1zchkZG0GKd3btO7B4n6SUOI/Irk1e7rsJpoAAAAEAAAAAEAAAACAAAADwAAAAtDb3VudGVyQXV0aAAAAAASAAAAAAAAAAD/RDKqj6Kdnakmnlac+iWBROMjeE9F/5bQmfT4G8DlcwAAAAAAAAADAAAAAQAAAAA=",
@@ -1124,7 +1124,7 @@ async fn simulate_transaction() {
             "stateChanges":
                 [
                     {
-                        "type": 3,
+                        "type": "deleted",
                         "key": "AAAABgAAAAEkIK54Itc3IZGRtBind27TuweJ+klDiPyK5NXu67CaaAAAABAAAAABAAAAAgAAAA8AAAALQ291bnRlckF1dGgAAAAAEgAAAAAAAAAA/0Qyqo+inZ2pJp5WnPolgUTjI3hPRf+W0Jn0+BvA5XMAAAAA",
                         "before":
                             "AA9Q3AAAAAYAAAAAAAAAASQgrngi1zchkZG0GKd3btO7B4n6SUOI/Irk1e7rsJpoAAAAEAAAAAEAAAACAAAADwAAAAtDb3VudGVyQXV0aAAAAAASAAAAAAAAAAD/RDKqj6Kdnakmnlac+iWBROMjeE9F/5bQmfT4G8DlcwAAAAAAAAADAAAAAgAAAAA=",

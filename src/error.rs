@@ -7,6 +7,8 @@ pub enum Error {
     InvalidRpc(#[from] InvalidRpcUrl),
     #[error("XdrError")]
     XdrError,
+    #[error("JsonError: could not parse {0}")]
+    JsonError(String),
     #[error("NetworkError")]
     NetworkError(#[from] reqwest::Error),
     #[error("AccountError")]

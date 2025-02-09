@@ -3,7 +3,7 @@ use http::{HeaderName, HeaderValue};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{collections::HashMap, time::Duration};
 
-use crate::error::Error::NetworkError;
+use crate::error::Error::{JsonError, NetworkError};
 
 #[derive(Debug)]
 pub struct JsonRpc {
@@ -56,7 +56,12 @@ impl JsonRpc {
             .map_err(NetworkError)
             .await?;
 
-        res.json().map_err(NetworkError).await
+        let text = res.text().map_err(NetworkError).await?;
+        match serde_json::from_str::<Response<R>>(&text) {
+            Ok(parsed) => Ok(parsed),
+            Err(_e) => Err(JsonError(text.to_string())),
+        }
+        //res.json().map_err(NetworkError).await
     }
 }
 

@@ -339,7 +339,7 @@ pub struct RawSimulateHostFunctionResult {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Copy)]
-#[repr(u8)]
+#[serde(rename_all = "lowercase")]
 pub enum StateChangeKind {
     Created = 1,
     Updated = 2,
@@ -350,7 +350,7 @@ pub enum StateChangeKind {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct RawStateChanges {
     #[serde(rename = "type")]
-    kind: u8,
+    kind: StateChangeKind,
     key: String,
     before: Option<String>,
     after: Option<String>,
