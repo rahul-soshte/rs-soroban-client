@@ -1,91 +1,177 @@
-use reqwest::Client;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use futures::TryFutureExt;
+use http::{HeaderName, HeaderValue};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::{collections::HashMap, time::Duration};
 
-macro_rules! hashmap {
-    ($( $key: expr => $val: expr ),*) => {{
-         let mut map = ::std::collections::HashMap::new();
-         $( map.insert($key, $val); )*
-         map
-    }}
+use crate::error::Error::{JsonError, NetworkError};
+
+#[derive(Debug)]
+pub struct JsonRpc {
+    client: reqwest::Client,
+    server_url: reqwest::Url,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Id {
-    Str(String),
-    Num(i64),
+impl JsonRpc {
+    pub fn new(server_url: reqwest::Url, timeout: u64, headers: HashMap<String, String>) -> Self {
+        let mut http_headers = reqwest::header::HeaderMap::new();
+        http_headers.insert(
+            "X-Client-Name",
+            HeaderValue::from_static("rs-soroban-client"),
+        );
+        http_headers.insert("X-Client-Version", HeaderValue::from_static(crate::VERSION));
+
+        for (key, value) in headers {
+            if let Ok(header_name) = HeaderName::try_from(key) {
+                let header_value =
+                    HeaderValue::from_str(&value).unwrap_or_else(|_| HeaderValue::from_static(""));
+
+                http_headers.insert(header_name, header_value);
+            }
+        }
+
+        let client = reqwest::ClientBuilder::new()
+            .timeout(Duration::from_secs(timeout))
+            .default_headers(http_headers)
+            .build()
+            .expect("Cannot build http client");
+        JsonRpc { client, server_url }
+    }
+    pub async fn post<P: Serialize, R: DeserializeOwned>(
+        &self,
+        method: &str,
+        params: P,
+    ) -> Result<Response<R>, crate::error::Error> {
+        let url = self.server_url.clone();
+        let method = method.to_string();
+        let res = self
+            .client
+            .post(url)
+            .json(&Request {
+                jsonrpc: "2.0".to_string(),
+                id: 1,
+                method,
+                params,
+            })
+            .send()
+            .map_err(NetworkError)
+            .await?;
+
+        let text = res.text().map_err(NetworkError).await?;
+        match serde_json::from_str::<Response<R>>(&text) {
+            Ok(parsed) => Ok(parsed),
+            Err(_e) => Err(JsonError(text.to_string())),
+        }
+        //res.json().map_err(NetworkError).await
+    }
 }
 
 #[derive(Debug, Serialize)]
 pub struct Request<T> {
-    jsonrpc: &'static str,
-    id: Id,
+    jsonrpc: String,
+    id: i32,
     method: String,
     params: T,
 }
 
-#[derive(Debug, Serialize)]
-pub struct Notification<T> {
-    jsonrpc: &'static str,
-    method: String,
-    params: Option<T>,
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+pub struct Response<T> {
+    jsonrpc: String,
+    id: i32,
+    pub result: Option<T>,
+    pub error: Option<Error>,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub enum Response<T, E = serde_json::Value> {
-    Success {
-        jsonrpc: &'static str,
-        id: Id,
-        result: T,
-    },
-    Error {
-        jsonrpc: &'static str,
-        id: Id,
-        error: Error<E>,
-    },
+pub struct Error {
+    #[allow(dead_code)]
+    pub code: i32,
+    #[allow(dead_code)]
+    pub message: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct Error<E = serde_json::Value> {
-    #[allow(dead_code)]
-    code: i32,
-    #[allow(dead_code)]
-    message: Option<String>,
-    #[allow(dead_code)]
-    data: Option<E>,
-}
+#[cfg(test)]
+mod test {
 
-pub async fn post<T: for<'a> Deserialize<'a>>(
-    url: &str,
-    method: &str,
-    params: HashMap<String, serde_json::Value>,
-) -> Result<T, reqwest::Error> {
-    let client = Client::new();
-    let request = Request {
-        jsonrpc: "2.0",
-        id: Id::Num(1), // TODO: Generate a unique request id
-        method: method.to_string(),
-        params,
-    };
+    use std::collections::HashMap;
+    use std::str::FromStr;
 
-    let res = client.post(url).json(&request).send().await?;
+    use reqwest::Url;
+    use serde::Deserialize;
+    use serde_json::json;
+    use wiremock::matchers;
+    use wiremock::matchers::headers;
+    use wiremock::matchers::method;
+    use wiremock::matchers::path;
+    use wiremock::Mock;
+    use wiremock::MockServer;
+    use wiremock::ResponseTemplate;
 
-    let data: T = res.json().await?;
-    // println!("Data {:?}", data);
-    // Here we ensure that the response status is not an error.
-    // If it's an error, it will convert the response into an error type
-    // let dc = res.error_for_status_ref()?;
-    // TODO: Add Error Check
+    use crate::jsonrpc::JsonRpc;
+    use crate::jsonrpc::Response;
 
-    Ok(data)
-}
+    #[derive(Debug, Deserialize, PartialEq, Eq)]
+    struct Data {
+        number: u64,
+        string: String,
+        vec: Vec<u8>,
+    }
 
-pub async fn post_object<T: for<'a> Deserialize<'a>>(
-    url: &str,
-    method: &str,
-    param: serde_json::Value,
-) -> Result<T, reqwest::Error> {
-    post(url, method, hashmap! { "param".to_string() => param }).await
+    #[tokio::test]
+    async fn test() {
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "echo",
+            "params": {
+                "number": 3,
+                "string": "a string",
+                "vec": [1, 2, 3]
+        }
+
+        });
+        let response = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "number": 3,
+                "string": "a string",
+                "vec": [1, 2, 3]
+            }
+        });
+        let mock_server = MockServer::start().await;
+
+        let response = ResponseTemplate::new(200).set_body_json(response);
+        Mock::given(method("POST"))
+            .and(path("/"))
+            .and(headers("x-api-key", vec!["9864920430304"]))
+            .and(matchers::body_partial_json(request))
+            .respond_with(response)
+            .expect(1..)
+            .mount(&mock_server)
+            .await;
+
+        let server_url = Url::from_str(&mock_server.uri()).unwrap();
+        let mut headers: HashMap<String, String> = HashMap::new();
+        headers.insert("x-api-key".into(), "9864920430304".into());
+        let rpc = JsonRpc::new(server_url, 10, headers);
+
+        let params = json!({
+                "number": 3,
+                "string": "a string",
+                "vec": [1, 2, 3]
+        });
+
+        let response: Response<Data> = rpc.post("echo", params).await.unwrap();
+        assert_eq!(response.id, 1);
+        assert_eq!(response.jsonrpc, "2.0");
+        assert_eq!(
+            response.result,
+            Some(Data {
+                number: 3,
+                string: "a string".to_string(),
+                vec: vec![1, 2, 3]
+            })
+        );
+    }
 }
