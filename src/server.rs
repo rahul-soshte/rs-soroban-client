@@ -36,9 +36,13 @@ impl Durability {
 
 #[derive(Debug)]
 pub struct Options {
+    /// If true, using a non HTTPS RPC will not throw an error
     pub allow_http: bool,
+    /// Timeout in seconds (default: 10)
     pub timeout: u64,
+    /// Additionnal headers to use while requesting the RPC
     pub headers: HashMap<String, String>,
+    /// Optional friendbot URL
     pub friendbot_url: Option<String>,
 }
 
@@ -61,6 +65,11 @@ pub struct Server {
 
 impl Server {
     /// # Instantiate a new [Server]
+    ///
+    /// ```rust
+    /// use soroban_client::*;
+    /// let rpc = Server::new("https://soroban-testnet.stellar.org", Options::default());
+    /// ```
     pub fn new(server_url: &str, opts: Options) -> Result<Self, Error> {
         let server_url = reqwest::Url::from_str(server_url)
             .map_err(|_e| Error::InvalidRpc(InvalidRpcUrl::InvalidUri))?;
@@ -108,7 +117,7 @@ impl Server {
     /// ```rust
     /// // Fetch 12 events from ledger 67000 for contract "CAA..."
     /// # use soroban_client::soroban_rpc::*;
-    /// # use soroban_client::server::*;
+    /// # use soroban_client::{Server, Options};
     /// # use soroban_client::error::Error;
     /// # async fn events() -> Result<(), Error> {
     /// # let server = Server::new("https://rpc.server", Options::default())?;
@@ -376,6 +385,10 @@ impl Server {
 
     // Non-RPC method implementations -------------------------------
 
+    /// # Fetch an [Account] to be used to build a transaction
+    ///
+    /// It uses [Server::get_ledger_entries] to fetch the [LedgerKey::Account]
+    ///
     pub async fn get_account(&self, address: &str) -> Result<Account, Error> {
         let account_id = stellar_baselib::keypair::Keypair::from_public_key(address)
             .map_err(|_| Error::AccountNotFound)?
@@ -395,6 +408,11 @@ impl Server {
         }
     }
 
+    /// # Fech the ledger entry specified by the key of the contract
+    ///
+    /// This can be used to inspect the contract state without using [Server::simulate_transaction]
+    /// or to fetch data not available otherwise.
+    ///
     pub async fn get_contract_data(
         &self,
         contract: &str,
@@ -430,6 +448,18 @@ impl Server {
         }
     }
 
+    /// # Prepare a transaction to be submited to the network.
+    ///
+    /// If the transaction simulation is successful, a new transaction is built using the returned
+    /// footprint and authorizations.
+    ///
+    /// The fees are adapted based on the initial fees and the contract resource fees estimated
+    /// from the simulation.
+    ///
+    /// If the simulation returns a restore preamble, this method will return a [Error::RestorationRequired].
+    /// This error should be used to build a
+    /// [stellar_baselib::xdr::OperationBody::RestoreFootprint]
+    ///
     pub async fn prepare_transaction(
         &self,
         transaction: Transaction,
@@ -440,6 +470,12 @@ impl Server {
         Ok(assemble_transaction(transaction, network_passphrase, sim_response)?.build())
     }
 
+    /// # Fund the account using the network's [friendbot] faucet (testnet)
+    ///
+    /// The friendbot URL is retrieved first from the [Options::friendbot_url] if provided
+    /// or from the [Server::get_network] method. There is no friendbot faucet on mainnet.
+    ///
+    /// [friendbot]: https://developers.stellar.org/docs/learn/fundamentals/networks#friendbot
     pub async fn request_airdrop(&self, account_id: &str) -> Result<Account, Error> {
         let friendbot_url = if let Some(url) = self.friendbot_url.clone() {
             url

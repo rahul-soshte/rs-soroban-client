@@ -77,7 +77,7 @@ pub struct GetNetworkResponse {
 #[serde(rename_all = "camelCase")]
 pub struct GetLatestLedgerResponse {
     pub id: String,
-    pub sequence: i32,
+    pub sequence: u64,
     pub protocol_version: u32,
 }
 

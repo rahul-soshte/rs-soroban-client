@@ -24,7 +24,7 @@ thiserror = { version = "2.0.9" }
 stellar-baselib = { version = "0.4.7" }
 
 [dev-dependencies]
-tokio = { version = "1.43.0", features = ["macros"] }
+tokio = { version = "1.43.0", features = ["full", "macros"] }
 base64 = "0.22.1"
 wiremock = "0.6.2"
 
