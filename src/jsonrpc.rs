@@ -1,19 +1,21 @@
+use crate::error::Error::{JsonError, NetworkError};
 use futures::TryFutureExt;
-use http::{HeaderName, HeaderValue};
+use reqwest::{
+    header::{HeaderMap, HeaderName, HeaderValue},
+    Client, ClientBuilder, Url,
+};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{collections::HashMap, time::Duration};
 
-use crate::error::Error::{JsonError, NetworkError};
-
 #[derive(Debug)]
 pub struct JsonRpc {
-    client: reqwest::Client,
-    server_url: reqwest::Url,
+    client: Client,
+    server_url: Url,
 }
 
 impl JsonRpc {
     pub fn new(server_url: reqwest::Url, timeout: u64, headers: HashMap<String, String>) -> Self {
-        let mut http_headers = reqwest::header::HeaderMap::new();
+        let mut http_headers = HeaderMap::new();
         http_headers.insert(
             "X-Client-Name",
             HeaderValue::from_static("rs-soroban-client"),
@@ -29,7 +31,7 @@ impl JsonRpc {
             }
         }
 
-        let client = reqwest::ClientBuilder::new()
+        let client = ClientBuilder::new()
             .timeout(Duration::from_secs(timeout))
             .default_headers(http_headers)
             .build()
