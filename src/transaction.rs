@@ -15,7 +15,7 @@ pub use stellar_baselib::{
     },
 };
 
-
+/// Assemble a [transaction](Transaction) with a [simulation](SimulateTransactionResponse)
 pub fn assemble_transaction(
     tx: Transaction,
     network_passphrase: &str,

@@ -1,5 +1,6 @@
+#![warn(missing_docs)]
 //! A rust client library for interacting with Soroban smart contracts on the stellar blockchain
-//! through the [stellar-rpc]
+//! through the [Stellar RPC]
 //!
 //!
 //!# Example: Create account on testnet and fetch balance using simulation
@@ -97,17 +98,22 @@
 //!    println!("{:?}", events);
 //!}
 //! ```
-//! [stellar-rpc]: https://developers.stellar.org/docs/data/rpc
+//! [Stellar RPC]: https://developers.stellar.org/docs/data/rpc
+
+/// Current version of this crate
 pub static VERSION: &str = env!("CARGO_PKG_VERSION");
 pub use crate::server::*;
-pub mod contract_spec;
+/// Error module
 pub mod error;
-pub mod friendbot;
+/// Soroban bindings
 pub mod soroban_rpc;
-pub use stellar_baselib::*;
+/// Transaction module
 pub mod transaction;
-pub use self::server::SUBMIT_TRANSACTION_TIMEOUT;
+pub use stellar_baselib::*;
 
+// for now, not public
+mod contract_spec;
+mod friendbot;
 mod jsonrpc;
 mod server;
 

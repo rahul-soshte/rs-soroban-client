@@ -30,6 +30,7 @@ pub struct Cost {
     pub mem_bytes: String,
 }
 
+/// Response to [get_health](crate::Server::get_health) RPC method
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct GetHealthResponse {
     pub status: String, // Can be an enum if the number of statuses is known
@@ -40,47 +41,64 @@ pub struct GetHealthResponse {
                         */
 }
 
+/// A pair of LedgerKey and LedgerEntryData
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LedgerEntryResult {
+    /// The ledger sequence number of the last time this entry was updated.
     pub last_modified_ledger_seq: Option<i64>,
+    /// Sequence number of the ledger.
     pub live_until_ledger_seq: Option<u32>,
     key: String,
     xdr: String,
 }
 
 impl LedgerEntryResult {
+    /// The key of the ledger entry
     pub fn to_key(&self) -> LedgerKey {
         LedgerKey::from_xdr_base64(&self.key, Limits::none()).expect("Invalid LedgerKey from RPC")
     }
+    /// The current value of the given ledger entry
     pub fn to_data(&self) -> LedgerEntryData {
         LedgerEntryData::from_xdr_base64(&self.xdr, Limits::none())
             .expect("Invalid LedgerEntryData from RPC")
     }
 }
 
+/// Response to [get_ledger_entries](crate::Server::get_ledger_entries)
 #[derive(Deserialize, Debug, Clone)]
 pub struct GetLedgerEntriesResponse {
+    /// Array of objects containing all found ledger entries
     pub entries: Option<Vec<LedgerEntryResult>>,
+    /// The sequence number of the latest ledger known to Stellar RPC at the time it handled the request.
     pub latestLedger: i32,
 }
 
+/// Response to [get_network](crate::Server::get_network)
 #[derive(Deserialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct GetNetworkResponse {
-    pub friendbot_url: Option<String>,
+    /// Network passphrase configured for this Stellar RPC node.
     pub passphrase: Option<String>,
+    /// Stellar Core protocol version associated with the latest ledger.
     pub protocol_version: Option<i32>,
+    /// (optional) The URL of this network's "friendbot" faucet
+    pub friendbot_url: Option<String>,
 }
 
+/// Response to [get_latest_ledger](crate::Server::get_latest_ledger)
 #[derive(Deserialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct GetLatestLedgerResponse {
+    /// Hash identifier of the latest ledger (as a hex-encoded string) known to Stellar RPC at the time it handled the request.
     pub id: String,
-    pub sequence: u64,
+    /// Stellar Core protocol version associated with the latest ledger.
     pub protocol_version: u32,
+    /// The sequence number of the latest ledger known to Stellar RPC at the time it handled the request.
+    pub sequence: u64,
 }
 
+/// Status of [GetTransactionResponse]
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum GetTransactionStatus {
@@ -89,24 +107,35 @@ pub enum GetTransactionStatus {
     Failed,
 }
 
+/// Response to [get_transaction](crate::Server::get_transaction)
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetTransactionResponse {
+    /// The current status of the transaction by hash
     pub status: GetTransactionStatus,
+    /// The sequence number of the latest ledger known to Stellar RPC at the time it handled the request.
     pub latest_ledger: i32,
+    /// The unix timestamp of the close time of the latest ledger known to Stellar RPC at the time it handled the request.
     pub latest_ledger_close_time: String,
+    /// The sequence number of the oldest ledger ingested by Stellar RPC at the time it handled the request.
     pub oldest_ledger: i32,
+    /// The unix timestamp of the close time of the oldest ledger ingested by Stellar RPC at the time it handled the request.
     pub oldest_ledger_close_time: String,
-    pub application_order: Option<i32>,
-    pub fee_bump: Option<bool>,
+    /// (optional) The sequence number of the ledger which included the transaction. This field is only present if status is [GetTransactionStatus::Success] or [GetTransactionStatus::Failed].
     pub ledger: Option<i32>,
+    /// (optional) The unix timestamp of when the transaction was included in the ledger. This field is only present if status is [GetTransactionStatus::Success] or [GetTransactionStatus::Failed].
     pub created_at: Option<String>,
+    /// (optional) The index of the transaction among all transactions included in the ledger. This field is only present if status is [GetTransactionStatus::Success] or [GetTransactionStatus::Failed].
+    pub application_order: Option<i32>,
+    /// (optional) Indicates whether the transaction was fee bumped. This field is only present if status is [GetTransactionStatus::Success] or [GetTransactionStatus::Failed].
+    pub fee_bump: Option<bool>,
     envelope_xdr: Option<String>,
     result_xdr: Option<String>,
     result_meta_xdr: Option<String>,
 }
 
 impl GetTransactionResponse {
+    /// (optional) The [TransactionEnvelope] struct for this transaction.
     pub fn get_envelope(&self) -> Option<TransactionEnvelope> {
         if let Some(result) = &self.envelope_xdr {
             let r = TransactionEnvelope::from_xdr_base64(result, Limits::none());
@@ -120,6 +149,7 @@ impl GetTransactionResponse {
         }
     }
 
+    /// (optional) The [TransactionResult] struct for this transaction. This field is only present if status is [GetTransactionStatus::Success] or [GetTransactionStatus::Failed].
     pub fn get_result(&self) -> Option<TransactionResult> {
         if let Some(result) = &self.result_xdr {
             let r = TransactionResult::from_xdr_base64(result, Limits::none());
@@ -133,6 +163,8 @@ impl GetTransactionResponse {
         }
     }
 
+    /// (optional) The [TransactionMeta] struct of this transaction. Also return the optional
+    /// return value of the transaction.
     pub fn get_result_meta(&self) -> Option<(TransactionMeta, Option<ScVal>)> {
         if let Some(result) = &self.result_meta_xdr {
             let r = TransactionMeta::from_xdr_base64(result, Limits::none());

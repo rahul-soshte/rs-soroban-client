@@ -19,9 +19,12 @@ use stellar_baselib::xdr::{
 };
 pub const SUBMIT_TRANSACTION_TIMEOUT: u32 = 60 * 1000;
 
+/// Representation of the ledger entry durability to be used with [Server::get_contract_data]
 #[derive(Debug, PartialEq, Eq)]
 pub enum Durability {
+    /// Temporary storage, cannot be restored
     Temporary,
+    /// Persistent storage, archived when the TTL is expired, can be restored
     Persistent,
 }
 
@@ -34,6 +37,7 @@ impl Durability {
     }
 }
 
+/// Additionnal options
 #[derive(Debug)]
 pub struct Options {
     /// If true, using a non HTTPS RPC will not throw an error
@@ -57,6 +61,7 @@ impl Default for Options {
     }
 }
 
+/// The main struct to use to interact with the stellar RPC
 #[derive(Debug)]
 pub struct Server {
     client: JsonRpc,
@@ -272,23 +277,23 @@ impl Server {
         handle_response(response)
     }
 
-    // # Call to RPC method [getTransaction]
-    //
-    // The getTransaction method provides details about the specified transaction.
-    //
-    // Clients are expected to periodically query this method to ascertain when a transaction has
-    // been successfully recorded on the blockchain. The stellar-rpc system maintains a restricted
-    // history of recently processed transactions, with the default retention window set at 24
-    // hours.
-    //
-    // For private soroban-rpc instances, it is possible to modify the retention window
-    // value by adjusting the transaction-retention-window configuration setting, but we do not
-    // recommend values longer than 7 days. For debugging needs that extend beyond this timeframe,
-    // it is advisable to index this data yourself, employ a third-party indexer, or query Hubble
-    // (our public BigQuery data set).
-    //
-    // [getTransaction]: https://developers.stellar.org/docs/data/rpc/api-reference/methods/getTransaction
-    //
+    /// # Call to RPC method [getTransaction]
+    ///
+    /// The getTransaction method provides details about the specified transaction.
+    ///
+    /// Clients are expected to periodically query this method to ascertain when a transaction has
+    /// been successfully recorded on the blockchain. The stellar-rpc system maintains a restricted
+    /// history of recently processed transactions, with the default retention window set at 24
+    /// hours.
+    ///
+    /// For private soroban-rpc instances, it is possible to modify the retention window
+    /// value by adjusting the transaction-retention-window configuration setting, but we do not
+    /// recommend values longer than 7 days. For debugging needs that extend beyond this timeframe,
+    /// it is advisable to index this data yourself, employ a third-party indexer, or query Hubble
+    /// (our public BigQuery data set).
+    ///
+    /// [getTransaction]: https://developers.stellar.org/docs/data/rpc/api-reference/methods/getTransaction
+    ///
     pub async fn get_transaction(&self, hash: &str) -> Result<GetTransactionResponse, Error> {
         let params = json!({
                 "hash": hash
