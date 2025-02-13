@@ -37,6 +37,13 @@ impl Durability {
     }
 }
 
+/// Contains configuration for how resources will be calculated when simulating transactions.
+#[derive(Debug, Clone)]
+pub struct ResourceLeeway {
+    /// Allow this many extra instructions when budgeting resources.
+    pub cpu_instructions: u64,
+}
+
 /// Additionnal options
 #[derive(Debug)]
 pub struct Options {

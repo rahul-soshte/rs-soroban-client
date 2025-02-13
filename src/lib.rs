@@ -112,7 +112,7 @@ pub mod transaction;
 pub use stellar_baselib::*;
 
 // for now, not public
-mod contract_spec;
+//mod contract_spec;
 mod friendbot;
 mod jsonrpc;
 mod server;

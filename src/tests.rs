@@ -9,7 +9,6 @@ use crate::soroban_rpc::GetHealthResponse;
 use crate::soroban_rpc::GetLatestLedgerResponse;
 use crate::soroban_rpc::GetNetworkResponse;
 use crate::soroban_rpc::GetTransactionStatus;
-use crate::soroban_rpc::ResourceLeeway;
 use crate::soroban_rpc::SendTransactionStatus;
 use crate::soroban_rpc::StateChangeKind;
 use crate::soroban_rpc::Topic;
@@ -125,12 +124,25 @@ fn server_new() {
 #[tokio::test]
 async fn get_health() {
     let request = json!({"method": "getHealth"});
-    let response = json!({"jsonrpc": "2.0", "id": 1, "result": {"status": "healthy"}});
+    let response = json!(
+    {
+      "jsonrpc": "2.0",
+      "id": 8675309,
+      "result": {
+        "status": "healthy",
+        "latestLedger": 51583040,
+        "oldestLedger": 51565760,
+        "ledgerRetentionWindow": 17281
+      }
+    });
     let (s, _m) = get_mocked_server(request, response).await;
     let result = s.get_health().await.expect("Should not fail");
 
     let expect = GetHealthResponse {
         status: "healthy".to_string(),
+        latest_ledger: 51583040,
+        oldest_ledger: 51565760,
+        ledger_retention_window: 17281,
     };
 
     assert_eq!(result, expect);
@@ -882,7 +894,7 @@ async fn simulate_transaction() {
 
         if let Some(err_str) = txresult.error.clone() {
             assert_eq!(err_str, expected_err_str);
-            let diag_events = txresult.to_diagnostic_events().unwrap();
+            let diag_events = txresult.to_events().unwrap();
             assert_eq!(diag_events.len(), 2);
             let stellar_baselib::xdr::ContractEventBody::V0(ContractEventV0 { topics, data }) =
                 &diag_events[0].event.body;
