@@ -17,6 +17,8 @@ use stellar_baselib::xdr::{
     ContractDataDurability, Hash, LedgerEntryData, LedgerKey, LedgerKeyAccount,
     LedgerKeyContractData, Limits, ScAddress, ScVal, WriteXdr,
 };
+
+/// The default transaction submission timeout for RPC requests, in milliseconds.
 pub const SUBMIT_TRANSACTION_TIMEOUT: u32 = 60 * 1000;
 
 /// Representation of the ledger entry durability to be used with [Server::get_contract_data]
