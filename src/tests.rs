@@ -9,7 +9,6 @@ use crate::soroban_rpc::GetHealthResponse;
 use crate::soroban_rpc::GetLatestLedgerResponse;
 use crate::soroban_rpc::GetNetworkResponse;
 use crate::soroban_rpc::GetTransactionStatus;
-use crate::soroban_rpc::ResourceLeeway;
 use crate::soroban_rpc::SendTransactionStatus;
 use crate::soroban_rpc::StateChangeKind;
 use crate::soroban_rpc::Topic;
@@ -31,6 +30,7 @@ use stellar_baselib::transaction::Transaction;
 use stellar_baselib::transaction::TransactionBehavior;
 use stellar_baselib::transaction_builder::TransactionBuilder;
 use stellar_baselib::transaction_builder::TransactionBuilderBehavior;
+use stellar_baselib::xdr::int128_helpers::i128_from_pieces;
 use stellar_baselib::xdr::ContractDataEntry;
 use stellar_baselib::xdr::ContractEventV0;
 use stellar_baselib::xdr::ExtensionPoint;
@@ -124,12 +124,25 @@ fn server_new() {
 #[tokio::test]
 async fn get_health() {
     let request = json!({"method": "getHealth"});
-    let response = json!({"jsonrpc": "2.0", "id": 1, "result": {"status": "healthy"}});
+    let response = json!(
+    {
+      "jsonrpc": "2.0",
+      "id": 8675309,
+      "result": {
+        "status": "healthy",
+        "latestLedger": 51583040,
+        "oldestLedger": 51565760,
+        "ledgerRetentionWindow": 17281
+      }
+    });
     let (s, _m) = get_mocked_server(request, response).await;
     let result = s.get_health().await.expect("Should not fail");
 
     let expect = GetHealthResponse {
         status: "healthy".to_string(),
+        latest_ledger: 51583040,
+        oldest_ledger: 51565760,
+        ledger_retention_window: 17281,
     };
 
     assert_eq!(result, expect);
@@ -881,7 +894,7 @@ async fn simulate_transaction() {
 
         if let Some(err_str) = txresult.error.clone() {
             assert_eq!(err_str, expected_err_str);
-            let diag_events = txresult.to_diagnostic_events().unwrap();
+            let diag_events = txresult.to_events().unwrap();
             assert_eq!(diag_events.len(), 2);
             let stellar_baselib::xdr::ContractEventBody::V0(ContractEventV0 { topics, data }) =
                 &diag_events[0].event.body;
@@ -2084,4 +2097,63 @@ async fn get_friendbot_server(account_id: &str, response: serde_json::Value) -> 
         .await;
 
     mock_server
+}
+
+#[tokio::test]
+async fn native_check_balance_testnet() {
+    let rpc = Server::new("https://soroban-testnet.stellar.org", Options::default()).unwrap();
+
+    let native_id = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
+    let native_sac = Contracts::new(native_id).unwrap();
+
+    let kp = Keypair::random().unwrap();
+    let account = rpc.request_airdrop(&kp.public_key()).await.unwrap();
+
+    let source_account = Rc::new(RefCell::new(
+        Account::new(&kp.public_key(), &account.sequence_number()).unwrap(),
+    ));
+
+    let account_address = Address::new(&kp.public_key()).unwrap();
+    let tx = TransactionBuilder::new(source_account, Networks::testnet(), None)
+        .fee(1000u32)
+        .add_operation(native_sac.call("balance", Some(vec![account_address.to_sc_val().unwrap()])))
+        .build();
+
+    let response = rpc.simulate_transaction(tx, None).await.unwrap();
+    if let Some((ScVal::I128(Int128Parts { hi, lo }), _auth)) = response.to_result() {
+        let balance = i128_from_pieces(hi, lo) / 10000000; // Divide to convert from stroops to XLM
+        println!("Account {} has {} XLM", kp.public_key(), balance);
+        assert_eq!(balance, 10000);
+    } else {
+        panic!("Failed")
+    }
+}
+#[tokio::test]
+async fn native_events_testnet() {
+    let rpc = Server::new("https://soroban-testnet.stellar.org", Options::default()).unwrap();
+
+    let native_id = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
+
+    let response = rpc.get_latest_ledger().await.unwrap();
+    let ledger = response.sequence;
+
+    let transfer = ScVal::Symbol(ScSymbol("transfer".try_into().unwrap()));
+    let native = ScVal::String(ScString("native".try_into().unwrap()));
+    let events = rpc
+        .get_events(
+            crate::soroban_rpc::EventLedger::From(ledger - 100),
+            vec![EventFilter::new(crate::soroban_rpc::EventType::All)
+                .contract(native_id)
+                .topic(vec![
+                    Topic::Val(transfer),
+                    Topic::Any, // From account
+                    Topic::Any, // To account
+                    Topic::Val(native),
+                ])],
+            Some(3),
+        )
+        .await
+        .unwrap();
+
+    println!("{:?}", events);
 }
