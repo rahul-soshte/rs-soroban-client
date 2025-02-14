@@ -1,13 +1,10 @@
-//! # Error Handling in `soroban_client` crate
-//!
-//! This module defines all possible error types used in the `soroban_client` crate.
-//!
-//! ## Errors
+/// Error Handling in `soroban_client` crate
+/// This module defines all possible error types used in the `soroban_client` crate.
 
 use stellar_baselib::xdr::SorobanTransactionData;
 use thiserror::Error;
 
-/// Define the main error enum for the crate
+/// Possible error types
 #[derive(Error, Debug)]
 pub enum Error {
     /// Error for invalid RPC URL
