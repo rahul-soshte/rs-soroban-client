@@ -39,6 +39,107 @@ impl Durability {
     }
 }
 
+/// Set the boundaries while fetching data from the RPC
+///
+/// `From(start) and FromTo(start, end)`
+/// `start` is the ledger sequence number to start fetching responses from (inclusive). This
+/// method will return an error if startLedger is less than the oldest ledger stored in this node,
+/// or greater than the latest ledger seen by this node.
+///
+/// `end` is the ledger sequence number represents the end of search window (exclusive)
+///
+/// `Cursor(cursor)`
+/// A unique identifier (specifically, a [TOID]) that points to a specific location in a collection
+/// of responses and is pulled from the paging_token value of a record. When a cursor is provided,
+/// RPC will not include the element whose ID matches the cursor in the response: only elements
+/// which appear after the cursor will be included.
+///
+/// [TOID]: https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0035.md#specification
+pub enum Pagination {
+    /// Fetch events starting at this ledger sequence
+    From(u32),
+    /// Fetch events from and up to these ledger sequences
+    FromTo(u32, u32),
+    /// Fetch events after this cursor
+    Cursor(String),
+}
+/// List of filters for the returned events. Events matching any of the filters are included.
+/// To match a filter, an event must match both a contractId and a topic. Maximum 5 filters are
+/// allowed per request.
+pub struct EventFilter {
+    event_type: EventType,
+    contract_ids: Vec<String>,
+    topics: Vec<Vec<Topic>>,
+}
+
+/// Topic to match on in the filter
+#[derive(Clone, Debug)]
+pub enum Topic {
+    /// Match the [ScVal]
+    Val(ScVal),
+    /// Match any `ScVal`
+    Any,
+}
+impl EventFilter {
+    /// Start building a new filter for this [EventType]
+    pub fn new(event_type: EventType) -> Self {
+        EventFilter {
+            event_type,
+            contract_ids: Vec::new(),
+            topics: Vec::new(),
+        }
+    }
+
+    /// Include this `contract_id` in the filter. If omitted, return events for all contracts.
+    /// Maximum 5 contract IDs are allowed per request.
+    pub fn contract(self, contract_id: &str) -> Self {
+        let mut contract_ids = self.contract_ids.to_vec();
+        contract_ids.push(contract_id.to_string());
+        EventFilter {
+            contract_ids,
+            ..self
+        }
+    }
+
+    /// List of topic filters. If omitted, query for all events. If multiple filters are specified,
+    /// events will be included if they match any of the filters. Maximum 5 filters are allowed
+    /// per request.
+    pub fn topic(self, filer: Vec<Topic>) -> Self {
+        let mut topics = self.topics.to_vec();
+        topics.push(filer);
+        EventFilter { topics, ..self }
+    }
+
+    fn event_type(&self) -> Option<String> {
+        match self.event_type {
+            EventType::Contract => Some("contract".to_string()),
+            EventType::System => Some("system".to_string()),
+            EventType::Diagnostic => Some("diagnostic".to_string()),
+            EventType::All => None,
+        }
+    }
+
+    fn contracts(&self) -> Vec<String> {
+        self.contract_ids.to_vec()
+    }
+
+    fn topics(&self) -> Vec<Vec<String>> {
+        self.topics
+            .iter()
+            .map(|v| {
+                v.iter()
+                    .map(|vv| match vv {
+                        Topic::Val(sc_val) => sc_val
+                            .to_xdr_base64(Limits::none())
+                            .expect("ScVal cannot be converted to base64"),
+                        Topic::Any => "*".to_string(),
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+}
+
 /// Contains configuration for how resources will be calculated when simulating transactions.
 #[derive(Debug, Clone)]
 pub struct ResourceLeeway {
@@ -131,16 +232,16 @@ impl Server {
     /// ```rust
     /// // Fetch 12 events from ledger 67000 for contract "CAA..."
     /// # use soroban_client::soroban_rpc::*;
-    /// # use soroban_client::{Server, Options};
+    /// # use soroban_client::*;
     /// # use soroban_client::error::Error;
     /// # async fn events() -> Result<(), Error> {
     /// # let server = Server::new("https://rpc.server", Options::default())?;
     /// let events = server.get_events(
-    ///     EventLedger::From(67000),
+    ///     Pagination::From(67000),
     ///     vec![
     ///         EventFilter::new(EventType::All).contract("CAA...")
     ///     ],
-    ///     Some(12)
+    ///     12
     /// ).await?;
     /// # return Ok(()); }
     ///
@@ -150,14 +251,14 @@ impl Server {
     ///
     pub async fn get_events(
         &self,
-        ledger: EventLedger,
+        ledger: Pagination,
         filters: Vec<EventFilter>,
-        limit: Option<u32>,
+        limit: impl Into<Option<u32>>,
     ) -> Result<GetEventsResponse, Error> {
         let (start_ledger, end_ledger, cursor) = match ledger {
-            EventLedger::From(s) => (Some(s), None, None),
-            EventLedger::FromTo(s, e) => (Some(s), Some(e), None),
-            EventLedger::Cursor(c) => (None, None, Some(c)),
+            Pagination::From(s) => (Some(s), None, None),
+            Pagination::FromTo(s, e) => (Some(s), Some(e), None),
+            Pagination::Cursor(c) => (None, None, Some(c)),
         };
         let filters = filters
             .into_iter()
@@ -178,7 +279,7 @@ impl Server {
             "filters": filters,
             "pagination": {
                 "cursor": cursor,
-                "limit": limit
+                "limit": limit.into()
             }
         }
         );
@@ -270,7 +371,36 @@ impl Server {
         }
     }
 
-    // TODO get_ledgers
+    /// # Call to RPC method [getLedgers]
+    ///
+    /// The getLedgers method returns a detailed list of ledgers starting from the user specified
+    /// starting point that you can paginate as long as the pages fall within the history
+    /// retention of their corresponding RPC provider.
+    ///
+    /// [getLedgers]: https://developers.stellar.org/docs/data/rpc/api-reference/methods/getLedgers
+    pub async fn get_ledgers(
+        &self,
+        ledger: Pagination,
+        limit: impl Into<Option<u32>>,
+    ) -> Result<GetLedgersResponse, Error> {
+        let (start_ledger, cursor) = match ledger {
+            Pagination::From(s) => (Some(s), None),
+            Pagination::FromTo(s, _) => (Some(s), None),
+            Pagination::Cursor(c) => (None, Some(c)),
+        };
+        let params = json!(
+        {
+            "startLedger": start_ledger,
+            "pagination": {
+                "cursor": cursor,
+                "limit": limit.into()
+            }
+        }
+        );
+
+        let response = self.client.post("getLedgers", params).await?;
+        handle_response(response)
+    }
 
     /// # Call to RPC method [getNetwork]
     ///
@@ -312,7 +442,38 @@ impl Server {
         handle_response(response)
     }
 
-    // TODO get_transactions
+    /// # Call to RPC method [getTransactions]
+    ///
+    /// The getTransactions method return a detailed list of transactions starting from the user
+    /// specified starting point that you can paginate as long as the pages fall within the
+    /// history retention of their corresponding RPC provider.
+    ///
+    /// In [Pagination::FromTo(start, end)], the `end` has no effect for `get_transactions`.
+    ///
+    /// [getTransactions]: https://developers.stellar.org/docs/data/rpc/api-reference/methods/getTransactions
+    pub async fn get_transactions(
+        &self,
+        ledger: Pagination,
+        limit: impl Into<Option<u32>>,
+    ) -> Result<GetTransactionsResponse, Error> {
+        let (start_ledger, cursor) = match ledger {
+            Pagination::From(s) => (Some(s), None),
+            Pagination::FromTo(s, _) => (Some(s), None),
+            Pagination::Cursor(c) => (None, Some(c)),
+        };
+        let params = json!(
+        {
+            "startLedger": start_ledger,
+            "pagination": {
+                "cursor": cursor,
+                "limit": limit.into()
+            }
+        }
+        );
+
+        let response = self.client.post("getTransactions", params).await?;
+        handle_response(response)
+    }
 
     /// # Call to RPC method [getVersionInfo]
     ///
