@@ -4,14 +4,14 @@ use std::vec;
 
 use crate::error::*;
 use crate::server::*;
-use crate::soroban_rpc::EventFilter;
 use crate::soroban_rpc::GetHealthResponse;
 use crate::soroban_rpc::GetLatestLedgerResponse;
 use crate::soroban_rpc::GetNetworkResponse;
 use crate::soroban_rpc::SendTransactionStatus;
 use crate::soroban_rpc::StateChangeKind;
-use crate::soroban_rpc::Topic;
 use crate::soroban_rpc::TransactionStatus;
+use crate::EventFilter;
+use crate::Topic;
 use base64::Engine;
 use serde_json::json;
 use stellar_baselib::account::Account;

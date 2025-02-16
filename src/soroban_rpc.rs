@@ -6,7 +6,7 @@ use stellar_baselib::{
     xdr::{
         DiagnosticEvent, LedgerCloseMeta, LedgerEntry, LedgerEntryData, LedgerHeaderHistoryEntry,
         LedgerKey, Limits, ReadXdr, ScVal, SorobanAuthorizationEntry, SorobanTransactionData,
-        TransactionEnvelope, TransactionMeta, TransactionResult, WriteXdr,
+        TransactionEnvelope, TransactionMeta, TransactionResult,
     },
 };
 
@@ -19,12 +19,12 @@ pub struct GetHealthResponse {
     /// Health status, typically 'healthy'
     pub status: String,
     /// Most recent known ledger sequence
-    pub latest_ledger: u64,
+    pub latest_ledger: u32,
     /// Oldest ledger sequence kept in history
-    pub oldest_ledger: u64,
+    pub oldest_ledger: u32,
     /// Maximum retention window configured. A full window state can be determined via:
     /// ledgerRetentionWindow = latestLedger - oldestLedger + 1
-    pub ledger_retention_window: u64,
+    pub ledger_retention_window: u32,
 }
 
 /// A pair of LedgerKey and LedgerEntryData
@@ -32,7 +32,7 @@ pub struct GetHealthResponse {
 #[serde(rename_all = "camelCase")]
 pub struct LedgerEntryResult {
     /// The ledger sequence number of the last time this entry was updated.
-    pub last_modified_ledger_seq: Option<i64>,
+    pub last_modified_ledger_seq: Option<u32>,
     /// Sequence number of the ledger.
     pub live_until_ledger_seq: Option<u32>,
     key: String,
@@ -57,7 +57,7 @@ pub struct GetLedgerEntriesResponse {
     /// Array of objects containing all found ledger entries
     pub entries: Option<Vec<LedgerEntryResult>>,
     /// The sequence number of the latest ledger known to Stellar RPC at the time it handled the request.
-    pub latestLedger: i32,
+    pub latestLedger: u32,
 }
 
 /// Response to [get_network](crate::Server::get_network)
@@ -81,7 +81,7 @@ pub struct GetLatestLedgerResponse {
     /// Stellar Core protocol version associated with the latest ledger.
     pub protocol_version: u32,
     /// The sequence number of the latest ledger known to Stellar RPC at the time it handled the request.
-    pub sequence: u64,
+    pub sequence: u32,
 }
 
 /// Status of [GetTransactionResponse] or [GetTransactionsResponse] transactions
@@ -103,14 +103,14 @@ pub enum TransactionStatus {
 #[serde(rename_all = "camelCase")]
 pub struct GetTransactionResponse {
     /// The sequence number of the latest ledger known to Stellar RPC at the time it handled the request.
-    pub latest_ledger: i32,
+    pub latest_ledger: u32,
     /// The unix timestamp of the close time of the latest ledger known to Stellar RPC at the time it handled the request.
     pub latest_ledger_close_time: String,
     /// The sequence number of the oldest ledger ingested by Stellar RPC at the time it handled the request.
-    pub oldest_ledger: i32,
+    pub oldest_ledger: u32,
     /// The unix timestamp of the close time of the oldest ledger ingested by Stellar RPC at the time it handled the request.
     pub oldest_ledger_close_time: String,
-    /// (optional) The unix timestamp of when the transaction was included in the ledger. This field is only present if status is [GetTransactionStatus::Success] or [GetTransactionStatus::Failed].
+    /// (optional) The unix timestamp of when the transaction was included in the ledger. This field is only present if status is [TransactionStatus::Success] or [TransactionStatus::Failed].
     pub created_at: Option<String>,
     /// Transaction details
     #[serde(flatten)]
@@ -137,83 +137,6 @@ pub enum EventType {
     Diagnostic,
     /// Any event type, contract, system and diagnostic
     All,
-}
-
-/// List of filters for the returned events. Events matching any of the filters are included.
-/// To match a filter, an event must match both a contractId and a topic. Maximum 5 filters are
-/// allowed per request.
-pub struct EventFilter {
-    event_type: EventType,
-    contract_ids: Vec<String>,
-    topics: Vec<Vec<Topic>>,
-}
-
-/// Topic to match on in the filter
-#[derive(Clone, Debug)]
-pub enum Topic {
-    /// Match the [ScVal]
-    Val(ScVal),
-    /// Match any `ScVal`
-    Any,
-}
-impl EventFilter {
-    /// Start building a new filter for this [EventType]
-    pub fn new(event_type: EventType) -> Self {
-        EventFilter {
-            event_type,
-            contract_ids: Vec::new(),
-            topics: Vec::new(),
-        }
-    }
-
-    /// Include this `contract_id` in the filter. If omitted, return events for all contracts.
-    /// Maximum 5 contract IDs are allowed per request.
-    pub fn contract(self, contract_id: &str) -> Self {
-        let mut contract_ids = self.contract_ids.to_vec();
-        contract_ids.push(contract_id.to_string());
-        EventFilter {
-            contract_ids,
-            ..self
-        }
-    }
-
-    /// List of topic filters. If omitted, query for all events. If multiple filters are specified,
-    /// events will be included if they match any of the filters. Maximum 5 filters are allowed
-    /// per request.
-    pub fn topic(self, filer: Vec<Topic>) -> Self {
-        let mut topics = self.topics.to_vec();
-        topics.push(filer);
-        EventFilter { topics, ..self }
-    }
-
-    pub(crate) fn event_type(&self) -> Option<String> {
-        match self.event_type {
-            EventType::Contract => Some("contract".to_string()),
-            EventType::System => Some("system".to_string()),
-            EventType::Diagnostic => Some("diagnostic".to_string()),
-            EventType::All => None,
-        }
-    }
-
-    pub(crate) fn contracts(&self) -> Vec<String> {
-        self.contract_ids.to_vec()
-    }
-
-    pub(crate) fn topics(&self) -> Vec<Vec<String>> {
-        self.topics
-            .iter()
-            .map(|v| {
-                v.iter()
-                    .map(|vv| match vv {
-                        Topic::Val(sc_val) => sc_val
-                            .to_xdr_base64(Limits::none())
-                            .expect("ScVal cannot be converted to base64"),
-                        Topic::Any => "*".to_string(),
-                    })
-                    .collect()
-            })
-            .collect()
-    }
 }
 
 /// Response to [get_events](crate::Server::get_events)
@@ -248,7 +171,7 @@ pub struct EventResponse {
     /// Horizon's [/effects endpoint](https://github.com/stellar/go/blob/master/services/horizon/internal/db2/history/effect.go#L58).
     ///
     /// Specifically, it is a string containing:
-    /// - bigint(32 bit ledger sequence + 20 bit txn number + 12 bit operation) + <hyphen> + number for the event within the operation.
+    /// - bigint(32 bit ledger sequence + 20 bit txn number + 12 bit operation) + &lt;hyphen&gt; + number for the event within the operation.
     ///   For example: 1234-1
     pub id: String,
     /// The transaction which triggered this event.
@@ -317,7 +240,7 @@ impl SendTransactionResponse {
     }
 
     /// (optional) If the transaction status is [SendTransactionStatus::Error], this field may
-    /// be present with [Vec<DiagnosticEvent>]. Each [DiagnosticEvent] is containing details on
+    /// be present with [`Vec<DiagnosticEvent>`]. Each [DiagnosticEvent] is containing details on
     /// why stellar-core rejected the transaction.
     pub fn to_diagnostic_events(&self) -> Option<Vec<DiagnosticEvent>> {
         if let Some(events) = self.diagnostic_events_xdr.as_ref() {
@@ -385,7 +308,7 @@ pub struct StateChange {
 #[serde(rename_all = "camelCase")]
 pub struct SimulateTransactionResponse {
     /// The sequence number of the latest ledger known to Stellar RPC at the time it handled the request.
-    pub latest_ledger: i32,
+    pub latest_ledger: u32,
     /// (optional) Stringified number - Recommended minimum resource fee to add when submitting
     /// the transaction. This fee is to be added on top of the Stellar network fee.
     /// Not present in case of error.
@@ -556,7 +479,7 @@ pub struct GetFeeStatsResponse {
     pub inclusion_fee: FeeDistribution,
     /// The sequence number of the latest ledger known to Stellar RPC at the time it handled
     /// the request.
-    pub latest_ledger: u64,
+    pub latest_ledger: u32,
 }
 
 /// Fee distribution
@@ -594,7 +517,7 @@ pub struct FeeDistribution {
     /// How many transactions are part of the distribution
     pub transaction_count: String,
     /// How many consecutive ledgers form the distribution
-    pub ledger_count: u64,
+    pub ledger_count: u32,
 }
 
 /// Response to [get_version_info](crate::Server::get_version_info)
@@ -617,13 +540,13 @@ pub struct GetVersionInfoResponse {
 #[serde(rename_all = "camelCase")]
 pub struct GetTransactionsResponse {
     /// The sequence number of the latest ledger known to Stellar RPC at the time it handled the request.
-    pub latest_ledger: u64,
+    pub latest_ledger: u32,
     /// The unix timestamp of the close time of the latest ledger known to Stellar RPC at the time it handled the request.
-    pub latest_ledger_close_timestamp: u64,
+    pub latest_ledger_close_timestamp: i64,
     /// The sequence number of the oldest ledger ingested by Stellar RPC at the time it handled the request.
-    pub oldest_ledger: u64,
+    pub oldest_ledger: u32,
     /// The unix timestamp of the close time of the oldest ledger ingested by Stellar RPC at the time it handled the request.
-    pub oldest_ledger_close_timestamp: u64,
+    pub oldest_ledger_close_timestamp: i64,
     /// Cursor reference
     pub cursor: String,
     /// The transactions found
@@ -637,7 +560,7 @@ pub struct GetTransactionsResponse {
 #[serde(rename_all = "camelCase")]
 pub struct TransactionInfo {
     /// The unix timestamp of when the transaction was included in the ledger.
-    pub created_at: Option<u64>,
+    pub created_at: Option<i64>,
     #[serde(flatten)]
     transaction: TransactionDetails,
 }
@@ -657,11 +580,11 @@ pub struct TransactionDetails {
     /// The current status of the transaction by hash
     pub status: TransactionStatus,
     /// The sequence number of the latest ledger known to Stellar RPC at the time it handled the request.
-    /// (optional) The sequence number of the ledger which included the transaction. This field is only present if status is [GetTransactionStatus::Success] or [GetTransactionStatus::Failed].
-    pub ledger: Option<i32>,
-    /// (optional) The index of the transaction among all transactions included in the ledger. This field is only present if status is [GetTransactionStatus::Success] or [GetTransactionStatus::Failed].
+    /// (optional) The sequence number of the ledger which included the transaction. This field is only present if status is [TransactionStatus::Success] or [TransactionStatus::Failed].
+    pub ledger: Option<u32>,
+    /// (optional) The index of the transaction among all transactions included in the ledger. This field is only present if status is [TransactionStatus::Success] or [TransactionStatus::Failed].
     pub application_order: Option<i32>,
-    /// (optional) Indicates whether the transaction was fee bumped. This field is only present if status is [GetTransactionStatus::Success] or [GetTransactionStatus::Failed].
+    /// (optional) Indicates whether the transaction was fee bumped. This field is only present if status is [TransactionStatus::Success] or [TransactionStatus::Failed].
     pub fee_bump: Option<bool>,
     envelope_xdr: Option<String>,
     result_xdr: Option<String>,
@@ -684,7 +607,7 @@ impl TransactionDetails {
         }
     }
 
-    /// (optional) The [TransactionResult] struct for this transaction. This field is only present if status is [GetTransactionStatus::Success] or [GetTransactionStatus::Failed].
+    /// (optional) The [TransactionResult] struct for this transaction. This field is only present if status is [TransactionStatus::Success] or [TransactionStatus::Failed].
     pub fn to_result(&self) -> Option<TransactionResult> {
         if let Some(result) = &self.result_xdr {
             let r = TransactionResult::from_xdr_base64(result, Limits::none());
@@ -738,13 +661,13 @@ impl TransactionDetails {
 #[serde(rename_all = "camelCase")]
 pub struct GetLedgersResponse {
     /// The sequence number of the latest ledger known to Stellar RPC at the time it handled the request.
-    pub latest_ledger: u64,
+    pub latest_ledger: u32,
     /// The unix timestamp of the close time of the latest ledger known to Stellar RPC at the time it handled the request.
-    pub latest_ledger_close_time: u64,
+    pub latest_ledger_close_time: i64,
     /// The sequence number of the oldest ledger ingested by Stellar RPC at the time it handled the request.
-    pub oldest_ledger: u64,
+    pub oldest_ledger: u32,
     /// The unix timestamp of the close time of the oldest ledger ingested by Stellar RPC at the time it handled the request.
-    pub oldest_ledger_close_time: u64,
+    pub oldest_ledger_close_time: i64,
     /// Cursor reference
     pub cursor: String,
     /// Ledgers returned
@@ -758,7 +681,7 @@ pub struct LedgerInfo {
     /// The hash of the ledger header which was included in the chain
     pub hash: String,
     /// The sequence number of the ledger (sometimes called the 'block height').
-    pub sequence: u64,
+    pub sequence: u32,
     /// The timestamp at which the ledger was closed.
     pub ledger_close_time: String,
     header_xdr: Option<String>,

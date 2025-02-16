@@ -57,11 +57,87 @@ impl Durability {
 /// [TOID]: https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0035.md#specification
 pub enum Pagination {
     /// Fetch events starting at this ledger sequence
-    From(u64),
+    From(u32),
     /// Fetch events from and up to these ledger sequences
-    FromTo(u64, u64),
+    FromTo(u32, u32),
     /// Fetch events after this cursor
     Cursor(String),
+}
+/// List of filters for the returned events. Events matching any of the filters are included.
+/// To match a filter, an event must match both a contractId and a topic. Maximum 5 filters are
+/// allowed per request.
+pub struct EventFilter {
+    event_type: EventType,
+    contract_ids: Vec<String>,
+    topics: Vec<Vec<Topic>>,
+}
+
+/// Topic to match on in the filter
+#[derive(Clone, Debug)]
+pub enum Topic {
+    /// Match the [ScVal]
+    Val(ScVal),
+    /// Match any `ScVal`
+    Any,
+}
+impl EventFilter {
+    /// Start building a new filter for this [EventType]
+    pub fn new(event_type: EventType) -> Self {
+        EventFilter {
+            event_type,
+            contract_ids: Vec::new(),
+            topics: Vec::new(),
+        }
+    }
+
+    /// Include this `contract_id` in the filter. If omitted, return events for all contracts.
+    /// Maximum 5 contract IDs are allowed per request.
+    pub fn contract(self, contract_id: &str) -> Self {
+        let mut contract_ids = self.contract_ids.to_vec();
+        contract_ids.push(contract_id.to_string());
+        EventFilter {
+            contract_ids,
+            ..self
+        }
+    }
+
+    /// List of topic filters. If omitted, query for all events. If multiple filters are specified,
+    /// events will be included if they match any of the filters. Maximum 5 filters are allowed
+    /// per request.
+    pub fn topic(self, filer: Vec<Topic>) -> Self {
+        let mut topics = self.topics.to_vec();
+        topics.push(filer);
+        EventFilter { topics, ..self }
+    }
+
+    fn event_type(&self) -> Option<String> {
+        match self.event_type {
+            EventType::Contract => Some("contract".to_string()),
+            EventType::System => Some("system".to_string()),
+            EventType::Diagnostic => Some("diagnostic".to_string()),
+            EventType::All => None,
+        }
+    }
+
+    fn contracts(&self) -> Vec<String> {
+        self.contract_ids.to_vec()
+    }
+
+    fn topics(&self) -> Vec<Vec<String>> {
+        self.topics
+            .iter()
+            .map(|v| {
+                v.iter()
+                    .map(|vv| match vv {
+                        Topic::Val(sc_val) => sc_val
+                            .to_xdr_base64(Limits::none())
+                            .expect("ScVal cannot be converted to base64"),
+                        Topic::Any => "*".to_string(),
+                    })
+                    .collect()
+            })
+            .collect()
+    }
 }
 
 /// Contains configuration for how resources will be calculated when simulating transactions.
@@ -156,7 +232,7 @@ impl Server {
     /// ```rust
     /// // Fetch 12 events from ledger 67000 for contract "CAA..."
     /// # use soroban_client::soroban_rpc::*;
-    /// # use soroban_client::{Pagination, Server, Options};
+    /// # use soroban_client::*;
     /// # use soroban_client::error::Error;
     /// # async fn events() -> Result<(), Error> {
     /// # let server = Server::new("https://rpc.server", Options::default())?;
