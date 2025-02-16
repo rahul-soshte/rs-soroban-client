@@ -4,9 +4,9 @@ use std::ops::Deref;
 use stellar_baselib::{
     soroban_data_builder::{SorobanDataBuilder, SorobanDataBuilderBehavior},
     xdr::{
-        DiagnosticEvent, LedgerEntry, LedgerEntryData, LedgerKey, Limits, ReadXdr, ScVal,
-        SorobanAuthorizationEntry, SorobanTransactionData, TransactionEnvelope, TransactionMeta,
-        TransactionResult, WriteXdr,
+        DiagnosticEvent, LedgerCloseMeta, LedgerEntry, LedgerEntryData, LedgerHeaderHistoryEntry,
+        LedgerKey, Limits, ReadXdr, ScVal, SorobanAuthorizationEntry, SorobanTransactionData,
+        TransactionEnvelope, TransactionMeta, TransactionResult, WriteXdr,
     },
 };
 
@@ -730,5 +730,53 @@ impl TransactionDetails {
         } else {
             None
         }
+    }
+}
+
+/// Response to [get_ledgers](crate::Server::get_ledgers)
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetLedgersResponse {
+    /// The sequence number of the latest ledger known to Stellar RPC at the time it handled the request.
+    pub latest_ledger: u64,
+    /// The unix timestamp of the close time of the latest ledger known to Stellar RPC at the time it handled the request.
+    pub latest_ledger_close_time: u64,
+    /// The sequence number of the oldest ledger ingested by Stellar RPC at the time it handled the request.
+    pub oldest_ledger: u64,
+    /// The unix timestamp of the close time of the oldest ledger ingested by Stellar RPC at the time it handled the request.
+    pub oldest_ledger_close_time: u64,
+    /// Cursor reference
+    pub cursor: String,
+    /// Ledgers returned
+    pub ledgers: Vec<LedgerInfo>,
+}
+
+/// Representation of the ledger
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LedgerInfo {
+    /// The hash of the ledger header which was included in the chain
+    pub hash: String,
+    /// The sequence number of the ledger (sometimes called the 'block height').
+    pub sequence: u64,
+    /// The timestamp at which the ledger was closed.
+    pub ledger_close_time: String,
+    header_xdr: Option<String>,
+    metadataXdr: Option<String>,
+}
+
+impl LedgerInfo {
+    /// LedgerHeader for this ledger
+    pub fn to_header(&self) -> Option<LedgerHeaderHistoryEntry> {
+        self.header_xdr.as_ref().map(|header| {
+            LedgerHeaderHistoryEntry::from_xdr_base64(header, Limits::none())
+                .expect("Invalid XDR from RPC")
+        })
+    }
+    /// LedgerCloseMeta for this ledger
+    pub fn to_metadata(&self) -> Option<LedgerCloseMeta> {
+        self.metadataXdr.as_ref().map(|meta| {
+            LedgerCloseMeta::from_xdr_base64(meta, Limits::none()).expect("Invalid XDR from RPC")
+        })
     }
 }

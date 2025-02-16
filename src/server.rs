@@ -295,7 +295,36 @@ impl Server {
         }
     }
 
-    // TODO get_ledgers
+    /// # Call to RPC method [getLedgers]
+    ///
+    /// The getLedgers method returns a detailed list of ledgers starting from the user specified
+    /// starting point that you can paginate as long as the pages fall within the history
+    /// retention of their corresponding RPC provider.
+    ///
+    /// [getLedgers]: https://developers.stellar.org/docs/data/rpc/api-reference/methods/getLedgers
+    pub async fn get_ledgers(
+        &self,
+        ledger: Pagination,
+        limit: impl Into<Option<u32>>,
+    ) -> Result<GetLedgersResponse, Error> {
+        let (start_ledger, cursor) = match ledger {
+            Pagination::From(s) => (Some(s), None),
+            Pagination::FromTo(s, _) => (Some(s), None),
+            Pagination::Cursor(c) => (None, Some(c)),
+        };
+        let params = json!(
+        {
+            "startLedger": start_ledger,
+            "pagination": {
+                "cursor": cursor,
+                "limit": limit.into()
+            }
+        }
+        );
+
+        let response = self.client.post("getLedgers", params).await?;
+        handle_response(response)
+    }
 
     /// # Call to RPC method [getNetwork]
     ///
@@ -342,6 +371,8 @@ impl Server {
     /// The getTransactions method return a detailed list of transactions starting from the user
     /// specified starting point that you can paginate as long as the pages fall within the
     /// history retention of their corresponding RPC provider.
+    ///
+    /// In [Pagination::FromTo(start, end)], the `end` has no effect for `get_transactions`.
     ///
     /// [getTransactions]: https://developers.stellar.org/docs/data/rpc/api-reference/methods/getTransactions
     pub async fn get_transactions(
