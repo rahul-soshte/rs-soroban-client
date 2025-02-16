@@ -81,7 +81,7 @@
 //!    let native = ScVal::String(ScString("native".try_into().unwrap()));
 //!    let events = rpc
 //!        .get_events(
-//!            crate::soroban_rpc::EventLedger::From(ledger - 100),
+//!            Pagination::From(ledger - 100),
 //!            vec![EventFilter::new(crate::soroban_rpc::EventType::All)
 //!                .contract(native_id)
 //!                .topic(vec![
@@ -90,7 +90,7 @@
 //!                    Topic::Any, // To account
 //!                    Topic::Val(native),
 //!                ])],
-//!            Some(3),
+//!            3
 //!        )
 //!        .await
 //!        .unwrap();

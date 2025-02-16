@@ -39,6 +39,31 @@ impl Durability {
     }
 }
 
+/// Set the boundaries while fetching data from the RPC
+///
+/// `From(start) and FromTo(start, end)`
+/// `start` is the ledger sequence number to start fetching responses from (inclusive). This
+/// method will return an error if startLedger is less than the oldest ledger stored in this node,
+/// or greater than the latest ledger seen by this node.
+///
+/// `end` is the ledger sequence number represents the end of search window (exclusive)
+///
+/// `Cursor(cursor)`
+/// A unique identifier (specifically, a [TOID]) that points to a specific location in a collection
+/// of responses and is pulled from the paging_token value of a record. When a cursor is provided,
+/// RPC will not include the element whose ID matches the cursor in the response: only elements
+/// which appear after the cursor will be included.
+///
+/// [TOID]: https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0035.md#specification
+pub enum Pagination {
+    /// Fetch events starting at this ledger sequence
+    From(u64),
+    /// Fetch events from and up to these ledger sequences
+    FromTo(u64, u64),
+    /// Fetch events after this cursor
+    Cursor(String),
+}
+
 /// Contains configuration for how resources will be calculated when simulating transactions.
 #[derive(Debug, Clone)]
 pub struct ResourceLeeway {
@@ -131,16 +156,16 @@ impl Server {
     /// ```rust
     /// // Fetch 12 events from ledger 67000 for contract "CAA..."
     /// # use soroban_client::soroban_rpc::*;
-    /// # use soroban_client::{Server, Options};
+    /// # use soroban_client::{Pagination, Server, Options};
     /// # use soroban_client::error::Error;
     /// # async fn events() -> Result<(), Error> {
     /// # let server = Server::new("https://rpc.server", Options::default())?;
     /// let events = server.get_events(
-    ///     EventLedger::From(67000),
+    ///     Pagination::From(67000),
     ///     vec![
     ///         EventFilter::new(EventType::All).contract("CAA...")
     ///     ],
-    ///     Some(12)
+    ///     12
     /// ).await?;
     /// # return Ok(()); }
     ///
@@ -150,14 +175,14 @@ impl Server {
     ///
     pub async fn get_events(
         &self,
-        ledger: EventLedger,
+        ledger: Pagination,
         filters: Vec<EventFilter>,
-        limit: Option<u32>,
+        limit: impl Into<Option<u32>>,
     ) -> Result<GetEventsResponse, Error> {
         let (start_ledger, end_ledger, cursor) = match ledger {
-            EventLedger::From(s) => (Some(s), None, None),
-            EventLedger::FromTo(s, e) => (Some(s), Some(e), None),
-            EventLedger::Cursor(c) => (None, None, Some(c)),
+            Pagination::From(s) => (Some(s), None, None),
+            Pagination::FromTo(s, e) => (Some(s), Some(e), None),
+            Pagination::Cursor(c) => (None, None, Some(c)),
         };
         let filters = filters
             .into_iter()
@@ -178,7 +203,7 @@ impl Server {
             "filters": filters,
             "pagination": {
                 "cursor": cursor,
-                "limit": limit
+                "limit": limit.into()
             }
         }
         );
@@ -312,7 +337,36 @@ impl Server {
         handle_response(response)
     }
 
-    // TODO get_transactions
+    /// # Call to RPC method [getTransactions]
+    ///
+    /// The getTransactions method return a detailed list of transactions starting from the user
+    /// specified starting point that you can paginate as long as the pages fall within the
+    /// history retention of their corresponding RPC provider.
+    ///
+    /// [getTransactions]: https://developers.stellar.org/docs/data/rpc/api-reference/methods/getTransactions
+    pub async fn get_transactions(
+        &self,
+        ledger: Pagination,
+        limit: impl Into<Option<u32>>,
+    ) -> Result<GetTransactionsResponse, Error> {
+        let (start_ledger, cursor) = match ledger {
+            Pagination::From(s) => (Some(s), None),
+            Pagination::FromTo(s, _) => (Some(s), None),
+            Pagination::Cursor(c) => (None, Some(c)),
+        };
+        let params = json!(
+        {
+            "startLedger": start_ledger,
+            "pagination": {
+                "cursor": cursor,
+                "limit": limit.into()
+            }
+        }
+        );
+
+        let response = self.client.post("getTransactions", params).await?;
+        handle_response(response)
+    }
 
     /// # Call to RPC method [getVersionInfo]
     ///

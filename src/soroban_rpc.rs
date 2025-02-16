@@ -1,4 +1,6 @@
 #![allow(non_snake_case)]
+use std::ops::Deref;
+
 use stellar_baselib::{
     soroban_data_builder::{SorobanDataBuilder, SorobanDataBuilderBehavior},
     xdr::{
@@ -82,10 +84,10 @@ pub struct GetLatestLedgerResponse {
     pub sequence: u64,
 }
 
-/// Status of [GetTransactionResponse]
+/// Status of [GetTransactionResponse] or [GetTransactionsResponse] transactions
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum GetTransactionStatus {
+pub enum TransactionStatus {
     /// Transaction succeeded
     Success,
     /// NotFound, may not exist yet
@@ -95,11 +97,11 @@ pub enum GetTransactionStatus {
 }
 
 /// Response to [get_transaction](crate::Server::get_transaction)
+///
+/// See [TransactionDetails] for additionnal fields
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetTransactionResponse {
-    /// The current status of the transaction by hash
-    pub status: GetTransactionStatus,
     /// The sequence number of the latest ledger known to Stellar RPC at the time it handled the request.
     pub latest_ledger: i32,
     /// The unix timestamp of the close time of the latest ledger known to Stellar RPC at the time it handled the request.
@@ -108,93 +110,19 @@ pub struct GetTransactionResponse {
     pub oldest_ledger: i32,
     /// The unix timestamp of the close time of the oldest ledger ingested by Stellar RPC at the time it handled the request.
     pub oldest_ledger_close_time: String,
-    /// (optional) The sequence number of the ledger which included the transaction. This field is only present if status is [GetTransactionStatus::Success] or [GetTransactionStatus::Failed].
-    pub ledger: Option<i32>,
     /// (optional) The unix timestamp of when the transaction was included in the ledger. This field is only present if status is [GetTransactionStatus::Success] or [GetTransactionStatus::Failed].
     pub created_at: Option<String>,
-    /// (optional) The index of the transaction among all transactions included in the ledger. This field is only present if status is [GetTransactionStatus::Success] or [GetTransactionStatus::Failed].
-    pub application_order: Option<i32>,
-    /// (optional) Indicates whether the transaction was fee bumped. This field is only present if status is [GetTransactionStatus::Success] or [GetTransactionStatus::Failed].
-    pub fee_bump: Option<bool>,
-    envelope_xdr: Option<String>,
-    result_xdr: Option<String>,
-    result_meta_xdr: Option<String>,
+    /// Transaction details
+    #[serde(flatten)]
+    transaction: TransactionDetails,
 }
+// Flatten the transaction in the struct
+impl Deref for GetTransactionResponse {
+    type Target = TransactionDetails;
 
-impl GetTransactionResponse {
-    /// (optional) The [TransactionEnvelope] struct for this transaction.
-    pub fn get_envelope(&self) -> Option<TransactionEnvelope> {
-        if let Some(result) = &self.envelope_xdr {
-            let r = TransactionEnvelope::from_xdr_base64(result, Limits::none());
-            if let Ok(e) = r {
-                Some(e)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
+    fn deref(&self) -> &Self::Target {
+        &self.transaction
     }
-
-    /// (optional) The [TransactionResult] struct for this transaction. This field is only present if status is [GetTransactionStatus::Success] or [GetTransactionStatus::Failed].
-    pub fn get_result(&self) -> Option<TransactionResult> {
-        if let Some(result) = &self.result_xdr {
-            let r = TransactionResult::from_xdr_base64(result, Limits::none());
-            if let Ok(e) = r {
-                Some(e)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
-
-    /// (optional) The [TransactionMeta] struct of this transaction. Also return the optional
-    /// return value of the transaction.
-    pub fn get_result_meta(&self) -> Option<(TransactionMeta, Option<ScVal>)> {
-        if let Some(result) = &self.result_meta_xdr {
-            let r = TransactionMeta::from_xdr_base64(result, Limits::none());
-            if let Ok(e) = r {
-                let mut return_value = None;
-                if let TransactionMeta::V3(v3) = &e {
-                    if let Some(v) = &v3.soroban_meta {
-                        return_value = Some(v.return_value.clone());
-                    }
-                }
-                Some((e, return_value))
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
-}
-
-/// Set the boundaries while fetching the events
-///
-/// `From(start) and FromTo(start, end)`
-/// `start` is the ledger sequence number to start fetching responses from (inclusive). This
-/// method will return an error if startLedger is less than the oldest ledger stored in this node,
-/// or greater than the latest ledger seen by this node.
-///
-/// `end` is the ledger sequence number represents the end of search window (exclusive)
-///
-/// `Cursor(cursor)`
-/// A unique identifier (specifically, a [TOID]) that points to a specific location in a collection
-/// of responses and is pulled from the paging_token value of a record. When a cursor is provided,
-/// RPC will not include the element whose ID matches the cursor in the response: only elements
-/// which appear after the cursor will be included.
-///
-/// [TOID]: https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0035.md#specification
-pub enum EventLedger {
-    /// Fetch events starting at this ledger sequence
-    From(u64),
-    /// Fetch events from and up to these ledger sequences
-    FromTo(u64, u64),
-    /// Fetch events after this cursor
-    Cursor(String),
 }
 
 /// Event types (system, contract, or diagnostic) used to filter events
@@ -682,4 +610,125 @@ pub struct GetVersionInfoResponse {
     pub captive_core_version: String,
     /// The protocol version.
     pub protocol_version: u32,
+}
+
+/// Response to [get_transactions](crate::Server::get_transactions)
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetTransactionsResponse {
+    /// The sequence number of the latest ledger known to Stellar RPC at the time it handled the request.
+    pub latest_ledger: u64,
+    /// The unix timestamp of the close time of the latest ledger known to Stellar RPC at the time it handled the request.
+    pub latest_ledger_close_timestamp: u64,
+    /// The sequence number of the oldest ledger ingested by Stellar RPC at the time it handled the request.
+    pub oldest_ledger: u64,
+    /// The unix timestamp of the close time of the oldest ledger ingested by Stellar RPC at the time it handled the request.
+    pub oldest_ledger_close_timestamp: u64,
+    /// Cursor reference
+    pub cursor: String,
+    /// The transactions found
+    pub transactions: Vec<TransactionInfo>,
+}
+
+/// Representation of a transaction returned by stellar RPC
+///
+/// Specific type for [GetTransactionsResponse]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransactionInfo {
+    /// The unix timestamp of when the transaction was included in the ledger.
+    pub created_at: Option<u64>,
+    #[serde(flatten)]
+    transaction: TransactionDetails,
+}
+// Flatten the transaction in the struct
+impl Deref for TransactionInfo {
+    type Target = TransactionDetails;
+
+    fn deref(&self) -> &Self::Target {
+        &self.transaction
+    }
+}
+
+/// Representation of a transaction returned by stellar RPC
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransactionDetails {
+    /// The current status of the transaction by hash
+    pub status: TransactionStatus,
+    /// The sequence number of the latest ledger known to Stellar RPC at the time it handled the request.
+    /// (optional) The sequence number of the ledger which included the transaction. This field is only present if status is [GetTransactionStatus::Success] or [GetTransactionStatus::Failed].
+    pub ledger: Option<i32>,
+    /// (optional) The index of the transaction among all transactions included in the ledger. This field is only present if status is [GetTransactionStatus::Success] or [GetTransactionStatus::Failed].
+    pub application_order: Option<i32>,
+    /// (optional) Indicates whether the transaction was fee bumped. This field is only present if status is [GetTransactionStatus::Success] or [GetTransactionStatus::Failed].
+    pub fee_bump: Option<bool>,
+    envelope_xdr: Option<String>,
+    result_xdr: Option<String>,
+    result_meta_xdr: Option<String>,
+    diagnostic_events_xdr: Option<Vec<String>>,
+}
+
+impl TransactionDetails {
+    /// (optional) The [TransactionEnvelope] struct for this transaction.
+    pub fn to_envelope(&self) -> Option<TransactionEnvelope> {
+        if let Some(result) = &self.envelope_xdr {
+            let r = TransactionEnvelope::from_xdr_base64(result, Limits::none());
+            if let Ok(e) = r {
+                Some(e)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    /// (optional) The [TransactionResult] struct for this transaction. This field is only present if status is [GetTransactionStatus::Success] or [GetTransactionStatus::Failed].
+    pub fn to_result(&self) -> Option<TransactionResult> {
+        if let Some(result) = &self.result_xdr {
+            let r = TransactionResult::from_xdr_base64(result, Limits::none());
+            if let Ok(e) = r {
+                Some(e)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    /// (optional) The [TransactionMeta] struct of this transaction. Also return the optional
+    /// return value of the transaction.
+    pub fn to_result_meta(&self) -> Option<(TransactionMeta, Option<ScVal>)> {
+        if let Some(result) = &self.result_meta_xdr {
+            let r = TransactionMeta::from_xdr_base64(result, Limits::none());
+            if let Ok(e) = r {
+                let mut return_value = None;
+                if let TransactionMeta::V3(v3) = &e {
+                    if let Some(v) = &v3.soroban_meta {
+                        return_value = Some(v.return_value.clone());
+                    }
+                }
+                Some((e, return_value))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    /// (optional) A base64 encoded slice of xdr.DiagnosticEvent. This is only present if the
+    /// ENABLE_SOROBAN_DIAGNOSTIC_EVENTS has been enabled in the stellar-core config.
+    pub fn to_diagnostic_events(&self) -> Option<Vec<DiagnosticEvent>> {
+        if let Some(events) = &self.diagnostic_events_xdr {
+            events
+                .iter()
+                .map(|e| DiagnosticEvent::from_xdr_base64(e, Limits::none()).ok())
+                .collect()
+        } else {
+            None
+        }
+    }
 }

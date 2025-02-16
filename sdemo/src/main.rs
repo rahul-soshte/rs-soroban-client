@@ -3,7 +3,7 @@ use soroban_client::contract;
 use soroban_client::contract::ContractBehavior;
 use soroban_client::keypair::KeypairBehavior;
 use soroban_client::network::{NetworkPassphrase, Networks};
-use soroban_client::soroban_rpc::{EventFilter, GetTransactionStatus};
+use soroban_client::soroban_rpc::{EventFilter, TransactionStatus};
 use soroban_client::transaction::Account;
 use soroban_client::transaction::TransactionBehavior;
 use soroban_client::transaction_builder::TransactionBuilder;
@@ -73,27 +73,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let response = server.get_transaction(&hash).await;
                 if let Ok(tx_result) = response {
                     match tx_result.status {
-                        GetTransactionStatus::Success => {
+                        TransactionStatus::Success => {
                             println!("Transaction successful!");
                             if let Some(ledger) = tx_result.ledger {
                                 println!("Confirmed in ledger: {}", ledger);
                                 led = ledger;
                             }
-                            if let Some((meta, Some(return_value))) = tx_result.get_result_meta() {
+                            if let Some((meta, Some(return_value))) = tx_result.to_result_meta() {
                                 println!("Return value: {:?}", return_value);
                                 println!("Transaction metadata: {:?}", meta);
                             }
                             break;
                         }
-                        GetTransactionStatus::NotFound => {
+                        TransactionStatus::NotFound => {
                             println!(
                                 "Waiting for transaction confirmation... Latest ledger: {}",
                                 tx_result.latest_ledger
                             );
                             tokio::time::sleep(Duration::from_secs(1)).await;
                         }
-                        GetTransactionStatus::Failed => {
-                            if let Some(result) = tx_result.get_result() {
+                        TransactionStatus::Failed => {
+                            if let Some(result) = tx_result.to_result() {
                                 eprintln!("Transaction failed with result: {:?}", result);
                             } else {
                                 eprintln!("Transaction failed without result XDR");
@@ -113,7 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let event_result = server
         .get_events(
-            soroban_client::soroban_rpc::EventLedger::From(led as u64),
+            soroban_client::Pagination::From(led as u64),
             vec![
                 EventFilter::new(soroban_client::soroban_rpc::EventType::Diagnostic)
                     .contract(contract_id),
