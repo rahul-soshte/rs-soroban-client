@@ -597,11 +597,7 @@ impl TransactionDetails {
     pub fn to_envelope(&self) -> Option<TransactionEnvelope> {
         if let Some(result) = &self.envelope_xdr {
             let r = TransactionEnvelope::from_xdr_base64(result, Limits::none());
-            if let Ok(e) = r {
-                Some(e)
-            } else {
-                None
-            }
+            r.ok()
         } else {
             None
         }
@@ -611,11 +607,7 @@ impl TransactionDetails {
     pub fn to_result(&self) -> Option<TransactionResult> {
         if let Some(result) = &self.result_xdr {
             let r = TransactionResult::from_xdr_base64(result, Limits::none());
-            if let Ok(e) = r {
-                Some(e)
-            } else {
-                None
-            }
+            r.ok()
         } else {
             None
         }
