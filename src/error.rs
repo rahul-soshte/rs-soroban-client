@@ -53,9 +53,7 @@ pub enum Error {
     NoFriendbot,
 }
 
-/// ## Invalid RPC URL Errors
-
-/// Define specific errors for invalid RPC URLs
+/// Possible  errors for invalid RPC URLs
 #[derive(Error, Debug)]
 pub enum InvalidRpcUrl {
     /// Error when the URL scheme is not HTTP or HTTPS

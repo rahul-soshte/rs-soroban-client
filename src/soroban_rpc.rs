@@ -156,7 +156,6 @@ pub struct GetEventsResponse {
 #[serde(rename_all = "camelCase")]
 pub struct EventResponse {
     /// The type of event emission.
-
     #[serde(rename = "type")]
     pub event_type: EventType,
     /// Sequence number of the ledger in which this event was emitted.
