@@ -37,11 +37,11 @@ pub fn assemble_transaction(
     // Calculate fees
     let classic_fee_num = tx.fee;
 
-    // FIXME Check if some auth were already provided in the tx 
+    // FIXME Check if some auth were already provided in the tx
     let auth = if let Some((_, a)) = simulation.to_result() {
         Some(a.try_into().expect("Cannot convert Vec to VecM"))
     } else {
-        None 
+        None
     };
 
     let min_resource_fee = simulation
@@ -103,7 +103,6 @@ fn is_soroban_transaction(tx: &Transaction) -> bool {
     false
 }
 
-
 #[cfg(test)]
 mod test {
     use std::{cell::RefCell, rc::Rc, str::FromStr};
@@ -119,13 +118,13 @@ mod test {
         },
     };
 
-    use crate::{error::Error, transaction::{
-        assemble_transaction, is_soroban_transaction, SimulateTransactionResponse,
-    }};
+    use crate::{
+        error::Error,
+        transaction::{assemble_transaction, is_soroban_transaction, SimulateTransactionResponse},
+    };
 
     #[test]
     fn simulation_failed() {
-
         let source_account = Rc::new(RefCell::new(
             Account::new(
                 "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
@@ -156,8 +155,9 @@ mod test {
             "error": "This is an error",
             "latestLedger": 2552139
           }
-        
-        )).unwrap();
+
+        ))
+        .unwrap();
 
         let r = assemble_transaction(tx, network, simulation);
         assert!(matches!(r, Err(Error::SimulationFailed)));
@@ -187,9 +187,7 @@ mod test {
         builder.add_operation(op);
         let tx = builder.build();
 
-        assert!(
-            !is_soroban_transaction(&tx),
-        );
+        assert!(!is_soroban_transaction(&tx),);
 
         let simulation: SimulateTransactionResponse = serde_json::from_value(json!(
          {
@@ -211,7 +209,6 @@ mod test {
             },
             "latestLedger": 2552139
           }
-        
         )).unwrap();
 
         let r = assemble_transaction(tx, network, simulation);
@@ -246,9 +243,7 @@ mod test {
         builder.add_operation(op);
         let tx = builder.build();
 
-        assert!(
-            is_soroban_transaction(&tx),
-        );
+        assert!(is_soroban_transaction(&tx),);
     }
 
     #[test]
@@ -280,9 +275,7 @@ mod test {
         builder.add_operation(op);
         let tx = builder.build();
 
-        assert!(
-            !is_soroban_transaction(&tx),
-        );
+        assert!(!is_soroban_transaction(&tx),);
     }
     #[test]
     fn is_soroban_transaction_no_ops() {
@@ -299,6 +292,6 @@ mod test {
         builder.fee(1000u32).set_timeout(30).unwrap();
         let tx = builder.build();
 
-        assert!(!is_soroban_transaction(&tx), );
+        assert!(!is_soroban_transaction(&tx),);
     }
 }

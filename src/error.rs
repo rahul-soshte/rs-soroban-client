@@ -1,6 +1,5 @@
 /// Error Handling in `soroban_client` crate
 /// This module defines all possible error types used in the `soroban_client` crate.
-
 use stellar_baselib::xdr::SorobanTransactionData;
 use thiserror::Error;
 
@@ -39,7 +38,7 @@ pub enum Error {
     RestorationRequired(i64, SorobanTransactionData),
     /// Error for RPC failures, includes code and message
     #[error("RPCError {code}: {message}")]
-    RPCError { 
+    RPCError {
         /// The error code returned from the RPC
         code: i32,
         /// The error message returned from the RPC
