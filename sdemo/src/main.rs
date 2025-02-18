@@ -3,7 +3,7 @@ use soroban_client::contract;
 use soroban_client::contract::ContractBehavior;
 use soroban_client::keypair::KeypairBehavior;
 use soroban_client::network::{NetworkPassphrase, Networks};
-use soroban_client::soroban_rpc::{EventFilter, TransactionStatus};
+use soroban_client::soroban_rpc::TransactionStatus;
 use soroban_client::transaction::Account;
 use soroban_client::transaction::TransactionBehavior;
 use soroban_client::transaction_builder::TransactionBuilder;
@@ -14,6 +14,7 @@ use soroban_client::{keypair::Keypair, Server};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
+use soroban_client::EventFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -60,7 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // let after_signing = contract_tx.to_envelope().unwrap().to_xdr_base64(Limits::none());
     // println!("After Signing {:?}", after_signing);
 
-    let mut led = 0i32;
+    let mut led = 0u32;
     match server.send_transaction(contract_tx).await {
         Ok(response) => {
             println!("Transaction sent successfully");
@@ -113,7 +114,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let event_result = server
         .get_events(
-            soroban_client::Pagination::From(led as u64),
+            soroban_client::Pagination::From(led),
             vec![
                 EventFilter::new(soroban_client::soroban_rpc::EventType::Diagnostic)
                     .contract(contract_id),
