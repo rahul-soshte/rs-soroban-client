@@ -15,7 +15,6 @@ pub use stellar_baselib::{
     },
 };
 
-
 /// Assemble a [transaction](Transaction) with a [simulation](SimulateTransactionResponse)
 pub fn assemble_transaction(
     tx: Transaction,
@@ -41,7 +40,7 @@ pub fn assemble_transaction(
     let auth = if let Some((_, a)) = simulation.to_result() {
         Some(a.try_into().expect("Cannot convert Vec to VecM"))
     } else {
-        None 
+        None
     };
 
     let min_resource_fee = simulation
@@ -78,7 +77,7 @@ pub fn assemble_transaction(
                 stellar_baselib::operation::Operation::invoke_host_function(
                     invoke_host_function_op.host_function,
                     // Ignore the simulation auth entries if the transaction already contained
-                    // auth. 
+                    // auth.
                     if invoke_host_function_op.auth.is_empty() {
                         auth
                     } else {
@@ -110,7 +109,6 @@ fn is_soroban_transaction(tx: &Transaction) -> bool {
     false
 }
 
-
 #[cfg(test)]
 mod test {
     use std::{cell::RefCell, rc::Rc, str::FromStr};
@@ -120,17 +118,20 @@ mod test {
         account::{Account, AccountBehavior},
         transaction_builder::{TransactionBuilder, TransactionBuilderBehavior},
         xdr::{
-            AccountId, CreateAccountOp, Hash, HostFunction, InvokeContractArgs, InvokeHostFunctionOp, Operation, OperationBody, PublicKey, ScAddress, ScSymbol, ScVal, SorobanAuthorizationEntry, SorobanAuthorizedFunction, SorobanAuthorizedInvocation, SorobanCredentials, StringM, Uint256, VecM
+            AccountId, CreateAccountOp, Hash, HostFunction, InvokeContractArgs,
+            InvokeHostFunctionOp, Operation, OperationBody, PublicKey, ScAddress, ScSymbol, ScVal,
+            SorobanAuthorizationEntry, SorobanAuthorizedFunction, SorobanAuthorizedInvocation,
+            SorobanCredentials, StringM, Uint256, VecM,
         },
     };
 
-    use crate::{error::Error, transaction::{
-        assemble_transaction, is_soroban_transaction, SimulateTransactionResponse,
-    }};
+    use crate::{
+        error::Error,
+        transaction::{assemble_transaction, is_soroban_transaction, SimulateTransactionResponse},
+    };
 
     #[test]
     fn tx_with_auth() {
-
         let source_account = Rc::new(RefCell::new(
             Account::new(
                 "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
@@ -142,7 +143,17 @@ mod test {
 
         let contract_address = ScAddress::Contract(Hash([0; 32]));
         let function_name = ScSymbol::from(StringM::from_str("test").unwrap());
-        let auth = SorobanAuthorizationEntry { credentials: SorobanCredentials::SourceAccount, root_invocation: SorobanAuthorizedInvocation { function: SorobanAuthorizedFunction::ContractFn(InvokeContractArgs{ contract_address, function_name, args: VecM::<_>::try_from(Vec::new()).unwrap() }), sub_invocations: VecM::<_>::try_from(Vec::new()).unwrap()} };
+        let auth = SorobanAuthorizationEntry {
+            credentials: SorobanCredentials::SourceAccount,
+            root_invocation: SorobanAuthorizedInvocation {
+                function: SorobanAuthorizedFunction::ContractFn(InvokeContractArgs {
+                    contract_address,
+                    function_name,
+                    args: VecM::<_>::try_from(Vec::new()).unwrap(),
+                }),
+                sub_invocations: VecM::<_>::try_from(Vec::new()).unwrap(),
+            },
+        };
 
         let contract_address = ScAddress::Contract(Hash([0; 32]));
         let function_name = ScSymbol::from(StringM::from_str("test").unwrap());
@@ -179,18 +190,23 @@ mod test {
               "memBytes": "1295756"
             },
             "latestLedger": 2552139
-          
         }
         )).unwrap();
 
         let mut r = assemble_transaction(tx, network, simulation).unwrap();
         let txr = r.build();
         if let Some(ops) = txr.operations {
-
             let op = ops[0].clone();
-            if let OperationBody::InvokeHostFunction(InvokeHostFunctionOp { host_function:_, auth }) = op.body {
+            if let OperationBody::InvokeHostFunction(InvokeHostFunctionOp {
+                host_function: _,
+                auth,
+            }) = op.body
+            {
                 assert_eq!(auth.len(), 1);
-                assert!(matches!(auth[0].credentials, SorobanCredentials::SourceAccount));
+                assert!(matches!(
+                    auth[0].credentials,
+                    SorobanCredentials::SourceAccount
+                ));
             } else {
                 panic!("Failed")
             }
@@ -199,7 +215,6 @@ mod test {
 
     #[test]
     fn simulation_failed() {
-
         let source_account = Rc::new(RefCell::new(
             Account::new(
                 "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
@@ -230,8 +245,9 @@ mod test {
             "error": "This is an error",
             "latestLedger": 2552139
           }
-        
-        )).unwrap();
+
+        ))
+        .unwrap();
 
         let r = assemble_transaction(tx, network, simulation);
         assert!(matches!(r, Err(Error::SimulationFailed)));
@@ -261,9 +277,7 @@ mod test {
         builder.add_operation(op);
         let tx = builder.build();
 
-        assert!(
-            !is_soroban_transaction(&tx),
-        );
+        assert!(!is_soroban_transaction(&tx),);
 
         let simulation: SimulateTransactionResponse = serde_json::from_value(json!(
          {
@@ -284,8 +298,7 @@ mod test {
               "memBytes": "1295756"
             },
             "latestLedger": 2552139
-          }
-        
+        }
         )).unwrap();
 
         let r = assemble_transaction(tx, network, simulation);
@@ -320,9 +333,7 @@ mod test {
         builder.add_operation(op);
         let tx = builder.build();
 
-        assert!(
-            is_soroban_transaction(&tx),
-        );
+        assert!(is_soroban_transaction(&tx),);
     }
 
     #[test]
@@ -354,9 +365,7 @@ mod test {
         builder.add_operation(op);
         let tx = builder.build();
 
-        assert!(
-            !is_soroban_transaction(&tx),
-        );
+        assert!(!is_soroban_transaction(&tx),);
     }
     #[test]
     fn is_soroban_transaction_no_ops() {
@@ -373,6 +382,6 @@ mod test {
         builder.fee(1000u32).set_timeout(30).unwrap();
         let tx = builder.build();
 
-        assert!(!is_soroban_transaction(&tx), );
+        assert!(!is_soroban_transaction(&tx),);
     }
 }
