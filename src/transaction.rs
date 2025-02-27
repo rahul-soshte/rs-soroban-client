@@ -15,6 +15,7 @@ pub use stellar_baselib::{
     },
 };
 
+
 /// Assemble a [transaction](Transaction) with a [simulation](SimulateTransactionResponse)
 pub fn assemble_transaction(
     tx: Transaction,
@@ -188,8 +189,6 @@ mod test {
 
             let op = ops[0].clone();
             if let OperationBody::InvokeHostFunction(InvokeHostFunctionOp { host_function:_, auth }) = op.body {
-                //
-                //
                 assert_eq!(auth.len(), 1);
                 assert!(matches!(auth[0].credentials, SorobanCredentials::SourceAccount));
             } else {
