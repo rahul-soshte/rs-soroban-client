@@ -37,7 +37,6 @@ pub fn assemble_transaction(
     // Calculate fees
     let classic_fee_num = tx.fee;
 
-    // FIXME Check if some auth were already provided in the tx
     let auth = if let Some((_, a)) = simulation.to_result() {
         Some(a.try_into().expect("Cannot convert Vec to VecM"))
     } else {
@@ -54,6 +53,7 @@ pub fn assemble_transaction(
     let soroban_tx_data = simulation
         .to_transaction_data()
         .expect("No transaction data");
+
     // Create a transaction builder with updated fees and Soroban data
     let source_acc = Rc::new(RefCell::new(
         Account::new(
@@ -76,7 +76,13 @@ pub fn assemble_transaction(
             tx_builder.add_operation(
                 stellar_baselib::operation::Operation::invoke_host_function(
                     invoke_host_function_op.host_function,
-                    auth,
+                    // Ignore the simulation auth entries if the transaction already contained
+                    // auth.
+                    if invoke_host_function_op.auth.is_empty() {
+                        auth
+                    } else {
+                        Some(invoke_host_function_op.auth)
+                    },
                     None,
                 )
                 .map_err(|_| Error::TransactionError)?,
@@ -114,7 +120,8 @@ mod test {
         xdr::{
             AccountId, CreateAccountOp, Hash, HostFunction, InvokeContractArgs,
             InvokeHostFunctionOp, Operation, OperationBody, PublicKey, ScAddress, ScSymbol, ScVal,
-            SorobanAuthorizationEntry, StringM, Uint256, VecM,
+            SorobanAuthorizationEntry, SorobanAuthorizedFunction, SorobanAuthorizedInvocation,
+            SorobanCredentials, StringM, Uint256, VecM,
         },
     };
 
@@ -122,6 +129,89 @@ mod test {
         error::Error,
         transaction::{assemble_transaction, is_soroban_transaction, SimulateTransactionResponse},
     };
+
+    #[test]
+    fn tx_with_auth() {
+        let source_account = Rc::new(RefCell::new(
+            Account::new(
+                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                "0",
+            )
+            .unwrap(),
+        ));
+        let network = "Network for tests";
+
+        let contract_address = ScAddress::Contract(Hash([0; 32]));
+        let function_name = ScSymbol::from(StringM::from_str("test").unwrap());
+        let auth = SorobanAuthorizationEntry {
+            credentials: SorobanCredentials::SourceAccount,
+            root_invocation: SorobanAuthorizedInvocation {
+                function: SorobanAuthorizedFunction::ContractFn(InvokeContractArgs {
+                    contract_address,
+                    function_name,
+                    args: VecM::<_>::try_from(Vec::new()).unwrap(),
+                }),
+                sub_invocations: VecM::<_>::try_from(Vec::new()).unwrap(),
+            },
+        };
+
+        let contract_address = ScAddress::Contract(Hash([0; 32]));
+        let function_name = ScSymbol::from(StringM::from_str("test").unwrap());
+        let op = Operation {
+            source_account: None,
+            body: OperationBody::InvokeHostFunction(InvokeHostFunctionOp {
+                host_function: HostFunction::InvokeContract(InvokeContractArgs {
+                    contract_address,
+                    function_name,
+                    args: VecM::<ScVal>::try_from(Vec::new()).unwrap(),
+                }),
+                auth: VecM::<SorobanAuthorizationEntry>::try_from(vec![auth]).unwrap(),
+            }),
+        };
+
+        let mut builder = TransactionBuilder::new(source_account, network, None);
+        builder.fee(1000u32).set_timeout(30).unwrap();
+        builder.add_operation(op);
+        let tx = builder.build();
+        let simulation: SimulateTransactionResponse = serde_json::from_value(json!(
+        {
+            "transactionData": "AAAAAAAAAAIAAAAGAAAAAcwD/nT9D7Dc2LxRdab+2vEUF8B+XoN7mQW21oxPT8ALAAAAFAAAAAEAAAAHy8vNUZ8vyZ2ybPHW0XbSrRtP7gEWsJ6zDzcfY9P8z88AAAABAAAABgAAAAHMA/50/Q+w3Ni8UXWm/trxFBfAfl6De5kFttaMT0/ACwAAABAAAAABAAAAAgAAAA8AAAAHQ291bnRlcgAAAAASAAAAAAAAAAAg4dbAxsGAGICfBG3iT2cKGYQ6hK4sJWzZ6or1C5v6GAAAAAEAHfKyAAAFiAAAAIgAAAAAAAAAAw==",
+            "minResourceFee": "90353",
+            "events": [
+            ],
+            "results": [
+              {
+                "auth": [],
+                "xdr": "AAAAAwAAAAw="
+              }
+            ],
+            "cost": {
+              "cpuInsns": "1635562",
+              "memBytes": "1295756"
+            },
+            "latestLedger": 2552139
+        }
+        )).unwrap();
+
+        let mut r = assemble_transaction(tx, network, simulation).unwrap();
+        let txr = r.build();
+        if let Some(ops) = txr.operations {
+            let op = ops[0].clone();
+            if let OperationBody::InvokeHostFunction(InvokeHostFunctionOp {
+                host_function: _,
+                auth,
+            }) = op.body
+            {
+                assert_eq!(auth.len(), 1);
+                assert!(matches!(
+                    auth[0].credentials,
+                    SorobanCredentials::SourceAccount
+                ));
+            } else {
+                panic!("Failed")
+            }
+        }
+    }
 
     #[test]
     fn simulation_failed() {
@@ -208,7 +298,7 @@ mod test {
               "memBytes": "1295756"
             },
             "latestLedger": 2552139
-          }
+        }
         )).unwrap();
 
         let r = assemble_transaction(tx, network, simulation);
