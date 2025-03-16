@@ -770,7 +770,7 @@ async fn simulate_transaction() {
         let source_account = Rc::new(RefCell::new(
             Account::new(
                 "GAQODVWAY3AYAGEAT4CG3YSPM4FBTBB2QSXCYJLM3HVIV5ILTP5BRXCD",
-                "10911149667123217",
+                "10911149667123216",
             )
             .unwrap(),
         ));
@@ -864,7 +864,7 @@ async fn simulate_transaction() {
         let source_account = Rc::new(RefCell::new(
             Account::new(
                 "GAQODVWAY3AYAGEAT4CG3YSPM4FBTBB2QSXCYJLM3HVIV5ILTP5BRXCD",
-                "10911149667123215",
+                "10911149667123214",
             )
             .unwrap(),
         ));
@@ -995,7 +995,7 @@ async fn simulate_transaction() {
         let source_account = Rc::new(RefCell::new(
             Account::new(
                 "GD7UIMVKR6RJ3HNJE2PFNHH2EWAUJYZDPBHUL74W2CM7J6A3YDSXGPJN",
-                "4311013293817858",
+                "4311013293817857",
             )
             .unwrap(),
         ));
@@ -1078,7 +1078,7 @@ async fn simulate_transaction() {
         let source_account = Rc::new(RefCell::new(
             Account::new(
                 "GD7UIMVKR6RJ3HNJE2PFNHH2EWAUJYZDPBHUL74W2CM7J6A3YDSXGPJN",
-                "4311013293817859",
+                "4311013293817858",
             )
             .unwrap(),
         ));
@@ -1160,7 +1160,7 @@ async fn simulate_transaction() {
         let source_account = Rc::new(RefCell::new(
             Account::new(
                 "GD7UIMVKR6RJ3HNJE2PFNHH2EWAUJYZDPBHUL74W2CM7J6A3YDSXGPJN",
-                "4311013293817860",
+                "4311013293817859",
             )
             .unwrap(),
         ));
@@ -1407,7 +1407,7 @@ async fn send_transaction() {
 #[tokio::test]
 async fn prepare_transaction() {
     {
-        let tx_xdr = "AAAAAgAAAAAg4dbAxsGAGICfBG3iT2cKGYQ6hK4sJWzZ6or1C5v6GAAAAGQAJsOiAAAAEQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABzAP+dP0PsNzYvFF1pv7a8RQXwH5eg3uZBbbWjE9PwAsAAAAJaW5jcmVtZW50AAAAAAAAAgAAABIAAAAAAAAAACDh1sDGwYAYgJ8EbeJPZwoZhDqEriwlbNnqivULm/oYAAAAAwAAAAMAAAAAAAAAAAAAAAA=";
+        let tx_xdr = "AAAAAgAAAAAg4dbAxsGAGICfBG3iT2cKGYQ6hK4sJWzZ6or1C5v6GAAAAGQAJsOiAAAAEgAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABzAP+dP0PsNzYvFF1pv7a8RQXwH5eg3uZBbbWjE9PwAsAAAAJaW5jcmVtZW50AAAAAAAAAgAAABIAAAAAAAAAACDh1sDGwYAYgJ8EbeJPZwoZhDqEriwlbNnqivULm/oYAAAAAwAAAAMAAAAAAAAAAAAAAAA=";
         let request = json!(
         {
           "jsonrpc": "2.0",
@@ -1474,6 +1474,7 @@ async fn prepare_transaction() {
         tx_builder.fee(100u32);
 
         let tx = tx_builder.build();
+        dbg!(&tx);
         let xdr = tx
             .to_envelope()
             .unwrap()
@@ -1484,7 +1485,7 @@ async fn prepare_transaction() {
         let (s, _m) = get_mocked_server(request, response).await;
 
         let simulation = s.simulate_transaction(tx.clone(), None).await.unwrap();
-        let txresult = s.prepare_transaction(tx.clone(), network).await.unwrap();
+        let txresult = s.prepare_transaction(tx.clone()).await.unwrap();
 
         assert_eq!(txresult.fee, tx.fee + 90353);
         assert_eq!(txresult.soroban_data, simulation.to_transaction_data());
@@ -1544,7 +1545,7 @@ async fn prepare_transaction() {
         };
         let restore_data_xdr = soroban_data.to_xdr_base64(Limits::none()).unwrap();
 
-        let tx_xdr = "AAAAAgAAAAAg4dbAxsGAGICfBG3iT2cKGYQ6hK4sJWzZ6or1C5v6GAAAAGQAJsOiAAAAEQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABzAP+dP0PsNzYvFF1pv7a8RQXwH5eg3uZBbbWjE9PwAsAAAAJaW5jcmVtZW50AAAAAAAAAgAAABIAAAAAAAAAACDh1sDGwYAYgJ8EbeJPZwoZhDqEriwlbNnqivULm/oYAAAAAwAAAAMAAAAAAAAAAAAAAAA=";
+        let tx_xdr = "AAAAAgAAAAAg4dbAxsGAGICfBG3iT2cKGYQ6hK4sJWzZ6or1C5v6GAAAAGQAJsOiAAAAEgAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABzAP+dP0PsNzYvFF1pv7a8RQXwH5eg3uZBbbWjE9PwAsAAAAJaW5jcmVtZW50AAAAAAAAAgAAABIAAAAAAAAAACDh1sDGwYAYgJ8EbeJPZwoZhDqEriwlbNnqivULm/oYAAAAAwAAAAMAAAAAAAAAAAAAAAA=";
         let request = json!(
                 {
                   "jsonrpc": "2.0",
@@ -1603,7 +1604,7 @@ async fn prepare_transaction() {
         assert_eq!(xdr, tx_xdr);
 
         let (s, _m) = get_mocked_server(request, response).await;
-        let txresult = s.prepare_transaction(tx, network).await;
+        let txresult = s.prepare_transaction(tx).await;
 
         if let Err(Error::RestorationRequired(min_fee, transaction_data)) = txresult {
             assert_eq!(min_fee, 12345);

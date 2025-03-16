@@ -1,6 +1,5 @@
-use std::{cell::RefCell, rc::Rc};
-
 use crate::{error::Error, soroban_rpc::*};
+use stellar_baselib::operation::Operation;
 pub use stellar_baselib::{
     account::Account,
     account::AccountBehavior,
@@ -10,17 +9,16 @@ pub use stellar_baselib::{
     transaction_builder::TransactionBuilder,
     transaction_builder::TransactionBuilderBehavior,
     xdr::{
-        DiagnosticEvent, Limits, OperationBody, OperationType, ReadXdr, ScVal,
-        SorobanAuthorizationEntry, VecM,
+        DiagnosticEvent, InvokeHostFunctionOp, Limits, OperationBody, OperationType, ReadXdr,
+        ScVal, SorobanAuthorizationEntry, VecM,
     },
 };
 
 /// Assemble a [transaction](Transaction) with a [simulation](SimulateTransactionResponse)
 pub fn assemble_transaction(
     tx: Transaction,
-    network_passphrase: &str,
     simulation: SimulateTransactionResponse,
-) -> Result<TransactionBuilder, Error> {
+) -> Result<Transaction, Error> {
     // Ensure the transaction is a valid Soroban transaction
     if !is_soroban_transaction(&tx) {
         return Err(Error::InvalidSorobanTransaction);
@@ -34,11 +32,8 @@ pub fn assemble_transaction(
         return Err(Error::RestorationRequired(min_fee, restore));
     }
 
-    // Calculate fees
-    let classic_fee_num = tx.fee;
-
-    let auth = if let Some((_, a)) = simulation.to_result() {
-        Some(a.try_into().expect("Cannot convert Vec to VecM"))
+    let sim_auth = if let Some((_, a)) = simulation.to_result() {
+        Some(a)
     } else {
         None
     };
@@ -54,43 +49,29 @@ pub fn assemble_transaction(
         .to_transaction_data()
         .expect("No transaction data");
 
-    // Create a transaction builder with updated fees and Soroban data
-    let source_acc = Rc::new(RefCell::new(
-        Account::new(
-            &tx.source.ok_or(Error::AccountNotFound)?,
-            &tx.sequence.ok_or(Error::AccountNotFound)?,
-        )
-        .expect("Failed to copy source account data"),
-    ));
-
-    let mut tx_builder =
-        TransactionBuilder::new(source_acc.clone(), network_passphrase, tx.time_bounds);
-
-    tx_builder
-        .fee(classic_fee_num + min_resource_fee)
-        .set_soroban_data(soroban_tx_data);
+    let mut ntx = tx.clone();
+    ntx.fee += min_resource_fee;
+    ntx.soroban_data = Some(soroban_tx_data);
 
     // Process the operation
     if let Some(ops) = tx.operations {
-        if let OperationBody::InvokeHostFunction(invoke_host_function_op) = ops[0].clone().body {
-            tx_builder.add_operation(
-                stellar_baselib::operation::Operation::invoke_host_function(
-                    invoke_host_function_op.host_function,
-                    // Ignore the simulation auth entries if the transaction already contained
-                    // auth.
-                    if invoke_host_function_op.auth.is_empty() {
-                        auth
-                    } else {
-                        Some(invoke_host_function_op.auth)
-                    },
-                    None,
-                )
-                .map_err(|_| Error::TransactionError)?,
-            );
+        if let OperationBody::InvokeHostFunction(InvokeHostFunctionOp {
+            host_function,
+            auth,
+        }) = ops[0].clone().body
+        {
+            let checked_auth = if auth.is_empty() {
+                sim_auth
+            } else {
+                Some(auth.into())
+            };
+            ntx.operations = Some(vec![Operation::new()
+                .invoke_host_function(host_function, checked_auth)
+                .map_err(|_| Error::TransactionError)?]);
         }
     }
 
-    Ok(tx_builder)
+    Ok(ntx)
 }
 
 fn is_soroban_transaction(tx: &Transaction) -> bool {
@@ -193,8 +174,7 @@ mod test {
         }
         )).unwrap();
 
-        let mut r = assemble_transaction(tx, network, simulation).unwrap();
-        let txr = r.build();
+        let txr = assemble_transaction(tx, simulation).unwrap();
         if let Some(ops) = txr.operations {
             let op = ops[0].clone();
             if let OperationBody::InvokeHostFunction(InvokeHostFunctionOp {
@@ -249,7 +229,7 @@ mod test {
         ))
         .unwrap();
 
-        let r = assemble_transaction(tx, network, simulation);
+        let r = assemble_transaction(tx, simulation);
         assert!(matches!(r, Err(Error::SimulationFailed)));
     }
 
@@ -301,7 +281,7 @@ mod test {
         }
         )).unwrap();
 
-        let r = assemble_transaction(tx, network, simulation);
+        let r = assemble_transaction(tx, simulation);
         assert!(matches!(r, Err(Error::InvalidSorobanTransaction)));
     }
 
