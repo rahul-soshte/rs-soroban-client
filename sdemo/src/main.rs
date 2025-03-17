@@ -3,18 +3,18 @@ use soroban_client::contract;
 use soroban_client::contract::ContractBehavior;
 use soroban_client::keypair::KeypairBehavior;
 use soroban_client::network::{NetworkPassphrase, Networks};
-use soroban_client::soroban_rpc::TransactionStatus;
+use soroban_client::soroban_rpc::{SendTransactionStatus, TransactionStatus};
 use soroban_client::transaction::Account;
 use soroban_client::transaction::TransactionBehavior;
 use soroban_client::transaction_builder::TransactionBuilder;
 use soroban_client::transaction_builder::TransactionBuilderBehavior;
 use soroban_client::transaction_builder::TIMEOUT_INFINITE;
+use soroban_client::EventFilter;
 use soroban_client::Options;
 use soroban_client::{keypair::Keypair, Server};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
-use soroban_client::EventFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -49,9 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .set_timeout(TIMEOUT_INFINITE)?
             .build();
 
-    let tmp = server
-        .prepare_transaction(contract_tx, Networks::testnet())
-        .await;
+    let tmp = server.prepare_transaction(contract_tx).await;
     contract_tx = tmp.unwrap();
     // let before_signing = contract_tx.to_envelope().unwrap().to_xdr_base64(Limits::none());
     // println!("Before Signing {:?}", before_signing);
@@ -69,6 +67,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Start polling for transaction completion
             let hash = response.hash.clone();
+            if response.status == SendTransactionStatus::Error {
+                dbg!(&response);
+                return Err("tx error".into());
+            }
 
             loop {
                 let response = server.get_transaction(&hash).await;

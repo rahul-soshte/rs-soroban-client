@@ -8,14 +8,12 @@ use std::option::Option;
 use std::{collections::HashMap, str::FromStr};
 use stellar_baselib::account::Account;
 use stellar_baselib::account::AccountBehavior;
-use stellar_baselib::hashing::HashingBehavior;
-use stellar_baselib::hashing::Sha256Hasher;
+use stellar_baselib::address::{Address, AddressTrait};
 use stellar_baselib::keypair::KeypairBehavior;
 use stellar_baselib::transaction::{Transaction, TransactionBehavior};
-use stellar_baselib::transaction_builder::TransactionBuilderBehavior;
 use stellar_baselib::xdr::{
-    ContractDataDurability, Hash, LedgerEntryData, LedgerKey, LedgerKeyAccount,
-    LedgerKeyContractData, Limits, ScAddress, ScVal, WriteXdr,
+    ContractDataDurability, LedgerEntryData, LedgerKey, LedgerKeyAccount, LedgerKeyContractData,
+    Limits, ScVal, WriteXdr,
 };
 
 /// The default transaction submission timeout for RPC requests, in milliseconds.
@@ -594,17 +592,14 @@ impl Server {
         key: ScVal,
         durability: Durability,
     ) -> Result<LedgerEntryResult, Error> {
-        let hex_contract_val = &hex::encode(Sha256Hasher::hash(contract.as_bytes()));
-        let hex_id = hex_contract_val.as_bytes();
-        let mut array = [0u8; 32];
-        array.copy_from_slice(&hex_id[0..32]);
-
-        let sc_address =
-            ScAddress::Contract(Hash::from_str(hex_contract_val).map_err(|_| Error::XdrError)?);
+        let sc_address = Address::new(contract)
+            .map_err(|_| Error::ContractDataNotFound)?
+            .to_sc_address()
+            .map_err(|_| Error::ContractDataNotFound)?;
 
         let contract_key = LedgerKey::ContractData(LedgerKeyContractData {
             key: key.clone(),
-            contract: sc_address.clone(),
+            contract: sc_address,
             durability: durability.to_xdr(),
         });
 
@@ -638,11 +633,10 @@ impl Server {
     pub async fn prepare_transaction(
         &self,
         transaction: Transaction,
-        network_passphrase: &str,
     ) -> Result<Transaction, Error> {
         let sim_response = self.simulate_transaction(transaction.clone(), None).await?;
 
-        Ok(assemble_transaction(transaction, network_passphrase, sim_response)?.build())
+        assemble_transaction(transaction, sim_response)
     }
 
     /// # Fund the account using the network's [friendbot] faucet (testnet)
