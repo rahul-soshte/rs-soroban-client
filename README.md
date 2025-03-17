@@ -17,7 +17,7 @@ Add this to your Cargo.toml:
 
 ```toml
 [dependencies]
-soroban-client = "0.4.4"
+soroban-client = "0.4.5"
 ```
 
 And this to your code:
@@ -90,6 +90,15 @@ async fn main() {
         }
     }
 }
+```
+
+
+## Running Examples
+
+```bash
+cargo run --example create_account
+cargo run --example payment
+cargo run --example deploy
 ```
 
 ## Getting Help
