@@ -17,7 +17,7 @@ Add this to your Cargo.toml:
 
 ```toml
 [dependencies]
-soroban-client = "0.4.5"
+soroban-client = "0.4.6"
 ```
 
 And this to your code:
@@ -28,7 +28,7 @@ use soroban_client::*;
 
 ## Crate Docs
 
-([Link](https://docs.rs/soroban-client/latest/soroban_client/))
+[Docs Link](https://docs.rs/soroban-client/latest/soroban_client/)
 
 ## Description
 
@@ -40,59 +40,6 @@ use soroban_client::*;
 
 This library will enable developers to seamlessly integrate Soroban functionality into their Rust-based applications and services. Most of the groundwork has already been laid by the Stellar team by building the xdr library and  rust stellar strkey implementation. This particular library has been the missing piece for soroban and the rust community at large in the stellar ecosystem.
 
-
-## Sample Usage of the library
-
-```rust
-// Submitting a transaction
-use soroban_client::Server;
-use soroban_client::Networks;
-use soroban_client::TransactionBuilder;
-use soroban_client::Keypair;
-
-#[tokio::main]
-async fn main() {
-    let server = Server::new("http://localhost:8000/soroban/rpc").unwrap();
-    let public_key = "..."; // Replace with the actual public key
-    let secret_string = "..."; // Replace with the actual secret key
-    let contract_id = "..."; // Replace with the actual contract ID
-
-    let account = server.get_account(public_key).await.unwrap();
-
-    // Fee hardcoded for this example.
-    let fee = 100;
-
-    let contract = Contract::new(contract_id).unwrap();
-
-    let mut transaction = TransactionBuilder::new(&account, fee, Networks::STANDALONE)
-        .add_operation(
-            // An operation to call increment on the contract
-            contract.call("increment").unwrap(),
-        )
-        .set_timeout(30)
-        .build();
-
-    // Simulate the transaction to discover the storage footprint, and update the
-    // transaction to include it. If you already know the storage footprint you
-    // can use `add_footprint` to add it yourself, skipping this step.
-    transaction = server.prepare_transaction(transaction).await.unwrap();
-
-    // Sign the transaction
-    let secret_key = Keypair::from_secret(secret_string).unwrap();
-    transaction.sign(&secret_key);
-
-    match server.send_transaction(transaction).await {
-        Ok(transaction_result) => {
-            println!("{:?}", transaction_result);
-        }
-        Err(err) => {
-            eprintln!("{:?}", err);
-        }
-    }
-}
-```
-
-
 ## Running Examples
 
 ```bash
@@ -100,6 +47,11 @@ cargo run --example create_account
 cargo run --example payment
 cargo run --example deploy
 ```
+
+## Sample Demo of the library
+
+[Demo Link](sdemo/src/main.rs)
+
 
 ## Getting Help
 
