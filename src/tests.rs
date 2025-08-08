@@ -817,7 +817,7 @@ async fn simulate_transaction() {
         if let Some(tx_data) = txresult.to_transaction_data().as_ref() {
             assert_eq!(tx_data.resource_fee, 3);
             assert_eq!(tx_data.resources.instructions, 1962674);
-            assert_eq!(tx_data.resources.read_bytes, 1416);
+            assert_eq!(tx_data.resources.disk_read_bytes, 1416);
             assert_eq!(tx_data.resources.write_bytes, 136);
         } else {
             panic!("Simulation failed")
@@ -1538,7 +1538,7 @@ async fn prepare_transaction() {
                     read_write: vec![contract_data].try_into().unwrap(),
                 },
                 instructions: 0,
-                read_bytes: 0,
+                disk_read_bytes: 0,
                 write_bytes: 0,
             },
             resource_fee: 0,
@@ -2308,9 +2308,9 @@ async fn get_ledgers() {
         tx_processing: _,
         upgrades_processing: _,
         scp_info: _,
-        total_byte_size_of_bucket_list,
-        evicted_temporary_ledger_keys: _,
-        evicted_persistent_ledger_entries: _,
+        total_byte_size_of_live_soroban_state,
+        evicted_keys: _,
+        unused: _,
     })) = l1.to_metadata()
     {
         let GeneralizedTransactionSet::V1(TransactionSetV1 {
@@ -2323,7 +2323,7 @@ async fn get_ledgers() {
                 .unwrap()
                 .as_slice()
         );
-        assert_eq!(total_byte_size_of_bucket_list, 13960684);
+        assert_eq!(total_byte_size_of_live_soroban_state, 13960684);
     } else {
         panic!("No metadata")
     }
