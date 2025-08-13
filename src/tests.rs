@@ -214,7 +214,7 @@ async fn get_account() {
         .expect("Should not fail")
         .xdr_account_id();
     let key = LedgerKey::Account(LedgerKeyAccount { account_id });
-    let account_entry = "AAAAAAAAAABzdv3ojkzWHMD7KUoXhrPx0GH18vHKV0ZfqpMiEblG1g3gtpoE608YAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAADAAAAAAAAAAQAAAAAY9D8iA";
+    let account_entry = "AAAAAAAAAABzdv3ojkzWHMD7KUoXhrPx0GH18vHKV0ZfqpMiEblG1gAAAFwVZH3YAAABdgAAAQgAAAAFAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAADAAAAAAAOZYQAAAAAaJsIJQ==";
 
     let value = base64::prelude::BASE64_STANDARD.encode(key.to_xdr(Limits::none()).unwrap());
     let request = json!(
@@ -244,7 +244,7 @@ async fn get_account() {
 
     let (s, _m) = get_mocked_server(request, response).await;
     let result = s.get_account(address).await.expect("Should not fail");
-    assert_eq!(result.sequence_number(), "1");
+    assert_eq!(result.sequence_number(), "1606317768968");
     assert_eq!(result.account_id(), address);
 }
 
@@ -2022,7 +2022,7 @@ async fn request_airdrop() {
         let key = LedgerKey::Account(LedgerKeyAccount {
             account_id: account_id_xdr,
         });
-        let account_entry = "AAAAAAAAAABzdv3ojkzWHMD7KUoXhrPx0GH18vHKV0ZfqpMiEblG1g3gtpoE608YAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAADAAAAAAAAAAQAAAAAY9D8iA";
+        let account_entry = "AAAAAAAAAABzdv3ojkzWHMD7KUoXhrPx0GH18vHKV0ZfqpMiEblG1gAAAFwVZH3YAAABdgAAAQgAAAAFAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAADAAAAAAAOZYQAAAAAaJsIJQ==";
 
         let value = base64::prelude::BASE64_STANDARD.encode(key.to_xdr(Limits::none()).unwrap());
         let request = json!(
@@ -2059,7 +2059,7 @@ async fn request_airdrop() {
             .await;
 
         let result = s.request_airdrop(account_id).await.unwrap();
-        assert_eq!(result.sequence_number(), "1");
+        assert_eq!(result.sequence_number(), "1606317768968");
         assert_eq!(result.account_id(), account_id);
     }
 }
@@ -2421,7 +2421,14 @@ async fn native_check_balance_testnet() {
 }
 #[tokio::test]
 async fn native_events_testnet() {
-    let rpc = Server::new("https://soroban-testnet.stellar.org", Options::default()).unwrap();
+    let rpc = Server::new(
+        "https://soroban-testnet.stellar.org",
+        Options {
+            timeout: 30,
+            ..Default::default()
+        },
+    )
+    .unwrap();
 
     let native_id = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
 
@@ -2432,7 +2439,7 @@ async fn native_events_testnet() {
     let native = ScVal::String(ScString("native".try_into().unwrap()));
     let events = rpc
         .get_events(
-            crate::Pagination::From(ledger - 100),
+            crate::Pagination::From(ledger - 10),
             vec![EventFilter::new(crate::soroban_rpc::EventType::All)
                 .contract(native_id)
                 .topic(vec![
