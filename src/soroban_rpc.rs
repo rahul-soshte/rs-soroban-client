@@ -621,11 +621,21 @@ impl TransactionDetails {
             let r = TransactionMeta::from_xdr_base64(result, Limits::none());
             if let Ok(e) = r {
                 let mut return_value = None;
-                if let TransactionMeta::V3(v3) = &e {
-                    if let Some(v) = &v3.soroban_meta {
-                        return_value = Some(v.return_value.clone());
+                match &e {
+                    TransactionMeta::V3(v3) => {
+                        if let Some(v) = &v3.soroban_meta {
+                            return_value = Some(v.return_value.clone());
+                        }
                     }
-                }
+                    TransactionMeta::V4(v4) => {
+                        if let Some(v) = &v4.soroban_meta {
+                            if let Some(r) = v.return_value.clone() {
+                                return_value = Some(r);
+                            }
+                        }
+                    }
+                    _ => {}
+                };
                 Some((e, return_value))
             } else {
                 None

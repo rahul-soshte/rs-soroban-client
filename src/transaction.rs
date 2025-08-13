@@ -24,8 +24,8 @@ pub fn assemble_transaction(
         return Err(Error::InvalidSorobanTransaction);
     }
 
-    if let Some(_error) = simulation.error {
-        return Err(Error::SimulationFailed);
+    if let Some(error) = simulation.error {
+        return Err(Error::SimulationFailed(error));
     }
 
     if let Some((min_fee, restore)) = simulation.to_restore_transaction_data() {
@@ -230,7 +230,7 @@ mod test {
         .unwrap();
 
         let r = assemble_transaction(tx, simulation);
-        assert!(matches!(r, Err(Error::SimulationFailed)));
+        assert!(matches!(r, Err(Error::SimulationFailed(_))));
     }
 
     #[test]
