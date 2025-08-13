@@ -629,9 +629,7 @@ impl TransactionDetails {
                     }
                     TransactionMeta::V4(v4) => {
                         if let Some(v) = &v4.soroban_meta {
-                            if let Some(r) = v.return_value.clone() {
-                                return_value = Some(r);
-                            }
+                            return_value = v.return_value.clone();
                         }
                     }
                     _ => {}
