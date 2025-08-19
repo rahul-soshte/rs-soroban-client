@@ -24,8 +24,8 @@ pub fn assemble_transaction(
         return Err(Error::InvalidSorobanTransaction);
     }
 
-    if let Some(_error) = simulation.error {
-        return Err(Error::SimulationFailed);
+    if let Some(error) = simulation.error {
+        return Err(Error::SimulationFailed(error));
     }
 
     if let Some((min_fee, restore)) = simulation.to_restore_transaction_data() {
@@ -99,7 +99,7 @@ mod test {
         account::{Account, AccountBehavior},
         transaction_builder::{TransactionBuilder, TransactionBuilderBehavior},
         xdr::{
-            AccountId, CreateAccountOp, Hash, HostFunction, InvokeContractArgs,
+            AccountId, ContractId, CreateAccountOp, Hash, HostFunction, InvokeContractArgs,
             InvokeHostFunctionOp, Operation, OperationBody, PublicKey, ScAddress, ScSymbol, ScVal,
             SorobanAuthorizationEntry, SorobanAuthorizedFunction, SorobanAuthorizedInvocation,
             SorobanCredentials, StringM, Uint256, VecM,
@@ -122,7 +122,7 @@ mod test {
         ));
         let network = "Network for tests";
 
-        let contract_address = ScAddress::Contract(Hash([0; 32]));
+        let contract_address = ScAddress::Contract(ContractId(Hash([0; 32])));
         let function_name = ScSymbol::from(StringM::from_str("test").unwrap());
         let auth = SorobanAuthorizationEntry {
             credentials: SorobanCredentials::SourceAccount,
@@ -136,7 +136,7 @@ mod test {
             },
         };
 
-        let contract_address = ScAddress::Contract(Hash([0; 32]));
+        let contract_address = ScAddress::Contract(ContractId(Hash([0; 32])));
         let function_name = ScSymbol::from(StringM::from_str("test").unwrap());
         let op = Operation {
             source_account: None,
@@ -208,7 +208,7 @@ mod test {
             source_account: None,
             body: OperationBody::InvokeHostFunction(InvokeHostFunctionOp {
                 host_function: HostFunction::InvokeContract(InvokeContractArgs {
-                    contract_address: ScAddress::Contract(Hash([0; 32])),
+                    contract_address: ScAddress::Contract(ContractId(Hash([0; 32]))),
                     function_name: ScSymbol::from(StringM::from_str("test").unwrap()),
                     args: VecM::<ScVal>::try_from(Vec::new()).unwrap(),
                 }),
@@ -230,7 +230,7 @@ mod test {
         .unwrap();
 
         let r = assemble_transaction(tx, simulation);
-        assert!(matches!(r, Err(Error::SimulationFailed)));
+        assert!(matches!(r, Err(Error::SimulationFailed(_))));
     }
 
     #[test]
@@ -300,7 +300,7 @@ mod test {
             source_account: None,
             body: OperationBody::InvokeHostFunction(InvokeHostFunctionOp {
                 host_function: HostFunction::InvokeContract(InvokeContractArgs {
-                    contract_address: ScAddress::Contract(Hash([0; 32])),
+                    contract_address: ScAddress::Contract(ContractId(Hash([0; 32]))),
                     function_name: ScSymbol::from(StringM::from_str("test").unwrap()),
                     args: VecM::<ScVal>::try_from(Vec::new()).unwrap(),
                 }),
@@ -331,7 +331,7 @@ mod test {
             source_account: None,
             body: OperationBody::InvokeHostFunction(InvokeHostFunctionOp {
                 host_function: HostFunction::InvokeContract(InvokeContractArgs {
-                    contract_address: ScAddress::Contract(Hash([0; 32])),
+                    contract_address: ScAddress::Contract(ContractId(Hash([0; 32]))),
                     function_name: ScSymbol::from(StringM::from_str("test").unwrap()),
                     args: VecM::<ScVal>::try_from(Vec::new()).unwrap(),
                 }),

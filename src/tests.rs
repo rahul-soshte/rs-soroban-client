@@ -214,7 +214,7 @@ async fn get_account() {
         .expect("Should not fail")
         .xdr_account_id();
     let key = LedgerKey::Account(LedgerKeyAccount { account_id });
-    let account_entry = "AAAAAAAAAABzdv3ojkzWHMD7KUoXhrPx0GH18vHKV0ZfqpMiEblG1g3gtpoE608YAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAADAAAAAAAAAAQAAAAAY9D8iA";
+    let account_entry = "AAAAAAAAAABzdv3ojkzWHMD7KUoXhrPx0GH18vHKV0ZfqpMiEblG1gAAAFwVZH3YAAABdgAAAQgAAAAFAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAADAAAAAAAOZYQAAAAAaJsIJQ==";
 
     let value = base64::prelude::BASE64_STANDARD.encode(key.to_xdr(Limits::none()).unwrap());
     let request = json!(
@@ -244,7 +244,7 @@ async fn get_account() {
 
     let (s, _m) = get_mocked_server(request, response).await;
     let result = s.get_account(address).await.expect("Should not fail");
-    assert_eq!(result.sequence_number(), "1");
+    assert_eq!(result.sequence_number(), "1606317768968");
     assert_eq!(result.account_id(), address);
 }
 
@@ -817,7 +817,7 @@ async fn simulate_transaction() {
         if let Some(tx_data) = txresult.to_transaction_data().as_ref() {
             assert_eq!(tx_data.resource_fee, 3);
             assert_eq!(tx_data.resources.instructions, 1962674);
-            assert_eq!(tx_data.resources.read_bytes, 1416);
+            assert_eq!(tx_data.resources.disk_read_bytes, 1416);
             assert_eq!(tx_data.resources.write_bytes, 136);
         } else {
             panic!("Simulation failed")
@@ -1538,7 +1538,7 @@ async fn prepare_transaction() {
                     read_write: vec![contract_data].try_into().unwrap(),
                 },
                 instructions: 0,
-                read_bytes: 0,
+                disk_read_bytes: 0,
                 write_bytes: 0,
             },
             resource_fee: 0,
@@ -2022,7 +2022,7 @@ async fn request_airdrop() {
         let key = LedgerKey::Account(LedgerKeyAccount {
             account_id: account_id_xdr,
         });
-        let account_entry = "AAAAAAAAAABzdv3ojkzWHMD7KUoXhrPx0GH18vHKV0ZfqpMiEblG1g3gtpoE608YAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAADAAAAAAAAAAQAAAAAY9D8iA";
+        let account_entry = "AAAAAAAAAABzdv3ojkzWHMD7KUoXhrPx0GH18vHKV0ZfqpMiEblG1gAAAFwVZH3YAAABdgAAAQgAAAAFAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAADAAAAAAAOZYQAAAAAaJsIJQ==";
 
         let value = base64::prelude::BASE64_STANDARD.encode(key.to_xdr(Limits::none()).unwrap());
         let request = json!(
@@ -2059,7 +2059,7 @@ async fn request_airdrop() {
             .await;
 
         let result = s.request_airdrop(account_id).await.unwrap();
-        assert_eq!(result.sequence_number(), "1");
+        assert_eq!(result.sequence_number(), "1606317768968");
         assert_eq!(result.account_id(), account_id);
     }
 }
@@ -2308,9 +2308,9 @@ async fn get_ledgers() {
         tx_processing: _,
         upgrades_processing: _,
         scp_info: _,
-        total_byte_size_of_bucket_list,
-        evicted_temporary_ledger_keys: _,
-        evicted_persistent_ledger_entries: _,
+        total_byte_size_of_live_soroban_state,
+        evicted_keys: _,
+        unused: _,
     })) = l1.to_metadata()
     {
         let GeneralizedTransactionSet::V1(TransactionSetV1 {
@@ -2323,7 +2323,7 @@ async fn get_ledgers() {
                 .unwrap()
                 .as_slice()
         );
-        assert_eq!(total_byte_size_of_bucket_list, 13960684);
+        assert_eq!(total_byte_size_of_live_soroban_state, 13960684);
     } else {
         panic!("No metadata")
     }
@@ -2421,7 +2421,14 @@ async fn native_check_balance_testnet() {
 }
 #[tokio::test]
 async fn native_events_testnet() {
-    let rpc = Server::new("https://soroban-testnet.stellar.org", Options::default()).unwrap();
+    let rpc = Server::new(
+        "https://soroban-testnet.stellar.org",
+        Options {
+            timeout: 30,
+            ..Default::default()
+        },
+    )
+    .unwrap();
 
     let native_id = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
 
@@ -2432,7 +2439,7 @@ async fn native_events_testnet() {
     let native = ScVal::String(ScString("native".try_into().unwrap()));
     let events = rpc
         .get_events(
-            crate::Pagination::From(ledger - 100),
+            crate::Pagination::From(ledger - 10),
             vec![EventFilter::new(crate::soroban_rpc::EventType::All)
                 .contract(native_id)
                 .topic(vec![

@@ -31,8 +31,8 @@ pub enum Error {
     #[error("InvalidSorobanTransaction")]
     InvalidSorobanTransaction,
     /// Error when a simulation fails
-    #[error("SimulationFailed")]
-    SimulationFailed,
+    #[error("SimulationFailed: `{0}`")]
+    SimulationFailed(String),
     /// Error when restoration is required with additional data
     #[error("RestorationRequired")]
     RestorationRequired(i64, SorobanTransactionData),

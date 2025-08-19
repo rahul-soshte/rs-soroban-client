@@ -134,6 +134,7 @@ pub enum EventType {
     /// Only system type events
     System,
     /// Only diagnostic events
+    /// Since protocol 23: Diagnostic events are no longer returned by [get_events](crate::Server::get_events)
     Diagnostic,
     /// Any event type, contract, system and diagnostic
     All,
@@ -176,7 +177,8 @@ pub struct EventResponse {
     /// The transaction which triggered this event.
     pub tx_hash: String,
     /// Duplicate of `id` field, but in the standard place for pagination tokens.
-    pub paging_token: String,
+    /// Since protocol 23: This field is no longer present
+    pub paging_token: Option<String>,
     /// If true the event was emitted during a successful contract call.
     pub in_successful_contract_call: bool,
     topic: Vec<String>,
@@ -619,11 +621,19 @@ impl TransactionDetails {
             let r = TransactionMeta::from_xdr_base64(result, Limits::none());
             if let Ok(e) = r {
                 let mut return_value = None;
-                if let TransactionMeta::V3(v3) = &e {
-                    if let Some(v) = &v3.soroban_meta {
-                        return_value = Some(v.return_value.clone());
+                match &e {
+                    TransactionMeta::V3(v3) => {
+                        if let Some(v) = &v3.soroban_meta {
+                            return_value = Some(v.return_value.clone());
+                        }
                     }
-                }
+                    TransactionMeta::V4(v4) => {
+                        if let Some(v) = &v4.soroban_meta {
+                            return_value = v.return_value.clone();
+                        }
+                    }
+                    _ => {}
+                };
                 Some((e, return_value))
             } else {
                 None
