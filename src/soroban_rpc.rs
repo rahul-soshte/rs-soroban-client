@@ -144,12 +144,18 @@ pub enum EventType {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetEventsResponse {
-    /// The sequence number of the latest ledger known to Stellar RPC at the time it handled the request.
-    pub latest_ledger: u64,
     /// Events found for the filter
     pub events: Vec<EventResponse>,
     /// The last populated event ID if total events reach the limit or end of the search window.
     pub cursor: Option<String>,
+    /// The sequence number of the latest ledger known to Stellar RPC at the time it handled the request.
+    pub latest_ledger: u64,
+    /// The sequence number of the oldest ledger stored in Stellar-RPC
+    pub oldest_ledger: u64,
+    /// The unix timestamp of when the latest ledger was closed
+    pub latest_ledger_close_time: String,
+    /// The unix timestamp of when the oldest ledger was closed
+    pub oldest_ledger_close_time: String,
 }
 
 /// Event data
