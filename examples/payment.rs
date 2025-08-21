@@ -86,6 +86,7 @@ async fn wait_success(server: &Server, hash: String, response: SendTransactionRe
                         if let Some(ledger) = tx_result.ledger {
                             println!("Confirmed in ledger: {}", ledger);
                         }
+                        //dbg!(tx_result.to_events());
                         return true;
                     }
                     TransactionStatus::NotFound => {
