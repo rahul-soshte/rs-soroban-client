@@ -180,12 +180,18 @@ pub struct EventResponse {
     /// - bigint(32 bit ledger sequence + 20 bit txn number + 12 bit operation) + &lt;hyphen&gt; + number for the event within the operation.
     ///   For example: 1234-1
     pub id: String,
+    /// The index of the operation in the transaction
+    pub operation_index: u32,
+    /// The index of the transaction in the ledger
+    pub transaction_index: u32,
     /// The transaction which triggered this event.
     pub tx_hash: String,
     /// Duplicate of `id` field, but in the standard place for pagination tokens.
     /// Since protocol 23: This field is no longer present
     pub paging_token: Option<String>,
     /// If true the event was emitted during a successful contract call.
+    ///
+    /// Deprecated: will be remove in protocol 24
     pub in_successful_contract_call: bool,
     topic: Vec<String>,
     value: String,

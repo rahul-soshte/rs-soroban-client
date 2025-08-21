@@ -1672,7 +1672,9 @@ async fn get_events() {
                 ],
                 "value": "AAAACgAAAAAAAAAAAAAAAAX14QA=",
                 "inSuccessfulContractCall": true,
-                "txHash": "bd8a6611a3b44ff7dce76a27fb32fa69c9f6eff3435ca5296f6035d5105617ed"
+                "txHash": "bd8a6611a3b44ff7dce76a27fb32fa69c9f6eff3435ca5296f6035d5105617ed",
+                "operationIndex": 0,
+                "transactionIndex": 1
               },
               {
                 "type": "contract",
@@ -1689,7 +1691,9 @@ async fn get_events() {
                 ],
                 "value": "AAAACgAAAAAAAAAAAAAAAACYloA=",
                 "inSuccessfulContractCall": true,
-                "txHash": "3fa1787085a4aa585507751394d70494a02e71d347446095a763ecbfc647937c"
+                "txHash": "3fa1787085a4aa585507751394d70494a02e71d347446095a763ecbfc647937c",
+                "operationIndex": 0,
+                "transactionIndex": 1
               }
             ],
             "latestLedger": 122834,
