@@ -1,6 +1,6 @@
 use crate::jsonrpc::{JsonRpc, Response};
-use crate::soroban_rpc::*;
 use crate::transaction::assemble_transaction;
+use crate::{error, soroban_rpc::*};
 use crate::{error::*, friendbot};
 use futures::TryFutureExt;
 use serde_json::json;
@@ -139,10 +139,46 @@ impl EventFilter {
 }
 
 /// Contains configuration for how resources will be calculated when simulating transactions.
-#[derive(Debug, Clone)]
-pub struct ResourceLeeway {
+#[derive(Debug, Clone, Default)]
+pub struct SimulationOptions {
     /// Allow this many extra instructions when budgeting resources.
     pub cpu_instructions: u64,
+    /// The auth mode to apply to the simulation, if None enforce if auth entries are present, record otherwise
+    pub auth_mode: Option<AuthMode>,
+}
+
+/// Select the auth mode to apply to the simulation
+#[derive(Debug, Clone)]
+pub enum AuthMode {
+    /// Always enforcement mode, even with an empty list of auths
+    Enforce,
+    /// Always recording mode, failing if any auth exists
+    Record,
+    /// Like [AuthMode::Record] but allowing non-root authorization
+    RecordAllowNonRoot,
+}
+
+impl FromStr for AuthMode {
+    type Err = error::AuthModeError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "enforce" => Ok(Self::Enforce),
+            "record" => Ok(Self::Record),
+            "record_allow_nonroot" => Ok(Self::RecordAllowNonRoot),
+
+            e => Err(AuthModeError::Invalid(e.to_string())),
+        }
+    }
+}
+
+impl From<AuthMode> for &str {
+    fn from(val: AuthMode) -> Self {
+        match val {
+            AuthMode::Enforce => "enforce",
+            AuthMode::Record => "record",
+            AuthMode::RecordAllowNonRoot => "record_allow_nonroot",
+        }
+    }
 }
 
 /// Additionnal options
@@ -529,8 +565,8 @@ impl Server {
     /// [simulateTransaction]: https://developers.stellar.org/docs/data/rpc/api-reference/methods/simulateTransaction
     pub async fn simulate_transaction(
         &self,
-        transaction: Transaction,
-        addl_resources: Option<ResourceLeeway>,
+        transaction: &Transaction,
+        options: Option<SimulationOptions>,
     ) -> Result<SimulateTransactionResponse, Error> {
         let transaction_xdr = transaction
             .to_envelope()
@@ -539,12 +575,13 @@ impl Server {
             .map_err(|_| Error::XdrError)?;
 
         // Add resource config if provided
-        let params = if let Some(resources) = addl_resources {
+        let params = if let Some(resources) = options {
             json!({
                 "transaction": transaction_xdr,
                 "resourceConfig": {
                     "instructionLeeway": resources.cpu_instructions
-                }
+                },
+                "authMode": resources.auth_mode.map(|a| {let mode: &str = a.into(); mode}),
             })
         } else {
             json!({
@@ -632,9 +669,9 @@ impl Server {
     ///
     pub async fn prepare_transaction(
         &self,
-        transaction: Transaction,
+        transaction: &Transaction,
     ) -> Result<Transaction, Error> {
-        let sim_response = self.simulate_transaction(transaction.clone(), None).await?;
+        let sim_response = self.simulate_transaction(transaction, None).await?;
 
         assemble_transaction(transaction, sim_response)
     }

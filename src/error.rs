@@ -3,6 +3,14 @@
 use stellar_baselib::xdr::SorobanTransactionData;
 use thiserror::Error;
 
+/// Possible error for AuthMode in simulation request
+#[derive(Error, Debug)]
+pub enum AuthModeError {
+    /// Error while converting AuthMode
+    #[error("Invalid auth mode: {0}, should be one of 'enforce', 'record', 'record_allow_nonroot' or be omitted")]
+    Invalid(String),
+}
+
 /// Possible error types
 #[derive(Error, Debug)]
 pub enum Error {
