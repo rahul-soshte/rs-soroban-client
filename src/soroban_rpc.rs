@@ -523,13 +523,14 @@ pub struct FeeDistribution {
 
 /// Response to [get_version_info](crate::Server::get_version_info)
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GetVersionInfoResponse {
     /// The version of the RPC server.
     pub version: String,
     /// The commit hash of the RPC server.
     pub commit_hash: String,
     /// The build timestamp of the RPC server.
-    pub build_time_stamp: String,
+    pub build_timestamp: String,
     /// The version of the Captive Core.
     pub captive_core_version: String,
     /// The protocol version.
