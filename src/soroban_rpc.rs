@@ -4,9 +4,9 @@ use std::ops::Deref;
 use stellar_baselib::{
     soroban_data_builder::{SorobanDataBuilder, SorobanDataBuilderBehavior},
     xdr::{
-        DiagnosticEvent, LedgerCloseMeta, LedgerEntry, LedgerEntryData, LedgerHeaderHistoryEntry,
-        LedgerKey, Limits, ReadXdr, ScVal, SorobanAuthorizationEntry, SorobanTransactionData,
-        TransactionEnvelope, TransactionMeta, TransactionResult,
+        DiagnosticEvent, LedgerCloseMeta, LedgerEntry, LedgerEntryData, LedgerEntryExt,
+        LedgerHeaderHistoryEntry, LedgerKey, Limits, ReadXdr, ScVal, SorobanAuthorizationEntry,
+        SorobanTransactionData, TransactionEnvelope, TransactionMeta, TransactionResult,
     },
 };
 
@@ -37,6 +37,7 @@ pub struct LedgerEntryResult {
     pub live_until_ledger_seq: Option<u32>,
     key: String,
     xdr: String,
+    ext_xdr: Option<String>,
 }
 
 impl LedgerEntryResult {
@@ -48,6 +49,13 @@ impl LedgerEntryResult {
     pub fn to_data(&self) -> LedgerEntryData {
         LedgerEntryData::from_xdr_base64(&self.xdr, Limits::none())
             .expect("Invalid LedgerEntryData from RPC")
+    }
+    /// The extension of the ledger entry
+    pub fn to_ext(&self) -> Option<LedgerEntryExt> {
+        self.ext_xdr.as_ref().map(|ext| {
+            LedgerEntryExt::from_xdr_base64(ext, Limits::none())
+                .expect("Invalid LedgerEntryData from RPC")
+        })
     }
 }
 
