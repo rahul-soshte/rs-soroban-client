@@ -1719,9 +1719,9 @@ async fn get_events() {
         let result = s.get_events(ledger, filters, 2).await.unwrap();
 
         assert_eq!(result.latest_ledger, 122834);
-        assert_eq!(result.oldest_ledger, 1875);
-        assert_eq!(result.latest_ledger_close_time, "1755807188");
-        assert_eq!(result.oldest_ledger_close_time, "1755201565");
+        assert_eq!(result.oldest_ledger.unwrap(), 1875);
+        assert_eq!(result.latest_ledger_close_time.unwrap(), "1755807188");
+        assert_eq!(result.oldest_ledger_close_time.unwrap(), "1755201565");
         let events = result.events;
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].contract_id, contract_id);

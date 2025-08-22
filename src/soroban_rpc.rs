@@ -151,11 +151,11 @@ pub struct GetEventsResponse {
     /// The sequence number of the latest ledger known to Stellar RPC at the time it handled the request.
     pub latest_ledger: u64,
     /// The sequence number of the oldest ledger stored in Stellar-RPC
-    pub oldest_ledger: u64,
+    pub oldest_ledger: Option<u64>,
     /// The unix timestamp of when the latest ledger was closed
-    pub latest_ledger_close_time: String,
+    pub latest_ledger_close_time: Option<String>,
     /// The unix timestamp of when the oldest ledger was closed
-    pub oldest_ledger_close_time: String,
+    pub oldest_ledger_close_time: Option<String>,
 }
 
 /// Event data
@@ -181,9 +181,9 @@ pub struct EventResponse {
     ///   For example: 1234-1
     pub id: String,
     /// The index of the operation in the transaction
-    pub operation_index: u32,
+    pub operation_index: Option<u32>,
     /// The index of the transaction in the ledger
-    pub transaction_index: u32,
+    pub transaction_index: Option<u32>,
     /// The transaction which triggered this event.
     pub tx_hash: String,
     /// Duplicate of `id` field, but in the standard place for pagination tokens.
