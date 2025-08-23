@@ -16,11 +16,11 @@ pub use stellar_baselib::{
 
 /// Assemble a [transaction](Transaction) with a [simulation](SimulateTransactionResponse)
 pub fn assemble_transaction(
-    tx: Transaction,
+    tx: &Transaction,
     simulation: SimulateTransactionResponse,
 ) -> Result<Transaction, Error> {
     // Ensure the transaction is a valid Soroban transaction
-    if !is_soroban_transaction(&tx) {
+    if !is_soroban_transaction(tx) {
         return Err(Error::InvalidSorobanTransaction);
     }
 
@@ -54,7 +54,7 @@ pub fn assemble_transaction(
     ntx.soroban_data = Some(soroban_tx_data);
 
     // Process the operation
-    if let Some(ops) = tx.operations {
+    if let Some(ops) = &tx.operations {
         if let OperationBody::InvokeHostFunction(InvokeHostFunctionOp {
             host_function,
             auth,
@@ -174,7 +174,7 @@ mod test {
         }
         )).unwrap();
 
-        let txr = assemble_transaction(tx, simulation).unwrap();
+        let txr = assemble_transaction(&tx, simulation).unwrap();
         if let Some(ops) = txr.operations {
             let op = ops[0].clone();
             if let OperationBody::InvokeHostFunction(InvokeHostFunctionOp {
@@ -229,7 +229,7 @@ mod test {
         ))
         .unwrap();
 
-        let r = assemble_transaction(tx, simulation);
+        let r = assemble_transaction(&tx, simulation);
         assert!(matches!(r, Err(Error::SimulationFailed(_))));
     }
 
@@ -281,7 +281,7 @@ mod test {
         }
         )).unwrap();
 
-        let r = assemble_transaction(tx, simulation);
+        let r = assemble_transaction(&tx, simulation);
         assert!(matches!(r, Err(Error::InvalidSorobanTransaction)));
     }
 

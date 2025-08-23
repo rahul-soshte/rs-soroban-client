@@ -401,7 +401,7 @@ impl SimulateTransactionResponse {
     /// #               Some(vec![account_address.to_sc_val().unwrap()])))
     /// #       .build();
     ///
-    ///     let simulation = rpc.simulate_transaction(tx, None).await.unwrap();
+    ///     let simulation = rpc.simulate_transaction(&tx, None).await.unwrap();
     ///     if let Some((min_resource_fee, transaction_data)) =
     ///         simulation.to_restore_transaction_data() {
     ///         // Build a RestoreFootprint transaction

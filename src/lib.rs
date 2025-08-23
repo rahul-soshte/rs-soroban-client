@@ -50,7 +50,7 @@
 //!                Some(vec![account_address.to_sc_val().unwrap()])))
 //!        .build();
 //!
-//!    let response = rpc.simulate_transaction(tx, None).await.unwrap();
+//!    let response = rpc.simulate_transaction(&tx, None).await.unwrap();
 //!    if let Some((ScVal::I128(Int128Parts { hi, lo }), _auth)) = response.to_result() {
 //!        // Divide to convert from stroops to XLM
 //!        let balance = i128_from_pieces(hi, lo) / 10000000;

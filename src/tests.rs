@@ -728,20 +728,16 @@ async fn simulate_transaction() {
     {
         let tx_xdr = "AAAAAgAAAAAg4dbAxsGAGICfBG3iT2cKGYQ6hK4sJWzZ6or1C5v6GAAAAGQAJsOiAAAAEQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABzAP+dP0PsNzYvFF1pv7a8RQXwH5eg3uZBbbWjE9PwAsAAAAJaW5jcmVtZW50AAAAAAAAAgAAABIAAAAAAAAAACDh1sDGwYAYgJ8EbeJPZwoZhDqEriwlbNnqivULm/oYAAAAAwAAAAMAAAAAAAAAAAAAAAA=";
         let request = json!(
-                {
-                  "jsonrpc": "2.0",
-                  "id": 1,
-                  "method": "simulateTransaction",
-                  "params": {
-                    "transaction": tx_xdr,
-                  }
-                }
-                /*
-                    "resourceConfig": {
-                      "instructionLeeway": 3000000
-                    }
-        */
-                                );
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "simulateTransaction",
+          "params": {
+            "transaction": tx_xdr,
+            "authMode": "record"
+          },
+        }
+        );
         let response = json!(
         {
           "jsonrpc": "2.0",
@@ -806,7 +802,16 @@ async fn simulate_transaction() {
         assert_eq!(xdr, tx_xdr);
 
         let (s, _m) = get_mocked_server(request, response).await;
-        let txresult = s.simulate_transaction(tx, None).await.unwrap();
+        let txresult = s
+            .simulate_transaction(
+                &tx,
+                Some(SimulationOptions {
+                    auth_mode: Some(AuthMode::Record),
+                    ..Default::default()
+                }),
+            )
+            .await
+            .unwrap();
 
         if let Some((ret_val, _auth)) = txresult.to_result() {
             assert_eq!(ret_val, ScVal::U32(12));
@@ -838,7 +843,8 @@ async fn simulate_transaction() {
             "transaction": tx_xdr,
             "resourceConfig": {
               "instructionLeeway": 3000000
-            }
+            },
+            "authMode": "enforce"
           }
         }
                 );
@@ -893,9 +899,10 @@ async fn simulate_transaction() {
         let (s, _m) = get_mocked_server(request, response).await;
         let txresult = s
             .simulate_transaction(
-                tx,
-                Some(ResourceLeeway {
+                &tx,
+                Some(SimulationOptions {
                     cpu_instructions: 3000000,
+                    auth_mode: Some(AuthMode::Enforce),
                 }),
             )
             .await
@@ -956,6 +963,7 @@ async fn simulate_transaction() {
           "method": "simulateTransaction",
           "params": {
             "transaction": tx_xdr,
+            "authMode": "record_allow_nonroot"
           }
         });
         let response = json!(
@@ -1026,7 +1034,16 @@ async fn simulate_transaction() {
         assert_eq!(xdr, tx_xdr);
 
         let (s, _m) = get_mocked_server(request, response).await;
-        let txresult = s.simulate_transaction(tx, None).await.unwrap();
+        let txresult = s
+            .simulate_transaction(
+                &tx,
+                Some(SimulationOptions {
+                    auth_mode: Some(AuthMode::RecordAllowNonRoot),
+                    ..Default::default()
+                }),
+            )
+            .await
+            .unwrap();
         let state_changes = txresult.to_state_changes();
         assert_eq!(state_changes.len(), 1);
         assert!(matches!(&state_changes[0].kind, StateChangeKind::Created));
@@ -1109,7 +1126,16 @@ async fn simulate_transaction() {
         assert_eq!(xdr, tx_xdr);
 
         let (s, _m) = get_mocked_server(request, response).await;
-        let txresult = s.simulate_transaction(tx, None).await.unwrap();
+        let txresult = s
+            .simulate_transaction(
+                &tx,
+                Some(SimulationOptions {
+                    auth_mode: None,
+                    ..Default::default()
+                }),
+            )
+            .await
+            .unwrap();
         let state_changes = txresult.to_state_changes();
         assert_eq!(state_changes.len(), 1);
         assert!(matches!(&state_changes[0].kind, StateChangeKind::Updated));
@@ -1191,7 +1217,7 @@ async fn simulate_transaction() {
         assert_eq!(xdr, tx_xdr);
 
         let (s, _m) = get_mocked_server(request, response).await;
-        let txresult = s.simulate_transaction(tx, None).await.unwrap();
+        let txresult = s.simulate_transaction(&tx, None).await.unwrap();
         let state_changes = txresult.to_state_changes();
         assert_eq!(state_changes.len(), 1);
         assert!(matches!(&state_changes[0].kind, StateChangeKind::Deleted));
@@ -1484,8 +1510,8 @@ async fn prepare_transaction() {
 
         let (s, _m) = get_mocked_server(request, response).await;
 
-        let simulation = s.simulate_transaction(tx.clone(), None).await.unwrap();
-        let txresult = s.prepare_transaction(tx.clone()).await.unwrap();
+        let simulation = s.simulate_transaction(&tx, None).await.unwrap();
+        let txresult = s.prepare_transaction(&tx).await.unwrap();
 
         assert_eq!(txresult.fee, tx.fee + 90353);
         assert_eq!(txresult.soroban_data, simulation.to_transaction_data());
@@ -1604,7 +1630,7 @@ async fn prepare_transaction() {
         assert_eq!(xdr, tx_xdr);
 
         let (s, _m) = get_mocked_server(request, response).await;
-        let txresult = s.prepare_transaction(tx).await;
+        let txresult = s.prepare_transaction(&tx).await;
 
         if let Err(Error::RestorationRequired(min_fee, transaction_data)) = txresult {
             assert_eq!(min_fee, 12345);
@@ -2410,7 +2436,7 @@ async fn native_check_balance_testnet() {
         .add_operation(native_sac.call("balance", Some(vec![account_address.to_sc_val().unwrap()])))
         .build();
 
-    let response = rpc.simulate_transaction(tx, None).await.unwrap();
+    let response = rpc.simulate_transaction(&tx, None).await.unwrap();
     if let Some((ScVal::I128(Int128Parts { hi, lo }), _auth)) = response.to_result() {
         let balance = i128_from_pieces(hi, lo) / 10000000; // Divide to convert from stroops to XLM
         println!("Account {} has {} XLM", kp.public_key(), balance);

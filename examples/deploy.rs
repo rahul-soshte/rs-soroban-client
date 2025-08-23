@@ -44,7 +44,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let tx = builder.build();
 
-    let mut ptx = server.prepare_transaction(tx).await?;
+    let mut ptx = server.prepare_transaction(&tx).await?;
     ptx.sign(&[source_keypair.clone()]);
     let response = server.send_transaction(ptx).await?;
 
@@ -76,7 +76,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let tx = builder.build();
 
-    let mut ptx = server.prepare_transaction(tx).await?;
+    let mut ptx = server.prepare_transaction(&tx).await?;
     ptx.sign(&[source_keypair.clone()]);
     let response = server.send_transaction(ptx).await?;
 
@@ -108,7 +108,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let tx = builder.build();
 
-    let mut ptx = server.prepare_transaction(tx).await?;
+    let mut ptx = server.prepare_transaction(&tx).await?;
     ptx.sign(&[source_keypair.clone()]);
     let response = server.send_transaction(ptx).await?;
 
