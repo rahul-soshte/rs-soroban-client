@@ -73,10 +73,12 @@ pub struct EventFilter {
 /// Topic to match on in the filter
 #[derive(Clone, Debug)]
 pub enum Topic {
-    /// Match the [ScVal]
+    /// Match this topic `ScVal`
     Val(ScVal),
-    /// Match any `ScVal`
+    /// Match any topic
     Any,
+    /// Match any topic including more topics (can only be the last [Topic])
+    Greedy,
 }
 impl EventFilter {
     /// Start building a new filter for this [EventType]
@@ -131,6 +133,7 @@ impl EventFilter {
                             .to_xdr_base64(Limits::none())
                             .expect("ScVal cannot be converted to base64"),
                         Topic::Any => "*".to_string(),
+                        Topic::Greedy => "**".to_string(),
                     })
                     .collect()
             })

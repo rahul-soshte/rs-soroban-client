@@ -1845,7 +1845,9 @@ async fn get_events() {
                 ],
                 "value": "AAAACgAAAAAAAAAAAAAAAAX14QA=",
                 "inSuccessfulContractCall": true,
-                "txHash": "bd8a6611a3b44ff7dce76a27fb32fa69c9f6eff3435ca5296f6035d5105617ed"
+                "txHash": "bd8a6611a3b44ff7dce76a27fb32fa69c9f6eff3435ca5296f6035d5105617ed",
+                "operationIndex": 0,
+                "transactionIndex": 1
               },
               {
                 "type": "contract",
@@ -1862,10 +1864,15 @@ async fn get_events() {
                 ],
                 "value": "AAAACgAAAAAAAAAAAAAAAACYloA=",
                 "inSuccessfulContractCall": true,
-                "txHash": "3fa1787085a4aa585507751394d70494a02e71d347446095a763ecbfc647937c"
+                "txHash": "3fa1787085a4aa585507751394d70494a02e71d347446095a763ecbfc647937c",
+                "operationIndex": 0,
+                "transactionIndex": 1
               }
             ],
-            "latestLedger": 1197926
+            "latestLedger": 122834,
+            "oldestLedger": 1875,
+            "latestLedgerCloseTime": "1755807188",
+            "oldestLedgerCloseTime":"1755201565"
           }
         }
                 );
@@ -1884,6 +1891,10 @@ async fn get_events() {
             ])];
         let result = s.get_events(ledger, filters, 2).await.unwrap();
 
+        assert_eq!(result.latest_ledger, 122834);
+        assert_eq!(result.oldest_ledger.unwrap(), 1875);
+        assert_eq!(result.latest_ledger_close_time.unwrap(), "1755807188");
+        assert_eq!(result.oldest_ledger_close_time.unwrap(), "1755201565");
         let events = result.events;
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].contract_id, contract_id);
