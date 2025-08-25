@@ -4,9 +4,10 @@ use std::ops::Deref;
 use stellar_baselib::{
     soroban_data_builder::{SorobanDataBuilder, SorobanDataBuilderBehavior},
     xdr::{
-        DiagnosticEvent, LedgerCloseMeta, LedgerEntry, LedgerEntryData, LedgerHeaderHistoryEntry,
-        LedgerKey, Limits, ReadXdr, ScVal, SorobanAuthorizationEntry, SorobanTransactionData,
-        TransactionEnvelope, TransactionMeta, TransactionResult,
+        ContractEvent, DiagnosticEvent, LedgerCloseMeta, LedgerEntry, LedgerEntryData,
+        LedgerHeaderHistoryEntry, LedgerKey, Limits, ReadXdr, ScVal, SorobanAuthorizationEntry,
+        SorobanTransactionData, TransactionEnvelope, TransactionEvent, TransactionMeta,
+        TransactionResult,
     },
 };
 
@@ -591,6 +592,14 @@ pub struct TransactionDetails {
     result_xdr: Option<String>,
     result_meta_xdr: Option<String>,
     diagnostic_events_xdr: Option<Vec<String>>,
+    events: Option<Events>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Events {
+    transaction_events_xdr: Option<Vec<String>>,
+    contract_events_xdr: Option<Vec<Vec<String>>>,
 }
 
 impl TransactionDetails {
@@ -645,12 +654,47 @@ impl TransactionDetails {
 
     /// (optional) A base64 encoded slice of xdr.DiagnosticEvent. This is only present if the
     /// ENABLE_SOROBAN_DIAGNOSTIC_EVENTS has been enabled in the stellar-core config.
+    ///
+    /// Deprecated: will be removed in protocol 24
     pub fn to_diagnostic_events(&self) -> Option<Vec<DiagnosticEvent>> {
         if let Some(events) = &self.diagnostic_events_xdr {
             events
                 .iter()
                 .map(|e| DiagnosticEvent::from_xdr_base64(e, Limits::none()).ok())
                 .collect()
+        } else {
+            None
+        }
+    }
+
+    /// Events contains all events related to the transaction: transaction and contract events.
+    pub fn to_events(&self) -> Option<(Vec<TransactionEvent>, Vec<Vec<ContractEvent>>)> {
+        if let Some(events) = &self.events {
+            let tx_events = match &events.transaction_events_xdr {
+                Some(te) => {
+                    let v: Option<Vec<TransactionEvent>> = te
+                        .iter()
+                        .map(|e| TransactionEvent::from_xdr_base64(e, Limits::none()).ok())
+                        .collect();
+                    v.unwrap_or_default()
+                }
+                None => Vec::default(),
+            };
+            let cx_events = match &events.contract_events_xdr {
+                Some(te) => {
+                    let v: Option<Vec<Vec<ContractEvent>>> = te
+                        .iter()
+                        .map(|row| {
+                            row.iter()
+                                .map(|e| ContractEvent::from_xdr_base64(e, Limits::none()).ok())
+                                .collect()
+                        })
+                        .collect();
+                    v.unwrap_or_default()
+                }
+                None => Vec::default(),
+            };
+            Some((tx_events, cx_events))
         } else {
             None
         }
