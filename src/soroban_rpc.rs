@@ -4,10 +4,10 @@ use std::ops::Deref;
 use stellar_baselib::{
     soroban_data_builder::{SorobanDataBuilder, SorobanDataBuilderBehavior},
     xdr::{
-        ContractEvent, DiagnosticEvent, LedgerCloseMeta, LedgerEntry, LedgerEntryData, LedgerEntryExt,
-        LedgerHeaderHistoryEntry, LedgerKey, Limits, ReadXdr, ScVal, SorobanAuthorizationEntry,
-        SorobanTransactionData, TransactionEnvelope, TransactionEvent, TransactionMeta, TransactionResult,
-
+        ContractEvent, DiagnosticEvent, LedgerCloseMeta, LedgerEntry, LedgerEntryData,
+        LedgerEntryExt, LedgerHeaderHistoryEntry, LedgerKey, Limits, ReadXdr, ScVal,
+        SorobanAuthorizationEntry, SorobanTransactionData, TransactionEnvelope, TransactionEvent,
+        TransactionMeta, TransactionResult,
     },
 };
 
