@@ -2114,10 +2114,10 @@ async fn get_version_info() {
       "id": 1,
       "result": {
         "version": "21.1.0",
-        "commit_hash": "fcd2f0523f04279bae4502f3e3fa00ca627e6f6a",
-        "build_time_stamp": "2024-05-10T11:18:38",
-        "captive_core_version": "stellar-core 21.0.0.rc2 (c6f474133738ae5f6d11b07963ca841909210273)",
-        "protocol_version": 21
+        "commitHash": "fcd2f0523f04279bae4502f3e3fa00ca627e6f6a",
+        "buildTimestamp": "2024-05-10T11:18:38",
+        "captiveCoreVersion": "stellar-core 21.0.0.rc2 (c6f474133738ae5f6d11b07963ca841909210273)",
+        "protocolVersion": 21
       }
     });
 
@@ -2638,4 +2638,19 @@ async fn native_events_testnet() {
         .unwrap();
 
     println!("{:?}", events);
+}
+#[tokio::test]
+async fn get_version_info_testnet() {
+    let rpc = Server::new(
+        "https://soroban-testnet.stellar.org",
+        Options {
+            timeout: 30,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let version = rpc.get_version_info().await.unwrap();
+
+    println!("{:?}", version);
 }
