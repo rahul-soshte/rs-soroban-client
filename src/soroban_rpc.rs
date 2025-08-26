@@ -145,12 +145,18 @@ pub enum EventType {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetEventsResponse {
-    /// The sequence number of the latest ledger known to Stellar RPC at the time it handled the request.
-    pub latest_ledger: u64,
     /// Events found for the filter
     pub events: Vec<EventResponse>,
     /// The last populated event ID if total events reach the limit or end of the search window.
     pub cursor: Option<String>,
+    /// The sequence number of the latest ledger known to Stellar RPC at the time it handled the request.
+    pub latest_ledger: u64,
+    /// The sequence number of the oldest ledger stored in Stellar-RPC
+    pub oldest_ledger: Option<u64>,
+    /// The unix timestamp of when the latest ledger was closed
+    pub latest_ledger_close_time: Option<String>,
+    /// The unix timestamp of when the oldest ledger was closed
+    pub oldest_ledger_close_time: Option<String>,
 }
 
 /// Event data
@@ -175,12 +181,18 @@ pub struct EventResponse {
     /// - bigint(32 bit ledger sequence + 20 bit txn number + 12 bit operation) + &lt;hyphen&gt; + number for the event within the operation.
     ///   For example: 1234-1
     pub id: String,
+    /// The index of the operation in the transaction
+    pub operation_index: Option<u32>,
+    /// The index of the transaction in the ledger
+    pub transaction_index: Option<u32>,
     /// The transaction which triggered this event.
     pub tx_hash: String,
     /// Duplicate of `id` field, but in the standard place for pagination tokens.
     /// Since protocol 23: This field is no longer present
     pub paging_token: Option<String>,
     /// If true the event was emitted during a successful contract call.
+    ///
+    /// Deprecated: will be remove in protocol 24
     pub in_successful_contract_call: bool,
     topic: Vec<String>,
     value: String,
