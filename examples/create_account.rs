@@ -7,7 +7,7 @@ use soroban_client::{
     operation::{self, Operation},
     soroban_rpc::{SendTransactionResponse, SendTransactionStatus, TransactionStatus},
     transaction::{TransactionBehavior, TransactionBuilder, TransactionBuilderBehavior},
-    Options, Server,
+    xdr, Options, Server,
 };
 
 #[tokio::main]
@@ -20,7 +20,8 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let source_public_key = &source_keypair.public_key();
 
     // Get account information from server
-    let account_data = server.request_airdrop(source_public_key).await?;
+    let account_data: soroban_client::account::Account =
+        server.request_airdrop(source_public_key).await?;
     let source_account = Rc::new(RefCell::new(
         Account::new(source_public_key, &account_data.sequence_number()).unwrap(),
     ));
@@ -47,6 +48,15 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if !wait_success(&server, hash, response).await {
         return Err("Failed to create account".into());
+    }
+
+    //soroban_client::transaction::Account;
+    let account_id = to_create_keypair.xdr_account_id();
+    let ledger_key = xdr::LedgerKey::Account(xdr::LedgerKeyAccount { account_id });
+    let response = server.get_ledger_entries(vec![ledger_key]).await?;
+    if let xdr::LedgerEntryData::Account(account) = response.entries.unwrap()[0].to_data() {
+        let balance = account.balance / operation::ONE;
+        println!("{to_create_public_key} created with {balance} XLM");
     }
 
     Ok(())
