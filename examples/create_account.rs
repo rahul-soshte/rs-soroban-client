@@ -5,7 +5,7 @@ use soroban_client::{
     keypair::{Keypair, KeypairBehavior},
     network::{NetworkPassphrase, Networks},
     operation::{self, Operation},
-    soroban_rpc::{SendTransactionResponse, SendTransactionStatus, TransactionStatus},
+    soroban_rpc::TransactionStatus,
     transaction::{TransactionBehavior, TransactionBuilder, TransactionBuilderBehavior},
     Options, Server,
 };
@@ -13,8 +13,7 @@ use soroban_client::{
 #[tokio::main]
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let server_url = "https://soroban-testnet.stellar.org";
-    let server =
-        soroban_client::Server::new(server_url, Options::default()).expect("Cannot create server");
+    let server = Server::new(server_url, Options::default()).expect("Cannot create server");
 
     let source_keypair = Keypair::random().unwrap();
     let source_public_key = &source_keypair.public_key();
@@ -45,46 +44,28 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let hash = response.hash.clone();
     println!("Tx hash: {}", hash);
 
-    if !wait_success(&server, hash, response).await {
-        return Err("Failed to create account".into());
-    }
-
-    Ok(())
-}
-
-async fn wait_success(server: &Server, hash: String, response: SendTransactionResponse) -> bool {
-    if response.status != SendTransactionStatus::Error {
-        loop {
-            let response = server.get_transaction(&hash).await;
-            if let Ok(tx_result) = response {
-                match tx_result.status {
-                    TransactionStatus::Success => {
-                        println!("Transaction successful!");
-                        if let Some(ledger) = tx_result.ledger {
-                            println!("Confirmed in ledger: {}", ledger);
-                        }
-                        return true;
-                    }
-                    TransactionStatus::NotFound => {
-                        println!(
-                            "Waiting for transaction confirmation... Latest ledger: {}",
-                            tx_result.latest_ledger
-                        );
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                    }
-                    TransactionStatus::Failed => {
-                        if let Some(result) = tx_result.to_result() {
-                            eprintln!("Transaction failed with result: {:?}", result);
-                        } else {
-                            eprintln!("Transaction failed without result XDR");
-                        }
-                        return false;
-                    }
+    match server.wait_transaction(hash, Duration::from_secs(15)).await {
+        Ok(tx_result) => match tx_result.status {
+            TransactionStatus::Success => {
+                println!("Transaction successful!");
+                if let Some(ledger) = tx_result.ledger {
+                    println!("Confirmed in ledger: {}", ledger);
                 }
-            } else {
-                eprintln!("Error getting transaction status: {:?}", response);
+                Ok(())
             }
-        }
+            TransactionStatus::Failed => {
+                if let Some(result) = tx_result.to_result() {
+                    eprintln!("Transaction failed with result: {:?}", result);
+                } else {
+                    eprintln!("Transaction failed without result XDR");
+                }
+                Ok(())
+            }
+            TransactionStatus::NotFound => {
+                eprintln!("Transaction not found");
+                Err("Transaction not found".into())
+            }
+        },
+        Err(e) => Err(e.0.to_string().into()),
     }
-    false
 }

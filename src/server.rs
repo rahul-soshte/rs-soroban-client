@@ -5,6 +5,7 @@ use crate::{error::*, friendbot};
 use futures::TryFutureExt;
 use serde_json::json;
 use std::option::Option;
+use std::time::Duration;
 use std::{collections::HashMap, str::FromStr};
 use stellar_baselib::account::Account;
 use stellar_baselib::account::AccountBehavior;
@@ -720,6 +721,22 @@ impl Server {
             // If we don't get a success, it can be already funded
             self.get_account(account_id).await
         }
+    }
+
+    /// # Wait for a transaction to become either Success or Failed
+    ///
+    /// Wait for the transaction referenced by the given `hash` for at most `max_wait` duration.
+    /// The function will loop with an exponential delay between each call to
+    /// [Server::get_transaction] method.
+    ///
+    /// If an error occurs you can get the last result of [Server::get_transaction] with the
+    /// [Error].
+    pub async fn wait_transaction(
+        &self,
+        hash: String,
+        max_wait: Duration,
+    ) -> Result<GetTransactionResponse, (Error, Option<GetTransactionResponse>)> {
+        crate::async_utils::wait_transaction(self, hash, max_wait).await
     }
 }
 
