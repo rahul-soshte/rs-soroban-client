@@ -16,6 +16,7 @@ use stellar_baselib::xdr::{
     ContractDataDurability, LedgerEntryData, LedgerKey, LedgerKeyAccount, LedgerKeyContractData,
     Limits, ScVal, WriteXdr,
 };
+use tokio::time::{sleep, Instant};
 
 /// The default transaction submission timeout for RPC requests, in milliseconds.
 pub const SUBMIT_TRANSACTION_TIMEOUT: u32 = 60 * 1000;
@@ -733,10 +734,34 @@ impl Server {
     /// [Error].
     pub async fn wait_transaction(
         &self,
-        hash: String,
+        hash: &str,
         max_wait: Duration,
     ) -> Result<GetTransactionResponse, (Error, Option<GetTransactionResponse>)> {
-        crate::async_utils::wait_transaction(self, hash, max_wait).await
+        let mut delay = Duration::from_secs(1);
+        let start = Instant::now();
+        let mut last_response: Option<GetTransactionResponse> = None;
+
+        while start.elapsed() < max_wait {
+            match self.get_transaction(hash).await {
+                Ok(tx) => match tx.status {
+                    TransactionStatus::Success | TransactionStatus::Failed => {
+                        return Ok(tx);
+                    }
+                    TransactionStatus::NotFound => {
+                        last_response = Some(tx);
+                        sleep(delay).await;
+                        delay = std::cmp::min(delay * 2, Duration::from_secs(60));
+                    }
+                },
+                Err(e) => {
+                    return Err((e, last_response));
+                }
+            }
+        }
+        Err((
+            Error::WaitTransactionTimeout(max_wait.as_secs(), start.elapsed().as_secs()),
+            last_response,
+        ))
     }
 }
 

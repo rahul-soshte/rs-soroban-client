@@ -44,7 +44,10 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let hash = response.hash.clone();
     println!("Tx hash: {}", hash);
 
-    match server.wait_transaction(hash, Duration::from_secs(15)).await {
+    match server
+        .wait_transaction(&hash, Duration::from_secs(15))
+        .await
+    {
         Ok(tx_result) => match tx_result.status {
             TransactionStatus::Success => {
                 println!("Transaction successful!");

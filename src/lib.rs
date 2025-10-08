@@ -113,7 +113,6 @@ pub use stellar_baselib::*;
 
 // for now, not public
 //mod contract_spec;
-mod async_utils;
 mod friendbot;
 mod jsonrpc;
 mod server;

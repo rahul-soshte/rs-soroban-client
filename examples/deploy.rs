@@ -49,7 +49,10 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let hash = response.hash;
     println!(">> Tx hash: {hash}");
-    let wasm_hash = match server.wait_transaction(hash, Duration::from_secs(15)).await {
+    let wasm_hash = match server
+        .wait_transaction(&hash, Duration::from_secs(15))
+        .await
+    {
         Ok(tx_result) if tx_result.status == TransactionStatus::Success => {
             let (_meta, ret_val) = tx_result.to_result_meta().expect("No meta found");
             if let Some(scval) = ret_val {
@@ -89,7 +92,10 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let hash = response.hash;
     println!(">> Tx hash: {hash}");
-    let contract_addr = match server.wait_transaction(hash, Duration::from_secs(15)).await {
+    let contract_addr = match server
+        .wait_transaction(&hash, Duration::from_secs(15))
+        .await
+    {
         Ok(tx_result) if tx_result.status == TransactionStatus::Success => {
             let (_meta, ret_val) = tx_result.to_result_meta().expect("No meta");
             if let Some(xdr::ScVal::Address(addr)) = ret_val {
@@ -129,7 +135,10 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let hash = response.hash;
     println!(">> Tx hash: {hash}");
-    let counter: u32 = match server.wait_transaction(hash, Duration::from_secs(15)).await {
+    let counter: u32 = match server
+        .wait_transaction(&hash, Duration::from_secs(15))
+        .await
+    {
         Ok(tx_result) if tx_result.status == TransactionStatus::Success => {
             let (_meta, ret_val) = tx_result.to_result_meta().expect("No result meta");
             ret_val

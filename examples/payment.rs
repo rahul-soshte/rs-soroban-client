@@ -47,7 +47,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Tx hash: {}", hash);
 
     if server
-        .wait_transaction(hash, Duration::from_secs(15))
+        .wait_transaction(&hash, Duration::from_secs(15))
         .await
         .is_err()
     {
@@ -71,7 +71,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Tx hash: {}", hash);
 
     if server
-        .wait_transaction(hash, Duration::from_secs(15))
+        .wait_transaction(&hash, Duration::from_secs(15))
         .await
         .is_err()
     {
