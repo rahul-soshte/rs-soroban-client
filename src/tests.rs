@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Duration;
 use std::vec;
 
 use crate::error::*;
@@ -624,6 +625,8 @@ async fn get_transaction() {
             let (_meta, val) = r.to_result_meta().expect("Should not fail");
             assert_eq!(val, Some(ScVal::Void));
             // TODO add more tests
+        } else {
+            panic!("Error was not expected")
         }
     }
 
@@ -664,6 +667,8 @@ async fn get_transaction() {
             assert_eq!(r.oldest_ledger, 2538660);
             assert_eq!(r.application_order, None);
             assert_eq!(r.to_result(), None);
+        } else {
+            panic!("Error was not expected")
         }
     }
     /*
@@ -863,6 +868,55 @@ async fn get_transaction() {
             } else {
                 panic!("fail")
             }
+        }
+    }
+}
+
+#[tokio::test]
+async fn wait_transaction() {
+    let hash = "85f7aa8bfda425b98c0e53ffe56796ffd8865ec2fcc3ad71abf120801e2a14e5";
+    let request = json!(
+    {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "getTransaction",
+      "params": {
+        "hash": hash
+      }
+    }
+            );
+    let response = json!(
+    {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "result": {
+        "status": "NOT_FOUND",
+        "latestLedger": 2540099,
+        "latestLedgerCloseTime": "1700086455",
+        "oldestLedger": 2538660,
+        "oldestLedgerCloseTime": "1700078913"
+      }
+    }
+            );
+
+    let (s, _m) = get_mocked_server(request, response).await;
+    let test_timeout = 3;
+    let txresult = s
+        .wait_transaction(hash, Duration::from_secs(test_timeout))
+        .await;
+    dbg!(&txresult);
+    if let Err((err, tx)) = txresult {
+        if let Error::WaitTransactionTimeout(timeout, waited) = err {
+            assert_eq!(timeout, test_timeout);
+            assert!(waited >= timeout);
+        } else {
+            panic!("Not a WaitTransactionTimeout error")
+        }
+
+        if let Some(r) = tx {
+            assert_eq!(r.status, TransactionStatus::NotFound);
+        } else {
+            panic!("No result found")
         }
     }
 }
