@@ -58,6 +58,12 @@ pub enum Error {
     /// Error when Friendbot is not available on the current network
     #[error("NoFriendbot")]
     NoFriendbot,
+    /// Error when a timeout occurs
+    #[error("Timeout of {0}s reached after {1}s while waiting for a transaction to complete")]
+    WaitTransactionTimeout(u64, u64),
+    /// Error when a function is not implemented, you probably need to enable a feature
+    #[error("NotImplemented: `{0}`")]
+    NotImplemented(String),
 }
 
 /// Possible  errors for invalid RPC URLs

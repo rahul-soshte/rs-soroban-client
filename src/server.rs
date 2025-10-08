@@ -5,6 +5,7 @@ use crate::{error::*, friendbot};
 use futures::TryFutureExt;
 use serde_json::json;
 use std::option::Option;
+use std::time::Duration;
 use std::{collections::HashMap, str::FromStr};
 use stellar_baselib::account::Account;
 use stellar_baselib::account::AccountBehavior;
@@ -15,6 +16,7 @@ use stellar_baselib::xdr::{
     ContractDataDurability, LedgerEntryData, LedgerKey, LedgerKeyAccount, LedgerKeyContractData,
     Limits, ScVal, WriteXdr,
 };
+use tokio::time::{sleep, Instant};
 
 /// The default transaction submission timeout for RPC requests, in milliseconds.
 pub const SUBMIT_TRANSACTION_TIMEOUT: u32 = 60 * 1000;
@@ -720,6 +722,46 @@ impl Server {
             // If we don't get a success, it can be already funded
             self.get_account(account_id).await
         }
+    }
+
+    /// # Wait for a transaction to become either Success or Failed
+    ///
+    /// Wait for the transaction referenced by the given `hash` for at most `max_wait` duration.
+    /// The function will loop with an exponential delay between each call to
+    /// [Server::get_transaction] method.
+    ///
+    /// If an error occurs you can get the last result of [Server::get_transaction] with the
+    /// [Error].
+    pub async fn wait_transaction(
+        &self,
+        hash: &str,
+        max_wait: Duration,
+    ) -> Result<GetTransactionResponse, (Error, Option<GetTransactionResponse>)> {
+        let mut delay = Duration::from_secs(1);
+        let start = Instant::now();
+        let mut last_response: Option<GetTransactionResponse> = None;
+
+        while start.elapsed() < max_wait {
+            match self.get_transaction(hash).await {
+                Ok(tx) => match tx.status {
+                    TransactionStatus::Success | TransactionStatus::Failed => {
+                        return Ok(tx);
+                    }
+                    TransactionStatus::NotFound => {
+                        last_response = Some(tx);
+                        sleep(delay).await;
+                        delay = std::cmp::min(delay * 2, Duration::from_secs(60));
+                    }
+                },
+                Err(e) => {
+                    return Err((e, last_response));
+                }
+            }
+        }
+        Err((
+            Error::WaitTransactionTimeout(max_wait.as_secs(), start.elapsed().as_secs()),
+            last_response,
+        ))
     }
 }
 

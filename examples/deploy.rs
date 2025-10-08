@@ -7,9 +7,7 @@ use soroban_client::{
     keypair::{Keypair, KeypairBehavior},
     network::{NetworkPassphrase, Networks},
     operation::Operation,
-    soroban_rpc::{
-        GetTransactionResponse, SendTransactionResponse, SendTransactionStatus, TransactionStatus,
-    },
+    soroban_rpc::TransactionStatus,
     transaction::{TransactionBehavior, TransactionBuilder, TransactionBuilderBehavior},
     xdr, Options, Server,
 };
@@ -17,7 +15,7 @@ use soroban_client::{
 #[tokio::main]
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let server_url = "https://soroban-testnet.stellar.org";
-    let server = soroban_client::Server::new(server_url, Options::default())?;
+    let server = Server::new(server_url, Options::default())?;
 
     let source_keypair = Keypair::random()?;
     let source_public_key = &source_keypair.public_key();
@@ -49,19 +47,25 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("> Uploading WASM executable");
     let response = server.send_transaction(ptx).await?;
 
-    let hash = &response.hash;
+    let hash = response.hash;
     println!(">> Tx hash: {hash}");
-    let wasm_hash = if let Some(tx_result) = wait_success(&server, response).await {
-        let (_meta, ret_val) = tx_result.to_result_meta().expect("No meta found");
-        if let Some(scval) = ret_val {
-            let bytes: Vec<u8> = scval.try_into().expect("Cannot convert ScVal to Vec<u8>");
-            *bytes.last_chunk::<32>().expect("Not 32 bytes")
-        } else {
-            return Err(">> None return value".into());
+    let wasm_hash = match server
+        .wait_transaction(&hash, Duration::from_secs(15))
+        .await
+    {
+        Ok(tx_result) if tx_result.status == TransactionStatus::Success => {
+            let (_meta, ret_val) = tx_result.to_result_meta().expect("No meta found");
+            if let Some(scval) = ret_val {
+                let bytes: Vec<u8> = scval.try_into().expect("Cannot convert ScVal to Vec<u8>");
+                *bytes.last_chunk::<32>().expect("Not 32 bytes")
+            } else {
+                return Err(">> None return value".into());
+            }
         }
-    } else {
-        println!(">> Failed to upload the WASM executable");
-        return Err(">> Failed to upload the wasm".into());
+        _ => {
+            println!(">> Failed to upload the WASM executable");
+            return Err(">> Failed to upload the wasm".into());
+        }
     };
     println!(">> Wasm hash: {}", hex::encode(wasm_hash));
     println!();
@@ -86,17 +90,21 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let response = server.send_transaction(ptx).await?;
 
-    let hash = &response.hash;
+    let hash = response.hash;
     println!(">> Tx hash: {hash}");
-    let contract_addr = if let Some(tx_result) = wait_success(&server, response).await {
-        let (_meta, ret_val) = tx_result.to_result_meta().expect("No meta");
-        if let Some(xdr::ScVal::Address(addr)) = ret_val {
-            Address::from_sc_address(&addr).unwrap()
-        } else {
-            return Err("Failed to create contract".into());
+    let contract_addr = match server
+        .wait_transaction(&hash, Duration::from_secs(15))
+        .await
+    {
+        Ok(tx_result) if tx_result.status == TransactionStatus::Success => {
+            let (_meta, ret_val) = tx_result.to_result_meta().expect("No meta");
+            if let Some(xdr::ScVal::Address(addr)) = ret_val {
+                Address::from_sc_address(&addr).unwrap()
+            } else {
+                return Err("Failed to create contract".into());
+            }
         }
-    } else {
-        return Err("Failed to create contract".into());
+        _ => return Err("Failed to create contract".into()),
     };
     println!(">> Contract id: {}", contract_addr.to_string());
     println!();
@@ -125,64 +133,23 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let response = server.send_transaction(ptx).await?;
 
-    let hash = &response.hash;
+    let hash = response.hash;
     println!(">> Tx hash: {hash}");
-    let counter: u32 = if let Some(tx_result) = wait_success(&server, response).await {
-        let (_meta, ret_val) = tx_result.to_result_meta().expect("No result meta");
-        ret_val
-            .expect("None returned value")
-            .try_into()
-            .expect("Return value is not u32")
-    } else {
-        return Err("Failed to create contract".into());
+    let counter: u32 = match server
+        .wait_transaction(&hash, Duration::from_secs(15))
+        .await
+    {
+        Ok(tx_result) if tx_result.status == TransactionStatus::Success => {
+            let (_meta, ret_val) = tx_result.to_result_meta().expect("No result meta");
+            ret_val
+                .expect("None returned value")
+                .try_into()
+                .expect("Return value is not u32")
+        }
+        _ => return Err("Failed to create contract".into()),
     };
-    println!(">> Counter: {counter}",); // should be 1 since it's a new contract
+    println!(">> Counter: {counter}",);
     println!();
 
     Ok(())
-}
-
-async fn wait_success(
-    server: &Server,
-    response: SendTransactionResponse,
-) -> Option<GetTransactionResponse> {
-    if response.status != SendTransactionStatus::Error {
-        let mut count = 0;
-        loop {
-            let response = server.get_transaction(&response.hash).await;
-            if let Ok(tx_result) = response {
-                match tx_result.status {
-                    TransactionStatus::Success => {
-                        if let Some(ledger) = tx_result.ledger {
-                            println!(">> Confirmed in ledger: {}", ledger);
-                        }
-                        return Some(tx_result);
-                    }
-                    TransactionStatus::NotFound => {
-                        count += 1;
-
-                        if count > 6 {
-                            println!(
-                                ">> Waiting for transaction confirmation... Latest ledger: {}",
-                                tx_result.latest_ledger
-                            );
-                        }
-
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                    }
-                    TransactionStatus::Failed => {
-                        if let Some(result) = tx_result.to_result() {
-                            eprintln!("Transaction failed with result: {:?}", result);
-                        } else {
-                            eprintln!("Transaction failed without result XDR");
-                        }
-                        return None;
-                    }
-                }
-            } else {
-                eprintln!("! Error getting transaction status: {:?}", response);
-            }
-        }
-    }
-    None
 }
