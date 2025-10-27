@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc, time::Duration};
+use std::time::Duration;
 
 use soroban_client::{
     account::{Account, AccountBehavior},
@@ -23,10 +23,10 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Get account information from server
     let account_data = server.request_airdrop(source_public_key).await?;
-    let source_account = Rc::new(RefCell::new(Account::new(
+    let mut source_account = Account::new(
         source_public_key,
         &account_data.sequence_number(),
-    )?));
+    )?;
 
     let wasm = std::fs::read("./examples/soroban_auth_contract.wasm")?;
 
@@ -36,7 +36,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let upload = Operation::new()
         .upload_wasm(&wasm, None)
         .expect("Cannot create upload_wasm operation");
-    let tx = TransactionBuilder::new(source_account.clone(), Networks::testnet(), None)
+    let tx = TransactionBuilder::new(&mut source_account, Networks::testnet(), None)
         .fee(1000u32)
         .add_operation(upload)
         .build();
@@ -76,7 +76,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let create_contract = Operation::new()
         .create_contract(source_public_key, wasm_hash, None, None, [].into())
         .expect("Cannot create create_contract operation");
-    let tx = TransactionBuilder::new(source_account.clone(), Networks::testnet(), None)
+    let tx = TransactionBuilder::new(&mut source_account, Networks::testnet(), None)
         .fee(1000u32)
         .add_operation(create_contract)
         .build();
@@ -113,7 +113,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Calling the increment method of the contract
     //
     let contract = Contracts::new(&contract_addr.to_string()).unwrap();
-    let tx = TransactionBuilder::new(source_account.clone(), Networks::testnet(), None)
+    let tx = TransactionBuilder::new(&mut source_account, Networks::testnet(), None)
         .fee(1000u32)
         .add_operation(contract.call(
             "increment",

@@ -92,7 +92,7 @@ fn is_soroban_transaction(tx: &Transaction) -> bool {
 
 #[cfg(test)]
 mod test {
-    use std::{cell::RefCell, rc::Rc, str::FromStr};
+    use std::str::FromStr;
 
     use serde_json::json;
     use stellar_baselib::{
@@ -113,13 +113,11 @@ mod test {
 
     #[test]
     fn tx_with_auth() {
-        let source_account = Rc::new(RefCell::new(
-            Account::new(
-                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-                "0",
-            )
-            .unwrap(),
-        ));
+        let mut source_account = Account::new(
+            "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+            "0",
+        )
+        .unwrap();
         let network = "Network for tests";
 
         let contract_address = ScAddress::Contract(ContractId(Hash([0; 32])));
@@ -150,7 +148,7 @@ mod test {
             }),
         };
 
-        let mut builder = TransactionBuilder::new(source_account, network, None);
+        let mut builder = TransactionBuilder::new(&mut source_account, network, None);
         builder.fee(1000u32).set_timeout(30).unwrap();
         builder.add_operation(op);
         let tx = builder.build();
@@ -195,13 +193,11 @@ mod test {
 
     #[test]
     fn simulation_failed() {
-        let source_account = Rc::new(RefCell::new(
-            Account::new(
-                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-                "0",
-            )
-            .unwrap(),
-        ));
+        let mut source_account = Account::new(
+            "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+            "0",
+        )
+        .unwrap();
         let network = "Network for tests";
 
         let op = Operation {
@@ -216,7 +212,7 @@ mod test {
             }),
         };
 
-        let mut builder = TransactionBuilder::new(source_account, network, None);
+        let mut builder = TransactionBuilder::new(&mut source_account, network, None);
         builder.fee(1000u32).set_timeout(30).unwrap();
         builder.add_operation(op);
         let tx = builder.build();
@@ -235,13 +231,11 @@ mod test {
 
     #[test]
     fn is_soroban_transaction_false() {
-        let source_account = Rc::new(RefCell::new(
-            Account::new(
-                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-                "0",
-            )
-            .unwrap(),
-        ));
+        let mut source_account = Account::new(
+            "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+            "0",
+        )
+        .unwrap();
         let network = "Network for tests";
 
         let op = Operation {
@@ -252,7 +246,7 @@ mod test {
             }),
         };
 
-        let mut builder = TransactionBuilder::new(source_account, network, None);
+        let mut builder = TransactionBuilder::new(&mut source_account, network, None);
         builder.fee(1000u32).set_timeout(30).unwrap();
         builder.add_operation(op);
         let tx = builder.build();
@@ -287,13 +281,11 @@ mod test {
 
     #[test]
     fn is_soroban_transaction_true() {
-        let source_account = Rc::new(RefCell::new(
-            Account::new(
-                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-                "0",
-            )
-            .unwrap(),
-        ));
+        let mut source_account = Account::new(
+            "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+            "0",
+        )
+        .unwrap();
         let network = "Network for tests";
 
         let op = Operation {
@@ -308,7 +300,7 @@ mod test {
             }),
         };
 
-        let mut builder = TransactionBuilder::new(source_account, network, None);
+        let mut builder = TransactionBuilder::new(&mut source_account, network, None);
         builder.fee(1000u32).set_timeout(30).unwrap();
         builder.add_operation(op);
         let tx = builder.build();
@@ -318,13 +310,11 @@ mod test {
 
     #[test]
     fn is_soroban_transaction_2_ops() {
-        let source_account = Rc::new(RefCell::new(
-            Account::new(
-                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-                "0",
-            )
-            .unwrap(),
-        ));
+        let mut source_account = Account::new(
+            "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+            "0",
+        )
+        .unwrap();
         let network = "Network for tests";
 
         let op = Operation {
@@ -339,7 +329,7 @@ mod test {
             }),
         };
 
-        let mut builder = TransactionBuilder::new(source_account, network, None);
+        let mut builder = TransactionBuilder::new(&mut source_account, network, None);
         builder.fee(1000u32).set_timeout(30).unwrap();
         builder.add_operation(op.clone());
         builder.add_operation(op);
@@ -349,16 +339,14 @@ mod test {
     }
     #[test]
     fn is_soroban_transaction_no_ops() {
-        let source_account = Rc::new(RefCell::new(
-            Account::new(
-                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-                "0",
-            )
-            .unwrap(),
-        ));
+        let mut source_account = Account::new(
+            "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+            "0",
+        )
+        .unwrap();
         let network = "Network for tests";
 
-        let mut builder = TransactionBuilder::new(source_account, network, None);
+        let mut builder = TransactionBuilder::new(&mut source_account, network, None);
         builder.fee(1000u32).set_timeout(30).unwrap();
         let tx = builder.build();
 

@@ -12,7 +12,8 @@ authors = ["Rahul Soshte <rahul.soshte47@gmail.com>"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-stellar-baselib = { version = "0.5.3" }
+stellar-baselib = { git = "https://github.com/rahul-soshte/rs-stellar-base", branch = "fix/issue-25-mutable-reference" }
+
 # stellar-baselib = { path = "../rs-stellar-base/" }     # Useful for local development, but not for publishing
 tokio = { version = "1.43.0", features = ["time"] }
 serde = { version = "1", features = ["derive"] }

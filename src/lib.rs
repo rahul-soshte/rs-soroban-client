@@ -5,8 +5,6 @@
 //!
 //!# Example: Create account on testnet and fetch balance using simulation
 //!```rust
-//! # use std::rc::Rc;
-//! # use std::cell::RefCell;
 //! # use soroban_client::*;
 //! # use soroban_client::account::Account;
 //! # use soroban_client::address::Address;
@@ -36,13 +34,11 @@
 //!    // Create the account using friendbot
 //!    let account = rpc.request_airdrop(&kp.public_key()).await.unwrap();
 //!
-//!    let source_account = Rc::new(RefCell::new(
-//!        Account::new(&kp.public_key(), &account.sequence_number()).unwrap(),
-//!    ));
+//!    let mut source_account = Account::new(&kp.public_key(), &account.sequence_number()).unwrap();
 //!
-//!   
+//!
 //!    let account_address = Address::new(&kp.public_key()).unwrap();
-//!    let tx = TransactionBuilder::new(source_account, Networks::testnet(), None)
+//!    let tx = TransactionBuilder::new(&mut source_account, Networks::testnet(), None)
 //!        .fee(1000u32)
 //!        .add_operation(
 //!            native_sac.call(
