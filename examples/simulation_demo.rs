@@ -7,9 +7,14 @@
 /// - `build()` increments the account's sequence number, `build_for_simulation()` does not
 ///
 /// Run with: cargo run --example simulation_demo
-
 use soroban_client::{
-    Options, Server, account::{Account, AccountBehavior}, asset::AssetBehavior, keypair::{Keypair, KeypairBehavior}, network::{NetworkPassphrase, Networks}, operation::Operation, transaction::{TransactionBuilder, TransactionBuilderBehavior}
+    account::{Account, AccountBehavior},
+    asset::AssetBehavior,
+    keypair::{Keypair, KeypairBehavior},
+    network::{NetworkPassphrase, Networks},
+    operation::Operation,
+    transaction::{TransactionBuilder, TransactionBuilderBehavior},
+    Options, Server,
 };
 
 #[tokio::main]
@@ -24,10 +29,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Funding account via friendbot...");
     let account_data = server.request_airdrop(source_public_key).await?;
 
-    let mut source_account = Account::new(
-        source_public_key,
-        &account_data.sequence_number(),
-    )?;
+    let mut source_account = Account::new(source_public_key, &account_data.sequence_number())?;
 
     let initial_sequence = source_account.sequence_number();
     println!("\nInitial account sequence number: {}", initial_sequence);
@@ -55,8 +57,14 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Build for simulation - this does NOT increment the account sequence number
         let tx_for_simulation = builder.build_for_simulation();
 
-        println!("Transaction sequence number: {}", tx_for_simulation.sequence.as_ref().unwrap());
-        println!("Account sequence after build_for_simulation(): {}", source_account.sequence_number());
+        println!(
+            "Transaction sequence number: {}",
+            tx_for_simulation.sequence.as_ref().unwrap()
+        );
+        println!(
+            "Account sequence after build_for_simulation(): {}",
+            source_account.sequence_number()
+        );
 
         // You can now simulate this transaction without affecting the account state
         match server.simulate_transaction(&tx_for_simulation, None).await {
@@ -71,7 +79,10 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    println!("\nAccount sequence after simulation: {}", source_account.sequence_number());
+    println!(
+        "\nAccount sequence after simulation: {}",
+        source_account.sequence_number()
+    );
     println!("Notice: Sequence number is still {}", initial_sequence);
 
     // Example 2: Using build() - DOES increment sequence
@@ -87,10 +98,19 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Build for actual submission - this INCREMENTS the account sequence number
         let tx_for_submission = builder.build();
 
-        println!("Transaction sequence number: {}", tx_for_submission.sequence.as_ref().unwrap());
-        println!("Account sequence after build(): {}", source_account.sequence_number());
-        println!("Notice: Sequence number was incremented from {} to {}",
-                 initial_sequence, source_account.sequence_number());
+        println!(
+            "Transaction sequence number: {}",
+            tx_for_submission.sequence.as_ref().unwrap()
+        );
+        println!(
+            "Account sequence after build(): {}",
+            source_account.sequence_number()
+        );
+        println!(
+            "Notice: Sequence number was incremented from {} to {}",
+            initial_sequence,
+            source_account.sequence_number()
+        );
 
         // Now if you submit this transaction, the sequence number is correct
         // (we won't actually submit it in this example)
@@ -109,10 +129,12 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap();
 
         let tx = builder.build_for_simulation();
-        println!("Simulation #{}: tx seq = {}, account seq = {}",
-                 i,
-                 tx.sequence.as_ref().unwrap(),
-                 source_account.sequence_number());
+        println!(
+            "Simulation #{}: tx seq = {}, account seq = {}",
+            i,
+            tx.sequence.as_ref().unwrap(),
+            source_account.sequence_number()
+        );
     }
 
     println!("\n✅ Summary:");

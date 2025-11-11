@@ -20,7 +20,8 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Get account information from server
     let account_data = server.request_airdrop(source_public_key).await?;
-    let mut source_account = Account::new(source_public_key, &account_data.sequence_number()).unwrap();
+    let mut source_account =
+        Account::new(source_public_key, &account_data.sequence_number()).unwrap();
 
     let to_create_keypair = Keypair::random().unwrap();
     let to_create_public_key = &to_create_keypair.public_key();
