@@ -23,10 +23,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Get account information from server
     let account_data = server.request_airdrop(source_public_key).await?;
-    let mut source_account = Account::new(
-        source_public_key,
-        &account_data.sequence_number(),
-    )?;
+    let mut source_account = Account::new(source_public_key, &account_data.sequence_number())?;
 
     let wasm = std::fs::read("./examples/soroban_auth_contract.wasm")?;
 
