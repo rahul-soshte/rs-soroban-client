@@ -1,5 +1,3 @@
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::time::Duration;
 use std::vec;
 
@@ -964,13 +962,11 @@ async fn simulate_transaction() {
           }
         }
                 );
-        let source_account = Rc::new(RefCell::new(
-            Account::new(
-                "GAQODVWAY3AYAGEAT4CG3YSPM4FBTBB2QSXCYJLM3HVIV5ILTP5BRXCD",
-                "10911149667123216",
-            )
-            .unwrap(),
-        ));
+        let mut source_account = Account::new(
+            "GAQODVWAY3AYAGEAT4CG3YSPM4FBTBB2QSXCYJLM3HVIV5ILTP5BRXCD",
+            "10911149667123216",
+        )
+        .unwrap();
         let network = Networks::testnet();
         let time_bounds = TimeBounds {
             min_time: TimePoint(0),
@@ -990,7 +986,8 @@ async fn simulate_transaction() {
             ]),
         );
 
-        let mut tx_builder = TransactionBuilder::new(source_account, network, Some(time_bounds));
+        let mut tx_builder =
+            TransactionBuilder::new(&mut source_account, network, Some(time_bounds));
         tx_builder.add_operation(op);
         tx_builder.fee(100u32);
 
@@ -1068,13 +1065,11 @@ async fn simulate_transaction() {
                    }
           }
                          );
-        let source_account = Rc::new(RefCell::new(
-            Account::new(
-                "GAQODVWAY3AYAGEAT4CG3YSPM4FBTBB2QSXCYJLM3HVIV5ILTP5BRXCD",
-                "10911149667123214",
-            )
-            .unwrap(),
-        ));
+        let mut source_account = Account::new(
+            "GAQODVWAY3AYAGEAT4CG3YSPM4FBTBB2QSXCYJLM3HVIV5ILTP5BRXCD",
+            "10911149667123214",
+        )
+        .unwrap();
         let network = Networks::testnet();
         let time_bounds = TimeBounds {
             min_time: TimePoint(0),
@@ -1085,7 +1080,8 @@ async fn simulate_transaction() {
             Contracts::new("CDGAH7TU7UH3BXGYXRIXLJX63LYRIF6APZPIG64ZAW3NNDCPJ7AAWVTZ").unwrap();
         let op = contract.call("increment", Some(vec![ScVal::U32(3)]));
 
-        let mut tx_builder = TransactionBuilder::new(source_account, network, Some(time_bounds));
+        let mut tx_builder =
+            TransactionBuilder::new(&mut source_account, network, Some(time_bounds));
         tx_builder.add_operation(op);
         tx_builder.fee(100u32);
 
@@ -1201,13 +1197,11 @@ async fn simulate_transaction() {
           }
         });
 
-        let source_account = Rc::new(RefCell::new(
-            Account::new(
-                "GD7UIMVKR6RJ3HNJE2PFNHH2EWAUJYZDPBHUL74W2CM7J6A3YDSXGPJN",
-                "4311013293817857",
-            )
-            .unwrap(),
-        ));
+        let mut source_account = Account::new(
+            "GD7UIMVKR6RJ3HNJE2PFNHH2EWAUJYZDPBHUL74W2CM7J6A3YDSXGPJN",
+            "4311013293817857",
+        )
+        .unwrap();
         let network = Networks::testnet();
 
         let contract =
@@ -1222,7 +1216,7 @@ async fn simulate_transaction() {
             .unwrap()]),
         );
 
-        let mut tx_builder = TransactionBuilder::new(source_account, network, None);
+        let mut tx_builder = TransactionBuilder::new(&mut source_account, network, None);
         tx_builder.add_operation(op);
         tx_builder.fee(100000000u32);
 
@@ -1293,13 +1287,11 @@ async fn simulate_transaction() {
           }
         });
 
-        let source_account = Rc::new(RefCell::new(
-            Account::new(
-                "GD7UIMVKR6RJ3HNJE2PFNHH2EWAUJYZDPBHUL74W2CM7J6A3YDSXGPJN",
-                "4311013293817858",
-            )
-            .unwrap(),
-        ));
+        let mut source_account = Account::new(
+            "GD7UIMVKR6RJ3HNJE2PFNHH2EWAUJYZDPBHUL74W2CM7J6A3YDSXGPJN",
+            "4311013293817858",
+        )
+        .unwrap();
         let network = Networks::testnet();
 
         let contract =
@@ -1314,7 +1306,7 @@ async fn simulate_transaction() {
             .unwrap()]),
         );
 
-        let mut tx_builder = TransactionBuilder::new(source_account, network, None);
+        let mut tx_builder = TransactionBuilder::new(&mut source_account, network, None);
         tx_builder.add_operation(op);
         tx_builder.fee(100000000u32);
 
@@ -1384,13 +1376,11 @@ async fn simulate_transaction() {
           }
         });
 
-        let source_account = Rc::new(RefCell::new(
-            Account::new(
-                "GD7UIMVKR6RJ3HNJE2PFNHH2EWAUJYZDPBHUL74W2CM7J6A3YDSXGPJN",
-                "4311013293817859",
-            )
-            .unwrap(),
-        ));
+        let mut source_account = Account::new(
+            "GD7UIMVKR6RJ3HNJE2PFNHH2EWAUJYZDPBHUL74W2CM7J6A3YDSXGPJN",
+            "4311013293817859",
+        )
+        .unwrap();
         let network = Networks::testnet();
 
         let contract =
@@ -1405,7 +1395,7 @@ async fn simulate_transaction() {
             .unwrap()]),
         );
 
-        let mut tx_builder = TransactionBuilder::new(source_account, network, None);
+        let mut tx_builder = TransactionBuilder::new(&mut source_account, network, None);
         tx_builder.add_operation(op);
         tx_builder.fee(100000000u32);
 
@@ -1670,13 +1660,11 @@ async fn prepare_transaction() {
           }
         }
         );
-        let source_account = Rc::new(RefCell::new(
-            Account::new(
-                "GAQODVWAY3AYAGEAT4CG3YSPM4FBTBB2QSXCYJLM3HVIV5ILTP5BRXCD",
-                "10911149667123217",
-            )
-            .unwrap(),
-        ));
+        let mut source_account = Account::new(
+            "GAQODVWAY3AYAGEAT4CG3YSPM4FBTBB2QSXCYJLM3HVIV5ILTP5BRXCD",
+            "10911149667123217",
+        )
+        .unwrap();
         let network = Networks::testnet();
         let time_bounds = TimeBounds {
             min_time: TimePoint(0),
@@ -1696,7 +1684,8 @@ async fn prepare_transaction() {
             ]),
         );
 
-        let mut tx_builder = TransactionBuilder::new(source_account, network, Some(time_bounds));
+        let mut tx_builder =
+            TransactionBuilder::new(&mut source_account, network, Some(time_bounds));
         tx_builder.add_operation(op);
         tx_builder.fee(100u32);
 
@@ -1718,13 +1707,11 @@ async fn prepare_transaction() {
         assert_eq!(txresult.soroban_data, simulation.to_transaction_data());
     }
     {
-        let source_account = Rc::new(RefCell::new(
-            Account::new(
-                "GAQODVWAY3AYAGEAT4CG3YSPM4FBTBB2QSXCYJLM3HVIV5ILTP5BRXCD",
-                "10911149667123217",
-            )
-            .unwrap(),
-        ));
+        let mut source_account = Account::new(
+            "GAQODVWAY3AYAGEAT4CG3YSPM4FBTBB2QSXCYJLM3HVIV5ILTP5BRXCD",
+            "10911149667123217",
+        )
+        .unwrap();
         let network = Networks::testnet();
         let time_bounds = TimeBounds {
             min_time: TimePoint(0),
@@ -1818,7 +1805,8 @@ async fn prepare_transaction() {
         }
                 );
 
-        let mut tx_builder = TransactionBuilder::new(source_account, network, Some(time_bounds));
+        let mut tx_builder =
+            TransactionBuilder::new(&mut source_account, network, Some(time_bounds));
         tx_builder.add_operation(op);
         tx_builder.fee(100u32);
 
@@ -2638,12 +2626,10 @@ async fn native_check_balance_testnet() {
     let kp = Keypair::random().unwrap();
     let account = rpc.request_airdrop(&kp.public_key()).await.unwrap();
 
-    let source_account = Rc::new(RefCell::new(
-        Account::new(&kp.public_key(), &account.sequence_number()).unwrap(),
-    ));
+    let mut source_account = Account::new(&kp.public_key(), &account.sequence_number()).unwrap();
 
     let account_address = Address::new(&kp.public_key()).unwrap();
-    let tx = TransactionBuilder::new(source_account, Networks::testnet(), None)
+    let tx = TransactionBuilder::new(&mut source_account, Networks::testnet(), None)
         .fee(1000u32)
         .add_operation(native_sac.call("balance", Some(vec![account_address.to_sc_val().unwrap()])))
         .build();

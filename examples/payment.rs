@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc, time::Duration};
+use std::time::Duration;
 
 use soroban_client::{
     account::{Account, AccountBehavior},
@@ -20,9 +20,8 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Get account information from server
     let account_data = server.request_airdrop(source_public_key).await?;
-    let source_account = Rc::new(RefCell::new(
-        Account::new(source_public_key, &account_data.sequence_number()).unwrap(),
-    ));
+    let mut source_account =
+        Account::new(source_public_key, &account_data.sequence_number()).unwrap();
 
     let to_create_keypair = Keypair::random().unwrap();
     let to_create_public_key = &to_create_keypair.public_key();
@@ -34,7 +33,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .create_account(to_create_public_key, operation::ONE)
         .expect("Cannot create operation");
 
-    let mut builder = TransactionBuilder::new(source_account.clone(), Networks::testnet(), None);
+    let mut builder = TransactionBuilder::new(&mut source_account, Networks::testnet(), None);
     builder.fee(1000u32);
     builder.add_operation(create_account_op);
 
@@ -58,7 +57,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .payment(to_create_public_key, &Asset::native(), 100 * operation::ONE)
         .expect("Cannot create payment operation");
 
-    let mut builder = TransactionBuilder::new(source_account.clone(), Networks::testnet(), None);
+    let mut builder = TransactionBuilder::new(&mut source_account, Networks::testnet(), None);
     builder.fee(1000u32);
     builder.add_operation(payment);
 
