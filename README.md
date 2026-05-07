@@ -9,7 +9,7 @@
 
 A Rust client library for interacting with Soroban smart contracts on the Stellar blockchain
 
-**This project is currently in production and is compatible with Protocol 23 and you can use it for buidling and signing transactions that involve interacting with Soroban and also supports all stellar classic operations.**
+**This project is currently in production and is compatible with Protocol 26 and you can use it for building and signing transactions that involve interacting with Soroban and also supports all stellar classic operations.**
 
 ## Quickstart
 
@@ -17,7 +17,7 @@ Add this to your Cargo.toml:
 
 ```toml
 [dependencies]
-soroban-client = "0.5.5"
+soroban-client = "0.5.6"
 ```
 
 And this to your code:
