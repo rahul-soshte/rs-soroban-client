@@ -55,7 +55,7 @@ impl LedgerEntryResult {
     pub fn to_ext(&self) -> Option<LedgerEntryExt> {
         self.ext_xdr.as_ref().map(|ext| {
             LedgerEntryExt::from_xdr_base64(ext, Limits::none())
-                .expect("Invalid LedgerEntryData from RPC")
+                .expect("Invalid LedgerEntryExt from RPC")
         })
     }
 }
