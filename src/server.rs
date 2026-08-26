@@ -150,6 +150,28 @@ pub struct SimulationOptions {
     pub cpu_instructions: u64,
     /// The auth mode to apply to the simulation, if None enforce if auth entries are present, record otherwise
     pub auth_mode: Option<AuthMode>,
+    /// Ask the RPC for CAP-0071 v2 auth credentials
+    /// ([SorobanCredentials::AddressV2]) instead of the legacy
+    /// [SorobanCredentials::Address] when simulating in recording mode.
+    ///
+    /// When `None` (default) the field is omitted from the request and the RPC
+    /// applies its own default, which returns v1 credentials as of Protocol 27.
+    ///
+    /// Entries returned with v2 credentials must be signed with the
+    /// address-bound preimage. [authorize_entry] handles both arms already, so
+    /// signing an entry returned by an upgraded simulation works without any
+    /// change on the caller side. Hand-rolled signing code that hardcodes
+    /// `ENVELOPE_TYPE_SOROBAN_AUTHORIZATION` will produce signatures the host
+    /// rejects, so audit it before turning this on.
+    ///
+    /// This flag is transitional: the RPC plans to return v2 by default in
+    /// Protocol 29 and to drop the flag in Protocol 30. Do not rely on leaving
+    /// it unset to keep receiving v1 credentials.
+    ///
+    /// [SorobanCredentials::Address]: stellar_baselib::xdr::SorobanCredentials::Address
+    /// [SorobanCredentials::AddressV2]: stellar_baselib::xdr::SorobanCredentials::AddressV2
+    /// [authorize_entry]: stellar_baselib::authorize_entry::authorize_entry
+    pub use_upgraded_auth: Option<bool>,
 }
 
 /// Select the auth mode to apply to the simulation
@@ -580,19 +602,23 @@ impl Server {
             .map_err(|_| Error::XdrError)?;
 
         // Add resource config if provided
-        let params = if let Some(resources) = options {
-            json!({
-                "transaction": transaction_xdr,
-                "resourceConfig": {
-                    "instructionLeeway": resources.cpu_instructions
-                },
-                "authMode": resources.auth_mode.map(|a| {let mode: &str = a.into(); mode}),
-            })
-        } else {
-            json!({
-                "transaction": transaction_xdr
-            })
-        };
+        let mut params = json!({
+            "transaction": transaction_xdr
+        });
+        if let Some(resources) = options {
+            let map = params.as_object_mut().expect("params is an object");
+            map.insert(
+                "resourceConfig".into(),
+                json!({ "instructionLeeway": resources.cpu_instructions }),
+            );
+            if let Some(auth_mode) = resources.auth_mode {
+                let mode: &str = auth_mode.into();
+                map.insert("authMode".into(), json!(mode));
+            }
+            if let Some(use_upgraded_auth) = resources.use_upgraded_auth {
+                map.insert("useUpgradedAuth".into(), json!(use_upgraded_auth));
+            }
+        }
 
         let response = self.client.post("simulateTransaction", params).await?;
         handle_response(response)

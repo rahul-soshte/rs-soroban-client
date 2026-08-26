@@ -12,8 +12,6 @@ use soroban_client::transaction_builder::TIMEOUT_INFINITE;
 use soroban_client::EventFilter;
 use soroban_client::Options;
 use soroban_client::{keypair::Keypair, Server};
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::time::Duration;
 
 #[tokio::main]
@@ -34,22 +32,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Get account information from server
     let account_data = server.request_airdrop(source_public_key).await?;
-    let source_account = Rc::new(RefCell::new(
-        Account::new(source_public_key, &account_data.sequence_number()).unwrap(),
-    ));
+    let mut source_account =
+        Account::new(source_public_key, &account_data.sequence_number()).unwrap();
 
     // Contract interaction transaction
     let contract_id = "CAZWWALXKM4OC7FIQZNMZXXZM3Y2ENK3IDKQFU5RLG5VORTUU5ZWW5QY";
     let contract = contract::Contracts::new(contract_id).unwrap();
 
     let mut contract_tx =
-        TransactionBuilder::new(source_account.clone(), Networks::testnet(), None)
+        TransactionBuilder::new(&mut source_account, Networks::testnet(), None)
             .fee(1000000_u32)
             .add_operation(contract.call("increment", None))
             .set_timeout(TIMEOUT_INFINITE)?
             .build();
 
-    let tmp = server.prepare_transaction(contract_tx).await;
+    let tmp = server.prepare_transaction(&contract_tx).await;
     contract_tx = tmp.unwrap();
     // let before_signing = contract_tx.to_envelope().unwrap().to_xdr_base64(Limits::none());
     // println!("Before Signing {:?}", before_signing);

@@ -17,6 +17,8 @@ use stellar_baselib::account::Account;
 use stellar_baselib::account::AccountBehavior;
 use stellar_baselib::address::Address;
 use stellar_baselib::address::AddressTrait;
+use stellar_baselib::authorize_entry::authorize_entry;
+use stellar_baselib::authorize_entry::AuthorizeEntryParams;
 use stellar_baselib::contract::ContractBehavior;
 use stellar_baselib::contract::Contracts;
 use stellar_baselib::hashing;
@@ -40,6 +42,7 @@ use stellar_baselib::xdr::ExtensionPoint;
 use stellar_baselib::xdr::GeneralizedTransactionSet;
 use stellar_baselib::xdr::Hash;
 use stellar_baselib::xdr::Int128Parts;
+use stellar_baselib::xdr::InvokeContractArgs;
 use stellar_baselib::xdr::InvokeHostFunctionResult;
 use stellar_baselib::xdr::LedgerCloseMeta;
 use stellar_baselib::xdr::LedgerCloseMetaV1;
@@ -55,12 +58,18 @@ use stellar_baselib::xdr::ScString;
 use stellar_baselib::xdr::ScSymbol;
 use stellar_baselib::xdr::ScVal;
 use stellar_baselib::xdr::ScVec;
+use stellar_baselib::xdr::SorobanAddressCredentials;
+use stellar_baselib::xdr::SorobanAuthorizationEntry;
+use stellar_baselib::xdr::SorobanAuthorizedFunction;
+use stellar_baselib::xdr::SorobanAuthorizedInvocation;
+use stellar_baselib::xdr::SorobanCredentials;
 use stellar_baselib::xdr::SorobanResources;
 use stellar_baselib::xdr::SorobanTransactionData;
 use stellar_baselib::xdr::TimeBounds;
 use stellar_baselib::xdr::TimePoint;
 use stellar_baselib::xdr::TransactionEvent;
 use stellar_baselib::xdr::TransactionEventStage;
+use stellar_baselib::xdr::VecM;
 
 use stellar_baselib::xdr::TransactionResult;
 use stellar_baselib::xdr::TransactionResultResult;
@@ -1100,6 +1109,7 @@ async fn simulate_transaction() {
                 Some(SimulationOptions {
                     cpu_instructions: 3000000,
                     auth_mode: Some(AuthMode::Enforce),
+                    ..Default::default()
                 }),
             )
             .await
@@ -1414,6 +1424,196 @@ async fn simulate_transaction() {
         assert!(matches!(&state_changes[0].kind, StateChangeKind::Deleted));
         // TODO more test
     }
+}
+
+#[tokio::test]
+async fn simulate_transaction_use_upgraded_auth() {
+    let signer = Keypair::random().unwrap();
+    let signer_address = Address::new(&signer.public_key())
+        .unwrap()
+        .to_sc_address()
+        .unwrap();
+
+    let contract_id = "CASCBLTYELLTOIMRSG2BRJ3XN3J3WB4J7JEUHCH4RLSNL3XLWCNGRTCR";
+    let invocation = SorobanAuthorizedInvocation {
+        function: SorobanAuthorizedFunction::ContractFn(InvokeContractArgs {
+            contract_address: Address::new(contract_id).unwrap().to_sc_address().unwrap(),
+            function_name: ScSymbol("inc_auth".try_into().unwrap()),
+            args: vec![ScVal::Address(signer_address.clone())]
+                .try_into()
+                .unwrap(),
+        }),
+        sub_invocations: VecM::default(),
+    };
+
+    // What an `useUpgradedAuth: true` recording simulation returns: the same
+    // payload as a v1 entry, but under the ADDRESS_V2 arm.
+    let recorded_entry = SorobanAuthorizationEntry {
+        credentials: SorobanCredentials::AddressV2(SorobanAddressCredentials {
+            address: signer_address,
+            nonce: 1234,
+            signature_expiration_ledger: 0,
+            signature: ScVal::Void,
+        }),
+        root_invocation: invocation,
+    };
+    let recorded_entry_xdr = recorded_entry.to_xdr_base64(Limits::none()).unwrap();
+
+    let tx_xdr = "AAAAAgAAAAD/RDKqj6Kdnakmnlac+iWBROMjeE9F/5bQmfT4G8DlcwX14QAAD1DYAAAAAwAAAAAAAAAAAAAAAQAAAAAAAAAYAAAAAAAAAAEkIK54Itc3IZGRtBind27TuweJ+klDiPyK5NXu67CaaAAAAAhpbmNfYXV0aAAAAAEAAAASAAAAAAAAAAD/RDKqj6Kdnakmnlac+iWBROMjeE9F/5bQmfT4G8DlcwAAAAAAAAAAAAAAAA==";
+    let request = json!(
+    {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "simulateTransaction",
+      "params": {
+        "transaction": tx_xdr,
+        "authMode": "record",
+        "useUpgradedAuth": true,
+      }
+    });
+    let response = json!(
+    {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "result": {
+        "transactionData": "AAAAAAAAAAIAAAAGAAAAASQgrngi1zchkZG0GKd3btO7B4n6SUOI/Irk1e7rsJpoAAAAFAAAAAEAAAAHcOiuro2Kjk7NwMT6FDrXvb/h7SFI2ZYIxVt7UQy0M6EAAAABAAAABgAAAAEkIK54Itc3IZGRtBind27TuweJ+klDiPyK5NXu67CaaAAAABAAAAABAAAAAgAAAA8AAAALQ291bnRlckF1dGgAAAAAEgAAAAAAAAAA/0Qyqo+inZ2pJp5WnPolgUTjI3hPRf+W0Jn0+BvA5XMAAAAAAA0kKAAABrAAAACMAAAAAAABxsc=",
+        "minResourceFee": "116423",
+        "results": [
+          {
+            "auth": [recorded_entry_xdr],
+            "xdr": "AAAAAwAAAAI=",
+          }
+        ],
+        "latestLedger": 2552139
+      }
+    });
+
+    let mut source_account = Account::new(
+        "GD7UIMVKR6RJ3HNJE2PFNHH2EWAUJYZDPBHUL74W2CM7J6A3YDSXGPJN",
+        "4311013293817858",
+    )
+    .unwrap();
+    let network = Networks::testnet();
+
+    let contract = Contracts::new(contract_id).unwrap();
+    let op = contract.call(
+        "inc_auth",
+        Some(vec![Address::new(
+            "GD7UIMVKR6RJ3HNJE2PFNHH2EWAUJYZDPBHUL74W2CM7J6A3YDSXGPJN",
+        )
+        .unwrap()
+        .to_sc_val()
+        .unwrap()]),
+    );
+
+    let mut tx_builder = TransactionBuilder::new(&mut source_account, network, None);
+    tx_builder.add_operation(op);
+    tx_builder.fee(100000000u32);
+
+    let tx = tx_builder.build();
+    assert_eq!(
+        tx.to_envelope()
+            .unwrap()
+            .to_xdr_base64(Limits::none())
+            .unwrap(),
+        tx_xdr
+    );
+
+    // The mock only replies when the request carries `useUpgradedAuth: true`,
+    // so reaching a result at all proves the flag was sent.
+    let (s, _m) = get_mocked_server(request, response).await;
+    let txresult = s
+        .simulate_transaction(
+            &tx,
+            Some(SimulationOptions {
+                auth_mode: Some(AuthMode::Record),
+                use_upgraded_auth: Some(true),
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap();
+
+    let (_ret_val, auth) = txresult.to_result().expect("Simulation failed");
+    assert_eq!(auth.len(), 1);
+    assert!(matches!(
+        auth[0].credentials,
+        SorobanCredentials::AddressV2(_)
+    ));
+
+    // A v2 entry coming back from simulation must stay v2 once signed, and be
+    // signed with the address-bound preimage.
+    let signed = authorize_entry(AuthorizeEntryParams {
+        entry: auth[0].clone(),
+        signer: &signer,
+        valid_until_ledger_seq: 2552200,
+        network_passphrase: network,
+        use_address_v2: false,
+    })
+    .unwrap();
+
+    if let SorobanCredentials::AddressV2(c) = &signed.credentials {
+        assert_eq!(c.nonce, 1234);
+        assert_eq!(c.signature_expiration_ledger, 2552200);
+        assert_ne!(c.signature, ScVal::Void);
+    } else {
+        panic!("Signing a v2 entry must produce v2 credentials")
+    }
+}
+
+#[tokio::test]
+async fn simulate_transaction_omits_use_upgraded_auth_by_default() {
+    let tx_xdr = "AAAAAgAAAAD/RDKqj6Kdnakmnlac+iWBROMjeE9F/5bQmfT4G8DlcwX14QAAD1DYAAAAAwAAAAAAAAAAAAAAAQAAAAAAAAAYAAAAAAAAAAEkIK54Itc3IZGRtBind27TuweJ+klDiPyK5NXu67CaaAAAAAhpbmNfYXV0aAAAAAEAAAASAAAAAAAAAAD/RDKqj6Kdnakmnlac+iWBROMjeE9F/5bQmfT4G8DlcwAAAAAAAAAAAAAAAA==";
+    let request = json!(
+    {
+      "method": "simulateTransaction",
+      "params": { "transaction": tx_xdr }
+    });
+    let response = json!(
+    {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "result": {
+        "transactionData": "AAAAAAAAAAIAAAAGAAAAASQgrngi1zchkZG0GKd3btO7B4n6SUOI/Irk1e7rsJpoAAAAFAAAAAEAAAAHcOiuro2Kjk7NwMT6FDrXvb/h7SFI2ZYIxVt7UQy0M6EAAAABAAAABgAAAAEkIK54Itc3IZGRtBind27TuweJ+klDiPyK5NXu67CaaAAAABAAAAABAAAAAgAAAA8AAAALQ291bnRlckF1dGgAAAAAEgAAAAAAAAAA/0Qyqo+inZ2pJp5WnPolgUTjI3hPRf+W0Jn0+BvA5XMAAAAAAA0kKAAABrAAAACMAAAAAAABxsc=",
+        "minResourceFee": "116423",
+        "results": [{ "auth": [], "xdr": "AAAAAwAAAAI=" }],
+        "latestLedger": 2552139
+      }
+    });
+
+    let mut source_account = Account::new(
+        "GD7UIMVKR6RJ3HNJE2PFNHH2EWAUJYZDPBHUL74W2CM7J6A3YDSXGPJN",
+        "4311013293817858",
+    )
+    .unwrap();
+    let contract =
+        Contracts::new("CASCBLTYELLTOIMRSG2BRJ3XN3J3WB4J7JEUHCH4RLSNL3XLWCNGRTCR").unwrap();
+    let op = contract.call(
+        "inc_auth",
+        Some(vec![Address::new(
+            "GD7UIMVKR6RJ3HNJE2PFNHH2EWAUJYZDPBHUL74W2CM7J6A3YDSXGPJN",
+        )
+        .unwrap()
+        .to_sc_val()
+        .unwrap()]),
+    );
+    let mut tx_builder = TransactionBuilder::new(&mut source_account, Networks::testnet(), None);
+    tx_builder.add_operation(op);
+    tx_builder.fee(100000000u32);
+    let tx = tx_builder.build();
+
+    let (s, m) = get_mocked_server(request, response).await;
+    s.simulate_transaction(&tx, Some(SimulationOptions::default()))
+        .await
+        .unwrap();
+
+    // `body_partial_json` cannot assert a field is absent, so inspect the
+    // recorded request: an unset flag must not be sent at all, not sent as null.
+    let requests = m.received_requests().await.expect("recording enabled");
+    let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    let params = body["params"].as_object().unwrap();
+    assert!(!params.contains_key("useUpgradedAuth"));
+    assert!(!params.contains_key("authMode"));
 }
 
 #[tokio::test]

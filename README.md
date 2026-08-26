@@ -9,7 +9,7 @@
 
 A Rust client library for interacting with Soroban smart contracts on the Stellar blockchain
 
-**This project is currently in production and is compatible with Protocol 26 and you can use it for building and signing transactions that involve interacting with Soroban and also supports all stellar classic operations.**
+**This project is currently in production and is compatible with Protocol 27 and you can use it for building and signing transactions that involve interacting with Soroban and also supports all stellar classic operations.**
 
 ## Quickstart
 
@@ -17,7 +17,7 @@ Add this to your Cargo.toml:
 
 ```toml
 [dependencies]
-soroban-client = "0.5.7"
+soroban-client = "0.5.9"
 ```
 
 And this to your code:
@@ -40,12 +40,42 @@ use soroban_client::*;
 
 This library will enable developers to seamlessly integrate Soroban functionality into their Rust-based applications and services. Most of the groundwork has already been laid by the Stellar team by building the xdr library and  rust stellar strkey implementation. This particular library has been the missing piece for soroban and the rust community at large in the stellar ecosystem.
 
+## Protocol 27 auth credentials (CAP-0071)
+
+Recording-mode simulation returns legacy `SOROBAN_CREDENTIALS_ADDRESS` entries by
+default. Set `use_upgraded_auth` to ask the RPC for `SOROBAN_CREDENTIALS_ADDRESS_V2`
+entries instead, which bind the credential address into the signed payload:
+
+```rust
+let simulation = rpc
+    .simulate_transaction(
+        &tx,
+        Some(SimulationOptions {
+            auth_mode: Some(AuthMode::Record),
+            use_upgraded_auth: Some(true),
+            ..Default::default()
+        }),
+    )
+    .await?;
+```
+
+`authorize_entry` picks the signing preimage from the credential arm, so v2 entries
+returned by simulation are signed correctly without any change on your side. Only
+hand-rolled signing code needs an audit: v2 entries must use
+`ENVELOPE_TYPE_SOROBAN_AUTHORIZATION_WITH_ADDRESS`, not
+`ENVELOPE_TYPE_SOROBAN_AUTHORIZATION`. See `cargo run --example authorize_entry_demo`.
+
+The flag is transitional — the RPC plans to return v2 by default in Protocol 29 and to
+drop the flag in Protocol 30, so do not rely on leaving it unset to keep receiving v1.
+
 ## Running Examples
 
 ```bash
 cargo run --example create_account
 cargo run --example payment
 cargo run --example deploy
+cargo run --example authorize_entry_demo
+cargo run --example upgraded_auth_e2e   # hits testnet, funds two accounts
 ```
 
 ## Sample Demo of the library
