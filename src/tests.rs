@@ -1548,7 +1548,7 @@ async fn simulate_transaction_use_upgraded_auth() {
         signer: &signer,
         valid_until_ledger_seq: 2552200,
         network_passphrase: network,
-        use_address_v2: false,
+        use_address_v2: Some(false),
     })
     .unwrap();
 
@@ -1562,7 +1562,7 @@ async fn simulate_transaction_use_upgraded_auth() {
 }
 
 #[tokio::test]
-async fn simulate_transaction_omits_use_upgraded_auth_by_default() {
+async fn simulate_transaction_sends_use_upgraded_auth_by_default() {
     let tx_xdr = "AAAAAgAAAAD/RDKqj6Kdnakmnlac+iWBROMjeE9F/5bQmfT4G8DlcwX14QAAD1DYAAAAAwAAAAAAAAAAAAAAAQAAAAAAAAAYAAAAAAAAAAEkIK54Itc3IZGRtBind27TuweJ+klDiPyK5NXu67CaaAAAAAhpbmNfYXV0aAAAAAEAAAASAAAAAAAAAAD/RDKqj6Kdnakmnlac+iWBROMjeE9F/5bQmfT4G8DlcwAAAAAAAAAAAAAAAA==";
     let request = json!(
     {
@@ -1603,17 +1603,265 @@ async fn simulate_transaction_omits_use_upgraded_auth_by_default() {
     let tx = tx_builder.build();
 
     let (s, m) = get_mocked_server(request, response).await;
-    s.simulate_transaction(&tx, Some(SimulationOptions::default()))
-        .await
-        .unwrap();
+    s.simulate_transaction(&tx, None).await.unwrap();
 
-    // `body_partial_json` cannot assert a field is absent, so inspect the
-    // recorded request: an unset flag must not be sent at all, not sent as null.
+    // CAP-71 default flip (Protocol 28 / js-stellar-sdk v17): with no options
+    // at all, the request must carry `useUpgradedAuth: true`. Everything else
+    // stays unset: `authMode` so the RPC picks enforce/record on its own, and
+    // `resourceConfig` so the RPC applies its default instruction leeway
+    // (an explicit `instructionLeeway: 0` would override it to zero).
     let requests = m.received_requests().await.expect("recording enabled");
     let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
     let params = body["params"].as_object().unwrap();
-    assert!(!params.contains_key("useUpgradedAuth"));
+    assert_eq!(params["useUpgradedAuth"], serde_json::json!(true));
     assert!(!params.contains_key("authMode"));
+    assert!(!params.contains_key("resourceConfig"));
+}
+
+#[tokio::test]
+async fn simulate_transaction_use_upgraded_auth_opt_out() {
+    let tx_xdr = "AAAAAgAAAAD/RDKqj6Kdnakmnlac+iWBROMjeE9F/5bQmfT4G8DlcwX14QAAD1DYAAAAAwAAAAAAAAAAAAAAAQAAAAAAAAAYAAAAAAAAAAEkIK54Itc3IZGRtBind27TuweJ+klDiPyK5NXu67CaaAAAAAhpbmNfYXV0aAAAAAEAAAASAAAAAAAAAAD/RDKqj6Kdnakmnlac+iWBROMjeE9F/5bQmfT4G8DlcwAAAAAAAAAAAAAAAA==";
+    let request = json!(
+    {
+      "method": "simulateTransaction",
+      "params": { "transaction": tx_xdr }
+    });
+    let response = json!(
+    {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "result": {
+        "transactionData": "AAAAAAAAAAIAAAAGAAAAASQgrngi1zchkZG0GKd3btO7B4n6SUOI/Irk1e7rsJpoAAAAFAAAAAEAAAAHcOiuro2Kjk7NwMT6FDrXvb/h7SFI2ZYIxVt7UQy0M6EAAAABAAAABgAAAAEkIK54Itc3IZGRtBind27TuweJ+klDiPyK5NXu67CaaAAAABAAAAABAAAAAgAAAA8AAAALQ291bnRlckF1dGgAAAAAEgAAAAAAAAAA/0Qyqo+inZ2pJp5WnPolgUTjI3hPRf+W0Jn0+BvA5XMAAAAAAA0kKAAABrAAAACMAAAAAAABxsc=",
+        "minResourceFee": "116423",
+        "results": [{ "auth": [], "xdr": "AAAAAwAAAAI=" }],
+        "latestLedger": 2552139
+      }
+    });
+
+    let mut source_account = Account::new(
+        "GD7UIMVKR6RJ3HNJE2PFNHH2EWAUJYZDPBHUL74W2CM7J6A3YDSXGPJN",
+        "4311013293817858",
+    )
+    .unwrap();
+    let contract =
+        Contracts::new("CASCBLTYELLTOIMRSG2BRJ3XN3J3WB4J7JEUHCH4RLSNL3XLWCNGRTCR").unwrap();
+    let op = contract.call(
+        "inc_auth",
+        Some(vec![Address::new(
+            "GD7UIMVKR6RJ3HNJE2PFNHH2EWAUJYZDPBHUL74W2CM7J6A3YDSXGPJN",
+        )
+        .unwrap()
+        .to_sc_val()
+        .unwrap()]),
+    );
+    let mut tx_builder = TransactionBuilder::new(&mut source_account, Networks::testnet(), None);
+    tx_builder.add_operation(op);
+    tx_builder.fee(100000000u32);
+    let tx = tx_builder.build();
+
+    let (s, m) = get_mocked_server(request, response).await;
+    s.simulate_transaction(
+        &tx,
+        Some(SimulationOptions {
+            use_upgraded_auth: Some(false),
+            ..Default::default()
+        }),
+    )
+    .await
+    .unwrap();
+
+    // Explicit opt-out must be forwarded as `useUpgradedAuth: false`.
+    let requests = m.received_requests().await.expect("recording enabled");
+    let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    let params = body["params"].as_object().unwrap();
+    assert_eq!(params["useUpgradedAuth"], serde_json::json!(false));
+}
+
+#[tokio::test]
+async fn get_external_ref_wasm_hash() {
+    use stellar_baselib::xdr::{ContractExecutableExternalRef, ScBytes};
+
+    let owner = "CCJZ5DGASBWQXR5MPFCJXMBI333XE5U3FSJTNQU7RIKE3P5GN2K2WYD5";
+    let owner_sc = Address::new(owner).unwrap().to_sc_address().unwrap();
+    // A binary, non-UTF-8 tag: the ledger key must be built from the raw bytes.
+    let tag = ScString(vec![0x00u8, 0xff, 0x80, 0x01].try_into().unwrap());
+    let ext_ref = ContractExecutableExternalRef {
+        executable_owner: owner_sc.clone(),
+        tag: tag.clone(),
+    };
+    let wasm_hash = [7u8; 32];
+
+    // The tag entry lives in the owner's persistent contract data, keyed by
+    // SCV_EXECUTABLE_TAG(tag), and holds the wasm hash as ScVal::Bytes.
+    let ledger_key = LedgerKey::ContractData(LedgerKeyContractData {
+        contract: owner_sc.clone(),
+        key: ScVal::ExecutableTag(tag),
+        durability: stellar_baselib::xdr::ContractDataDurability::Persistent,
+    });
+    let ledger_entry = LedgerEntryData::ContractData(ContractDataEntry {
+        ext: ExtensionPoint::V0,
+        contract: owner_sc,
+        durability: stellar_baselib::xdr::ContractDataDurability::Persistent,
+        key: ScVal::Void,
+        val: ScVal::Bytes(ScBytes(wasm_hash.to_vec().try_into().unwrap())),
+    });
+
+    let request = json!(
+    {
+        "method": "getLedgerEntries",
+        "params": { "keys": [ledger_key.to_xdr_base64(Limits::none()).unwrap()] },
+    });
+    let response = json!(
+    {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+            "entries": [
+                {
+                    "key": ledger_key.to_xdr_base64(Limits::none()).unwrap(),
+                    "xdr": ledger_entry.to_xdr_base64(Limits::none()).unwrap(),
+                    "lastModifiedLedgerSeq": 2552504
+                }
+            ],
+            "latestLedger": 2552990
+        }
+    });
+
+    let (s, _m) = get_mocked_server(request, response).await;
+    let hash = s
+        .get_external_ref_wasm_hash(ext_ref)
+        .await
+        .expect("Should resolve");
+    assert_eq!(hash, wasm_hash);
+}
+
+#[tokio::test]
+async fn get_external_ref_wasm_hash_rejects_account_owner() {
+    use stellar_baselib::xdr::ContractExecutableExternalRef;
+
+    // An account address cannot hold the tag entry: reject before any RPC call.
+    let owner = "GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI";
+    let ext_ref = ContractExecutableExternalRef {
+        executable_owner: Address::new(owner).unwrap().to_sc_address().unwrap(),
+        tag: ScString("tag".try_into().unwrap()),
+    };
+
+    let s = Server::new("https://rpc.server", Options::default()).unwrap();
+    let result = s.get_external_ref_wasm_hash(ext_ref).await;
+    assert!(matches!(result, Err(Error::ExternalRefOwnerNotContract)));
+}
+
+#[tokio::test]
+async fn get_contract_wasm_by_contract_id_external_ref() {
+    use stellar_baselib::xdr::{
+        ContractCodeEntry, ContractExecutable, ContractExecutableExternalRef, ScBytes,
+        ScContractInstance,
+    };
+    use wiremock::matchers::{body_partial_json, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let contract_id = "CASCBLTYELLTOIMRSG2BRJ3XN3J3WB4J7JEUHCH4RLSNL3XLWCNGRTCR";
+    let contract_sc = Address::new(contract_id)
+        .unwrap()
+        .to_sc_address()
+        .unwrap();
+    let owner = "CCJZ5DGASBWQXR5MPFCJXMBI333XE5U3FSJTNQU7RIKE3P5GN2K2WYD5";
+    let owner_sc = Address::new(owner).unwrap().to_sc_address().unwrap();
+    let tag = ScString("my-code".try_into().unwrap());
+    let wasm_hash = [9u8; 32];
+    let wasm_code = vec![0x00u8, 0x61, 0x73, 0x6d]; // "\0asm"
+    let durability = stellar_baselib::xdr::ContractDataDurability::Persistent;
+
+    // 1. The contract instance holds an external-ref executable.
+    let instance_key = LedgerKey::ContractData(LedgerKeyContractData {
+        contract: contract_sc.clone(),
+        key: ScVal::LedgerKeyContractInstance,
+        durability,
+    });
+    let instance_entry = LedgerEntryData::ContractData(ContractDataEntry {
+        ext: ExtensionPoint::V0,
+        contract: contract_sc,
+        durability,
+        key: ScVal::LedgerKeyContractInstance,
+        val: ScVal::ContractInstance(ScContractInstance {
+            executable: ContractExecutable::ExternalRef(ContractExecutableExternalRef {
+                executable_owner: owner_sc.clone(),
+                tag: tag.clone(),
+            }),
+            storage: None,
+        }),
+    });
+
+    // 2. The owner's tag entry names the wasm hash.
+    let tag_key = LedgerKey::ContractData(LedgerKeyContractData {
+        contract: owner_sc.clone(),
+        key: ScVal::ExecutableTag(tag),
+        durability,
+    });
+    let tag_entry = LedgerEntryData::ContractData(ContractDataEntry {
+        ext: ExtensionPoint::V0,
+        contract: owner_sc,
+        durability,
+        key: ScVal::Void,
+        val: ScVal::Bytes(ScBytes(wasm_hash.to_vec().try_into().unwrap())),
+    });
+
+    // 3. The contract code entry holds the wasm.
+    let code_key = LedgerKey::ContractCode(stellar_baselib::xdr::LedgerKeyContractCode {
+        hash: Hash(wasm_hash),
+    });
+    let code_entry = LedgerEntryData::ContractCode(ContractCodeEntry {
+        ext: stellar_baselib::xdr::ContractCodeEntryExt::V0,
+        hash: Hash(wasm_hash),
+        code: wasm_code.clone().try_into().unwrap(),
+    });
+
+    let mock_server = MockServer::start().await;
+    for (key, entry) in [
+        (&instance_key, &instance_entry),
+        (&tag_key, &tag_entry),
+        (&code_key, &code_entry),
+    ] {
+        let key_xdr = key.to_xdr_base64(Limits::none()).unwrap();
+        Mock::given(method("POST"))
+            .and(path("/"))
+            .and(body_partial_json(json!({
+                "method": "getLedgerEntries",
+                "params": { "keys": [key_xdr] },
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "entries": [
+                        {
+                            "key": key_xdr,
+                            "xdr": entry.to_xdr_base64(Limits::none()).unwrap(),
+                            "lastModifiedLedgerSeq": 2552504
+                        }
+                    ],
+                    "latestLedger": 2552990
+                }
+            })))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+    }
+
+    let s = Server::new(
+        &mock_server.uri(),
+        Options {
+            allow_http: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let wasm = s
+        .get_contract_wasm_by_contract_id(contract_id)
+        .await
+        .expect("Should resolve the external ref down to the wasm");
+    assert_eq!(wasm, wasm_code);
 }
 
 #[tokio::test]

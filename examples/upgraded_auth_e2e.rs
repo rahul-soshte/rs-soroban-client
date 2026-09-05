@@ -146,9 +146,9 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
 
     // -----------------------------------------------------------------------
-    // 3. Sign the v2 entries with B. `use_address_v2: false` here: the entry is
-    //    already v2, so authorize_entry must keep the arm and pick the
-    //    address-bound preimage on its own.
+    // 3. Sign the v2 entries with B. `use_address_v2: None` here (the default,
+    //    v2 since Protocol 28): the entry is already v2, so authorize_entry
+    //    keeps the arm and picks the address-bound preimage on its own.
     // -----------------------------------------------------------------------
     let valid_until = server.get_latest_ledger().await?.sequence + 100;
     let signed: Vec<SorobanAuthorizationEntry> = auth_v2
@@ -159,7 +159,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 signer: &kp_b,
                 valid_until_ledger_seq: valid_until,
                 network_passphrase: network,
-                use_address_v2: false,
+                use_address_v2: None,
             })
         })
         .collect::<Result<_, _>>()?;

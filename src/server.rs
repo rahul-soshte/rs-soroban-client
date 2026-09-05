@@ -13,8 +13,9 @@ use stellar_baselib::address::{Address, AddressTrait};
 use stellar_baselib::keypair::KeypairBehavior;
 use stellar_baselib::transaction::{Transaction, TransactionBehavior};
 use stellar_baselib::xdr::{
-    ContractDataDurability, LedgerEntryData, LedgerKey, LedgerKeyAccount, LedgerKeyContractData,
-    Limits, ScVal, WriteXdr,
+    ContractDataDurability, ContractExecutable, ContractExecutableExternalRef, Hash,
+    LedgerEntryData, LedgerKey, LedgerKeyAccount, LedgerKeyContractCode, LedgerKeyContractData,
+    Limits, ScAddress, ScVal, WriteXdr,
 };
 use tokio::time::{sleep, Instant};
 
@@ -154,19 +155,20 @@ pub struct SimulationOptions {
     /// ([SorobanCredentials::AddressV2]) instead of the legacy
     /// [SorobanCredentials::Address] when simulating in recording mode.
     ///
-    /// When `None` (default) the field is omitted from the request and the RPC
-    /// applies its own default, which returns v1 credentials as of Protocol 27.
+    /// When `None` (default) the SDK sends `useUpgradedAuth: true`: as of
+    /// Protocol 28 the default is flipped to v2 credentials, matching
+    /// js-stellar-sdk v17. Pass `Some(false)` to keep receiving legacy v1
+    /// credentials.
     ///
     /// Entries returned with v2 credentials must be signed with the
     /// address-bound preimage. [authorize_entry] handles both arms already, so
     /// signing an entry returned by an upgraded simulation works without any
     /// change on the caller side. Hand-rolled signing code that hardcodes
     /// `ENVELOPE_TYPE_SOROBAN_AUTHORIZATION` will produce signatures the host
-    /// rejects, so audit it before turning this on.
+    /// rejects, so audit it before relying on the default.
     ///
     /// This flag is transitional: the RPC plans to return v2 by default in
-    /// Protocol 29 and to drop the flag in Protocol 30. Do not rely on leaving
-    /// it unset to keep receiving v1 credentials.
+    /// Protocol 29 and to drop the flag in Protocol 30.
     ///
     /// [SorobanCredentials::Address]: stellar_baselib::xdr::SorobanCredentials::Address
     /// [SorobanCredentials::AddressV2]: stellar_baselib::xdr::SorobanCredentials::AddressV2
@@ -601,10 +603,22 @@ impl Server {
             .to_xdr_base64(Limits::none())
             .map_err(|_| Error::XdrError)?;
 
-        // Add resource config if provided
+        // CAP-71 default flip (Protocol 28 / js-stellar-sdk v17): ask for v2
+        // credentials unless the caller explicitly opts out. `unwrap_or(true)`
+        // IS the flip — replacing it with `unwrap_or_default()` would silently
+        // revert the SDK to legacy v1 credentials.
+        let use_upgraded_auth = options
+            .as_ref()
+            .and_then(|o| o.use_upgraded_auth)
+            .unwrap_or(true);
         let mut params = json!({
-            "transaction": transaction_xdr
+            "transaction": transaction_xdr,
+            "useUpgradedAuth": use_upgraded_auth,
         });
+        // `resourceConfig` is only sent when the caller provided options:
+        // omitting it lets the RPC apply its own default instruction leeway
+        // (~3M instructions), matching js-stellar-sdk. An explicit
+        // `instructionLeeway: 0` would override that default to zero.
         if let Some(resources) = options {
             let map = params.as_object_mut().expect("params is an object");
             map.insert(
@@ -614,9 +628,6 @@ impl Server {
             if let Some(auth_mode) = resources.auth_mode {
                 let mode: &str = auth_mode.into();
                 map.insert("authMode".into(), json!(mode));
-            }
-            if let Some(use_upgraded_auth) = resources.use_upgraded_auth {
-                map.insert("useUpgradedAuth".into(), json!(use_upgraded_auth));
             }
         }
 
@@ -686,6 +697,111 @@ impl Server {
         }
     }
 
+    /// # Fetch the wasm byte-code of a contract by the hash of its executable
+    ///
+    /// It uses [Server::get_ledger_entries] with a `ContractCode` ledger entry key.
+    pub async fn get_contract_wasm_by_hash(&self, wasm_hash: [u8; 32]) -> Result<Vec<u8>, Error> {
+        let key = LedgerKey::ContractCode(LedgerKeyContractCode {
+            hash: Hash(wasm_hash),
+        });
+
+        let response = self.get_ledger_entries(vec![key]).await?;
+        let entries = response.entries.unwrap_or_default();
+        let entry = entries.first().ok_or(Error::ContractCodeNotFound)?;
+
+        if let LedgerEntryData::ContractCode(code_entry) = entry.to_data() {
+            Ok(code_entry.code.into_vec())
+        } else {
+            Err(Error::ContractCodeNotFound)
+        }
+    }
+
+    /// # Fetch the wasm byte-code of the contract deployed at `contract_id`
+    ///
+    /// The contract instance entry is fetched first to find the executable of the
+    /// contract:
+    /// - a wasm executable is fetched with [Server::get_contract_wasm_by_hash],
+    /// - a CAP-85 external executable reference (Protocol 28) is resolved first with
+    ///   [Server::get_external_ref_wasm_hash],
+    /// - a built-in Stellar Asset Contract has no wasm and returns
+    ///   [Error::ContractCodeNotFound].
+    pub async fn get_contract_wasm_by_contract_id(
+        &self,
+        contract_id: &str,
+    ) -> Result<Vec<u8>, Error> {
+        let entry = self
+            .get_contract_data(
+                contract_id,
+                ScVal::LedgerKeyContractInstance,
+                Durability::Persistent,
+            )
+            .await?;
+
+        if let LedgerEntryData::ContractData(data) = entry.to_data() {
+            if let ScVal::ContractInstance(instance) = data.val {
+                return match instance.executable {
+                    ContractExecutable::Wasm(hash) => {
+                        self.get_contract_wasm_by_hash(hash.into()).await
+                    }
+                    ContractExecutable::ExternalRef(ext_ref) => {
+                        let hash = self.get_external_ref_wasm_hash(ext_ref).await?;
+                        self.get_contract_wasm_by_hash(hash).await
+                    }
+                    // The Stellar Asset Contract is built in the host, it has no wasm.
+                    ContractExecutable::StellarAsset => Err(Error::ContractCodeNotFound),
+                };
+            }
+        }
+        Err(Error::ContractDataNotFound)
+    }
+
+    /// # Resolve a CAP-85 external contract executable reference to its wasm hash
+    ///
+    /// A contract instance can hold a `CONTRACT_EXECUTABLE_EXTERNAL_REF` executable
+    /// (Protocol 28, [CAP-85]) instead of its own wasm hash. The wasm hash lives in
+    /// the owner contract's persistent storage, keyed by the `ExecutableTag(tag)`
+    /// entry, and is fetched with one [Server::get_ledger_entries] call.
+    ///
+    /// Returns [Error::ExternalRefOwnerNotContract] if the executable owner is not a
+    /// contract address, [Error::ContractDataNotFound] if the tag entry does not exist
+    /// (a dangling reference, or an archived entry), and
+    /// [Error::InvalidExternalRefTagEntry] if the tag entry does not hold a 32-byte
+    /// wasm hash.
+    ///
+    /// [CAP-85]: https://github.com/stellar/stellar-protocol/blob/master/core/cap-0085.md
+    pub async fn get_external_ref_wasm_hash(
+        &self,
+        ext_ref: ContractExecutableExternalRef,
+    ) -> Result<[u8; 32], Error> {
+        // Only a contract can hold the tag entry that names the wasm.
+        if !matches!(ext_ref.executable_owner, ScAddress::Contract(_)) {
+            return Err(Error::ExternalRefOwnerNotContract);
+        }
+
+        // The tag identifies the code being deployed and may not be valid
+        // UTF-8; build the ledger key from the original bytes.
+        let key = LedgerKey::ContractData(LedgerKeyContractData {
+            contract: ext_ref.executable_owner,
+            key: ScVal::ExecutableTag(ext_ref.tag),
+            durability: ContractDataDurability::Persistent,
+        });
+
+        let response = self.get_ledger_entries(vec![key]).await?;
+        let entries = response.entries.unwrap_or_default();
+        let entry = entries.first().ok_or(Error::ContractDataNotFound)?;
+
+        match entry.to_data() {
+            LedgerEntryData::ContractData(data) => match data.val {
+                ScVal::Bytes(bytes) => bytes
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| Error::InvalidExternalRefTagEntry),
+                _ => Err(Error::InvalidExternalRefTagEntry),
+            },
+            _ => Err(Error::ContractDataNotFound),
+        }
+    }
+
     /// # Prepare a transaction to be submited to the network.
     ///
     /// If the transaction simulation is successful, a new transaction is built using the returned
@@ -702,7 +818,29 @@ impl Server {
         &self,
         transaction: &Transaction,
     ) -> Result<Transaction, Error> {
-        let sim_response = self.simulate_transaction(transaction, None).await?;
+        self.prepare_with(transaction, None).await
+    }
+
+    /// # Prepare a transaction, controlling the simulation options
+    ///
+    /// Same as [Server::prepare_transaction] but the given [SimulationOptions] are
+    /// used for the underlying [Server::simulate_transaction] call. Use this for
+    /// example to opt out of the CAP-71 v2 auth credentials default with
+    /// [SimulationOptions::use_upgraded_auth] set to `Some(false)`.
+    pub async fn prepare_transaction_with_options(
+        &self,
+        transaction: &Transaction,
+        options: SimulationOptions,
+    ) -> Result<Transaction, Error> {
+        self.prepare_with(transaction, Some(options)).await
+    }
+
+    async fn prepare_with(
+        &self,
+        transaction: &Transaction,
+        options: Option<SimulationOptions>,
+    ) -> Result<Transaction, Error> {
+        let sim_response = self.simulate_transaction(transaction, options).await?;
 
         assemble_transaction(transaction, sim_response)
     }

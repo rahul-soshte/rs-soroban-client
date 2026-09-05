@@ -32,6 +32,17 @@ pub enum Error {
     /// Error when contract data is missing
     #[error("ContractError")]
     ContractDataNotFound,
+    /// Error when the contract wasm byte-code is missing, or when the contract has no
+    /// wasm at all (built-in Stellar Asset Contract)
+    #[error("ContractCodeNotFound")]
+    ContractCodeNotFound,
+    /// Error when a CAP-85 external executable reference is owned by a non-contract
+    /// address, which cannot hold the tag entry that names the wasm
+    #[error("ExternalRefOwnerNotContract: the executable owner must be a contract address")]
+    ExternalRefOwnerNotContract,
+    /// Error when a CAP-85 external executable tag entry does not hold a 32-byte wasm hash
+    #[error("InvalidExternalRefTagEntry: the tag entry does not hold a 32-byte wasm hash")]
+    InvalidExternalRefTagEntry,
     /// Error for general transaction failures
     #[error("TransactionError")]
     TransactionError,

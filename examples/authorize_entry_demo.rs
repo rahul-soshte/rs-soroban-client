@@ -1,12 +1,13 @@
-/// Protocol 27 — Soroban Auth Entry Signing Demo
+/// Soroban Auth Entry Signing Demo (CAP-0071, V2-by-default since Protocol 28)
 ///
 /// Demonstrates `authorize_entry` from stellar-baselib, which mirrors the
 /// behaviour of `authorizeEntry` in `js-stellar-base`.
 ///
-/// Three scenarios are shown:
-///   1. V1 signing  — `SOROBAN_CREDENTIALS_ADDRESS`  (classic, all protocols)
+/// Scenarios shown:
+///   1. V1 signing  — `SOROBAN_CREDENTIALS_ADDRESS`  (legacy, opt out with `Some(false)`)
 ///   2. V2 signing  — `SOROBAN_CREDENTIALS_ADDRESS_V2` (Protocol 27 / CAP-0071-02,
-///                    address-bound to prevent replay across accounts sharing a key)
+///      address-bound to prevent replay across accounts sharing a key; this is the
+///      DEFAULT since Protocol 28, matching js-stellar-sdk v17)
 ///   3. SourceAccount pass-through — no signing needed
 ///
 /// This example runs fully offline; no network connection is required.
@@ -47,8 +48,10 @@ fn main() {
 
     // -------------------------------------------------------------------------
     // Scenario 1: V1 signing — SOROBAN_CREDENTIALS_ADDRESS
-    // This is the classic credential type, compatible with all Soroban protocols.
-    // Equivalent to JS authorizeEntry(entry, keypair, ledger, passphrase).
+    // This is the legacy credential type, compatible with all Soroban protocols.
+    // Since Protocol 28 the SDK defaults to V2, so V1 requires an explicit
+    // opt-out with use_address_v2: Some(false) — equivalent to JS
+    // authorizeEntry(..., { useV2: false }).
     // -------------------------------------------------------------------------
     println!("\n=== Scenario 1: V1 signing (SOROBAN_CREDENTIALS_ADDRESS) ===");
 
@@ -67,7 +70,7 @@ fn main() {
         signer: &keypair,
         valid_until_ledger_seq: 5_000_000,
         network_passphrase: Networks::testnet(),
-        use_address_v2: false,
+        use_address_v2: Some(false),
     })
     .expect("V1 signing failed");
 
@@ -87,7 +90,7 @@ fn main() {
     // Scenario 2: V2 signing — SOROBAN_CREDENTIALS_ADDRESS_V2 (CAP-0071-02)
     // The V2 preimage binds the auth hash to the specific account address,
     // preventing replay if two accounts share the same private key.
-    // Set use_address_v2: true to opt in.
+    // This is the default since Protocol 28: use_address_v2: None behaves the same.
     // -------------------------------------------------------------------------
     println!("\n=== Scenario 2: V2 signing (SOROBAN_CREDENTIALS_ADDRESS_V2) ===");
 
@@ -106,7 +109,7 @@ fn main() {
         signer: &keypair,
         valid_until_ledger_seq: 5_000_001,
         network_passphrase: Networks::testnet(),
-        use_address_v2: true,
+        use_address_v2: None, // None defaults to V2 (CAP-71 flip, Protocol 28)
     })
     .expect("V2 signing failed");
 
@@ -143,7 +146,7 @@ fn main() {
         signer: &keypair,
         valid_until_ledger_seq: 5_000_002,
         network_passphrase: Networks::testnet(),
-        use_address_v2: false, // flag is false, but incoming type wins
+        use_address_v2: Some(false), // opt-out requested, but incoming type wins
     })
     .expect("Signing already-V2 entry failed");
 
@@ -176,7 +179,7 @@ fn main() {
         signer: &keypair,
         valid_until_ledger_seq: 9_999_999,
         network_passphrase: Networks::testnet(),
-        use_address_v2: false,
+        use_address_v2: None,
     })
     .expect("SourceAccount pass-through failed");
 
