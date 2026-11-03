@@ -459,6 +459,48 @@ async fn get_ledger_entries() {
 }
 
 #[tokio::test]
+async fn get_contract_data_rejects_muxed_addresses() {
+    let server = Server::new(
+        "http://127.0.0.1:1",
+        Options {
+            allow_http: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let contract = "CA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJUWDA";
+    let muxed = "WA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJUAAAAAAAAAAAAAWWC";
+    let address = Address::new(muxed).unwrap().to_sc_val().unwrap();
+    let nested = ScVal::Vec(Some(vec![address.clone()].try_into().unwrap()));
+    let map = |key, val| {
+        ScVal::Map(Some(
+            vec![stellar_baselib::xdr::ScMapEntry { key, val }]
+                .try_into()
+                .unwrap(),
+        ))
+    };
+    for key in [
+        address.clone(),
+        nested,
+        map(address.clone(), ScVal::Void),
+        map(ScVal::Void, address),
+    ] {
+        assert!(matches!(
+            server
+                .get_contract_data(contract, key, Durability::Persistent)
+                .await,
+            Err(Error::ContractDataNotFound)
+        ));
+    }
+    assert!(matches!(
+        server
+            .get_contract_data(muxed, ScVal::Void, Durability::Persistent)
+            .await,
+        Err(Error::ContractDataNotFound)
+    ));
+}
+
+#[tokio::test]
 async fn get_contract_data() {
     let address = "CCJZ5DGASBWQXR5MPFCJXMBI333XE5U3FSJTNQU7RIKE3P5GN2K2WYD5";
     let key = ScVal::Vec(Some(ScVec(
@@ -1761,10 +1803,7 @@ async fn get_contract_wasm_by_contract_id_external_ref() {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     let contract_id = "CASCBLTYELLTOIMRSG2BRJ3XN3J3WB4J7JEUHCH4RLSNL3XLWCNGRTCR";
-    let contract_sc = Address::new(contract_id)
-        .unwrap()
-        .to_sc_address()
-        .unwrap();
+    let contract_sc = Address::new(contract_id).unwrap().to_sc_address().unwrap();
     let owner = "CCJZ5DGASBWQXR5MPFCJXMBI333XE5U3FSJTNQU7RIKE3P5GN2K2WYD5";
     let owner_sc = Address::new(owner).unwrap().to_sc_address().unwrap();
     let tag = ScString("my-code".try_into().unwrap());
@@ -2353,7 +2392,6 @@ async fn get_events() {
                   "AAAADgAAAAZuYXRpdmUAAA=="
                 ],
                 "value": "AAAACgAAAAAAAAAAAAAAAACYloA=",
-                "inSuccessfulContractCall": true,
                 "txHash": "3fa1787085a4aa585507751394d70494a02e71d347446095a763ecbfc647937c",
                 "operationIndex": 0,
                 "transactionIndex": 1
@@ -2387,6 +2425,8 @@ async fn get_events() {
         assert_eq!(result.oldest_ledger_close_time.unwrap(), "1755201565");
         let events = result.events;
         assert_eq!(events.len(), 2);
+        assert_eq!(events[0].in_successful_contract_call, Some(true));
+        assert_eq!(events[1].in_successful_contract_call, None);
         assert_eq!(events[0].contract_id, contract_id);
         assert_eq!(events[0].ledger, 1192402);
         assert_eq!(
@@ -2864,7 +2904,7 @@ async fn get_transactions() {
         }) = ts[0].to_envelope().unwrap()
         {
             if let stellar_baselib::xdr::Memo::Text(text) = tx.memo {
-                assert_eq!(text, "wallet:1712906336510".try_into().unwrap());
+                assert_eq!(text.as_slice(), b"wallet:1712906336510");
             } else {
                 panic!("No memo")
             }
@@ -2903,6 +2943,32 @@ async fn get_transactions() {
         assert_eq!(data, ScVal::U64(2));
     }
 }
+#[test]
+fn ledger_info_millisecond_close_times() {
+    // Synthetic CAP-88 headers and metadata, with wire extension arms 3 and 4.
+    for (header_xdr, metadata_xdr, arm) in [
+        ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABlU/EAAAAAAAAAAAMAAAGLz+VoewAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABkAExLQAAAA+gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "AAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGVT8QAAAAAAAAAAAwAAAYvP5Wh7AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAqAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGQATEtAAAAD6AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", 3),
+        ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABlU/EAAAAAAAAAAAQAAAGLz+VoewAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAdAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAqAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGQATEtAAAAD6AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "AAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGVT8QAAAAAAAAAABAAAAYvP5Wh7AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAZABMS0AAAAPoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", 4),
+    ] {
+        let ledger: crate::soroban_rpc::LedgerInfo = serde_json::from_value(json!({
+            "hash": "00".repeat(32), "sequence": 42, "ledgerCloseTime": "1700000000",
+            "headerXdr": header_xdr, "metadataXdr": metadata_xdr,
+        })).unwrap();
+        let header = ledger.to_header().unwrap().header;
+        assert_eq!(header.scp_value.ext.discriminant() as i32, arm);
+        let milliseconds = match &header.scp_value.ext {
+            stellar_baselib::xdr::StellarValueExt::SignedMs(value) => value.close_time_ms.0,
+            stellar_baselib::xdr::StellarValueExt::EmptyTxSetMs(value) => value.close_time_ms.0,
+            _ => panic!("Expected millisecond close time"),
+        };
+        assert_eq!(milliseconds, header.scp_value.close_time.0 * 1000 + 123);
+        let LedgerCloseMeta::V2(meta) = ledger.to_metadata().unwrap() else {
+            panic!("Expected LedgerCloseMetaV2");
+        };
+        assert_eq!(meta.ledger_header.header, header);
+    }
+}
+
 #[tokio::test]
 async fn get_ledgers() {
     //
