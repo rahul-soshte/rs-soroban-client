@@ -200,8 +200,8 @@ pub struct EventResponse {
     pub paging_token: Option<String>,
     /// If true the event was emitted during a successful contract call.
     ///
-    /// Deprecated: will be remove in protocol 24
-    pub in_successful_contract_call: bool,
+    /// Removed in RPC 30. Older RPC responses may still include it.
+    pub in_successful_contract_call: Option<bool>,
     topic: Vec<String>,
     value: String,
 }

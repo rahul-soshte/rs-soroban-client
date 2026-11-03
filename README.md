@@ -9,7 +9,7 @@
 
 A Rust client library for interacting with Soroban smart contracts on the Stellar blockchain
 
-**This project is currently in production and is compatible with Protocol 28 and you can use it for building and signing transactions that involve interacting with Soroban and also supports all stellar classic operations.**
+**This project is currently in production and is compatible with Protocol 30 and you can use it for building and signing transactions that involve interacting with Soroban and also supports all stellar classic operations.**
 
 ## Quickstart
 

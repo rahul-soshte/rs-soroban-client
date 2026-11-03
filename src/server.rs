@@ -22,6 +22,18 @@ use tokio::time::{sleep, Instant};
 /// The default transaction submission timeout for RPC requests, in milliseconds.
 pub const SUBMIT_TRANSACTION_TIMEOUT: u32 = 60 * 1000;
 
+// Muxed addresses are accepted as transfer arguments, never in storage keys.
+fn contains_muxed_address(value: &ScVal) -> bool {
+    match value {
+        ScVal::Address(ScAddress::MuxedAccount(_) | ScAddress::MuxedContract(_)) => true,
+        ScVal::Vec(Some(values)) => values.iter().any(contains_muxed_address),
+        ScVal::Map(Some(entries)) => entries
+            .iter()
+            .any(|entry| contains_muxed_address(&entry.key) || contains_muxed_address(&entry.val)),
+        _ => false,
+    }
+}
+
 /// Representation of the ledger entry durability to be used with [Server::get_contract_data]
 #[derive(Debug, PartialEq, Eq)]
 pub enum Durability {
@@ -167,8 +179,8 @@ pub struct SimulationOptions {
     /// `ENVELOPE_TYPE_SOROBAN_AUTHORIZATION` will produce signatures the host
     /// rejects, so audit it before relying on the default.
     ///
-    /// This flag is transitional: the RPC plans to return v2 by default in
-    /// Protocol 29 and to drop the flag in Protocol 30.
+    /// This flag is transitional. RPC 30 still accepts it, including the
+    /// explicit legacy opt-out, but a future RPC release may remove it.
     ///
     /// [SorobanCredentials::Address]: stellar_baselib::xdr::SorobanCredentials::Address
     /// [SorobanCredentials::AddressV2]: stellar_baselib::xdr::SorobanCredentials::AddressV2
@@ -675,6 +687,10 @@ impl Server {
             .map_err(|_| Error::ContractDataNotFound)?
             .to_sc_address()
             .map_err(|_| Error::ContractDataNotFound)?;
+
+        if !matches!(sc_address, ScAddress::Contract(_)) || contains_muxed_address(&key) {
+            return Err(Error::ContractDataNotFound);
+        }
 
         let contract_key = LedgerKey::ContractData(LedgerKeyContractData {
             key: key.clone(),
