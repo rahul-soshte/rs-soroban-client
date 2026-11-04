@@ -40,17 +40,29 @@ pub fn assemble_transaction(
 
     let min_resource_fee = simulation
         .min_resource_fee
-        .as_ref()
-        .unwrap()
-        .parse::<u32>()
-        .unwrap_or(0);
+        .as_deref()
+        .and_then(|fee| fee.parse::<u32>().ok())
+        .ok_or_else(|| Error::JsonError("minResourceFee".to_string()))?;
 
     let soroban_tx_data = simulation
         .to_transaction_data()
         .expect("No transaction data");
 
+    // A transaction that was already assembled carries the previous resource fee in its
+    // fee. Take it out first, so assembling twice doesn't count the resource fee twice.
+    let mut inclusion_fee = tx.fee;
+    if let Some(data) = &tx.soroban_data {
+        if let Ok(previous_resource_fee) = u32::try_from(data.resource_fee) {
+            if inclusion_fee > previous_resource_fee {
+                inclusion_fee -= previous_resource_fee;
+            }
+        }
+    }
+
     let mut ntx = tx.clone();
-    ntx.fee += min_resource_fee;
+    ntx.fee = inclusion_fee
+        .checked_add(min_resource_fee)
+        .ok_or(Error::TransactionError)?;
     ntx.soroban_data = Some(soroban_tx_data);
 
     // Process the operation
@@ -351,5 +363,88 @@ mod test {
         let tx = builder.build();
 
         assert!(!is_soroban_transaction(&tx),);
+    }
+
+    const TX_DATA: &str = "AAAAAAAAAAIAAAAGAAAAAcwD/nT9D7Dc2LxRdab+2vEUF8B+XoN7mQW21oxPT8ALAAAAFAAAAAEAAAAHy8vNUZ8vyZ2ybPHW0XbSrRtP7gEWsJ6zDzcfY9P8z88AAAABAAAABgAAAAHMA/50/Q+w3Ni8UXWm/trxFBfAfl6De5kFttaMT0/ACwAAABAAAAABAAAAAgAAAA8AAAAHQ291bnRlcgAAAAASAAAAAAAAAAAg4dbAxsGAGICfBG3iT2cKGYQ6hK4sJWzZ6or1C5v6GAAAAAEAHfKyAAAFiAAAAIgAAAAAAAAAAw==";
+
+    fn invoke_tx(fee: u32) -> stellar_baselib::transaction::Transaction {
+        let mut source_account = Account::new(
+            "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+            "0",
+        )
+        .unwrap();
+        let op = Operation {
+            source_account: None,
+            body: OperationBody::InvokeHostFunction(InvokeHostFunctionOp {
+                host_function: HostFunction::InvokeContract(InvokeContractArgs {
+                    contract_address: ScAddress::Contract(ContractId(Hash([0; 32]))),
+                    function_name: ScSymbol::from(StringM::from_str("test").unwrap()),
+                    args: VecM::<ScVal>::try_from(Vec::new()).unwrap(),
+                }),
+                auth: VecM::<SorobanAuthorizationEntry>::try_from(Vec::new()).unwrap(),
+            }),
+        };
+        let mut builder = TransactionBuilder::new(&mut source_account, "Network for tests", None);
+        builder.fee(fee).set_timeout(30).unwrap();
+        builder.add_operation(op);
+        builder.build()
+    }
+
+    /// A simulation whose transaction data carries `resource_fee`, as a real one does.
+    fn simulation_with_resource_fee(resource_fee: i64) -> SimulateTransactionResponse {
+        use stellar_baselib::xdr::{Limits, ReadXdr, SorobanTransactionData, WriteXdr};
+        let mut data = SorobanTransactionData::from_xdr_base64(TX_DATA, Limits::none()).unwrap();
+        data.resource_fee = resource_fee;
+        serde_json::from_value(json!({
+            "transactionData": data.to_xdr_base64(Limits::none()).unwrap(),
+            "minResourceFee": resource_fee.to_string(),
+            "events": [],
+            "results": [{ "auth": [], "xdr": "AAAAAwAAAAw=" }],
+            "cost": { "cpuInsns": "1635562", "memBytes": "1295756" },
+            "latestLedger": 2552139
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn assembling_twice_counts_the_resource_fee_once() {
+        // The numbers from the testnet reproduction in #34.
+        let tx = invoke_tx(100);
+        let once = assemble_transaction(&tx, simulation_with_resource_fee(7166)).unwrap();
+        assert_eq!(once.fee, 7266);
+
+        let twice = assemble_transaction(&once, simulation_with_resource_fee(7166)).unwrap();
+        assert_eq!(twice.fee, 7266);
+        assert_eq!(twice.soroban_data.unwrap().resource_fee, 7166);
+    }
+
+    #[test]
+    fn reassembling_takes_the_new_resource_fee() {
+        let tx = invoke_tx(100);
+        let once = assemble_transaction(&tx, simulation_with_resource_fee(7166)).unwrap();
+        let again = assemble_transaction(&once, simulation_with_resource_fee(9000)).unwrap();
+        assert_eq!(again.fee, 9100);
+    }
+
+    #[test]
+    fn missing_min_resource_fee_is_an_error() {
+        let simulation: SimulateTransactionResponse = serde_json::from_value(json!({
+            "transactionData": TX_DATA,
+            "events": [],
+            "results": [{ "auth": [], "xdr": "AAAAAwAAAAw=" }],
+            "latestLedger": 2552139
+        }))
+        .unwrap();
+        let r = assemble_transaction(&invoke_tx(100), simulation);
+        assert!(matches!(r, Err(Error::JsonError(_))));
+    }
+
+    #[test]
+    fn fee_overflow_is_an_error() {
+        let r = assemble_transaction(
+            &invoke_tx(u32::MAX - 10),
+            simulation_with_resource_fee(7166),
+        );
+        assert!(matches!(r, Err(Error::TransactionError)));
     }
 }
