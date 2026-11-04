@@ -489,14 +489,30 @@ async fn get_contract_data_rejects_muxed_addresses() {
             server
                 .get_contract_data(contract, key, Durability::Persistent)
                 .await,
-            Err(Error::ContractDataNotFound)
+            Err(Error::AddressNotAllowed(_))
         ));
     }
     assert!(matches!(
         server
             .get_contract_data(muxed, ScVal::Void, Durability::Persistent)
             .await,
-        Err(Error::ContractDataNotFound)
+        Err(Error::AddressNotAllowed(_))
+    ));
+    assert!(matches!(
+        server
+            .get_contract_data(
+                "GAQODVWAY3AYAGEAT4CG3YSPM4FBTBB2QSXCYJLM3HVIV5ILTP5BRXCD",
+                ScVal::Void,
+                Durability::Persistent
+            )
+            .await,
+        Err(Error::AddressNotAllowed(_))
+    ));
+    assert!(matches!(
+        server
+            .get_contract_data("not-an-address", ScVal::Void, Durability::Persistent)
+            .await,
+        Err(Error::InvalidAddress(_))
     ));
 }
 
