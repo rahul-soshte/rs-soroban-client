@@ -32,6 +32,14 @@ pub enum Error {
     /// Error when contract data is missing
     #[error("ContractError")]
     ContractDataNotFound,
+    /// Error when an address given as input cannot be parsed, with a descriptive
+    /// message
+    #[error("InvalidAddress: {0}")]
+    InvalidAddress(String),
+    /// Error when an address given as input is valid but not allowed in this
+    /// context, with a descriptive message
+    #[error("AddressNotAllowed: {0}")]
+    AddressNotAllowed(String),
     /// Error when the contract wasm byte-code is missing, or when the contract has no
     /// wasm at all (built-in Stellar Asset Contract)
     #[error("ContractCodeNotFound")]
