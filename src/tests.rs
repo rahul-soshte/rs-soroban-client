@@ -3208,3 +3208,333 @@ async fn get_version_info_testnet() {
 
     println!("{:?}", version);
 }
+
+/// SEP-29 memo-required checks
+/// <https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0029.md>
+mod sep29 {
+    use super::*;
+    use stellar_baselib::asset::{Asset, AssetBehavior};
+    use stellar_baselib::operation::Operation;
+    use stellar_baselib::utils::decode_encode_muxed_account::{
+        encode_muxed_account, encode_muxed_account_to_address,
+    };
+    use stellar_baselib::xdr::{
+        DataEntry, DataEntryExt, DataValue, LedgerKeyData, Memo, String64, Uint64,
+    };
+    use wiremock::Request;
+
+    const PENDING_HASH: &str = "d8ec9b68780314ffdfdfc2194b1b35dd27d7303c3bceaef6447e31631a1419dc";
+
+    fn keypair(seed: u8) -> Keypair {
+        Keypair::from_raw_ed25519_seed(&[seed; 32]).unwrap()
+    }
+
+    fn source() -> Keypair {
+        keypair(1)
+    }
+
+    /// An `exchange` account with `config.memo_required = "1"`
+    fn exchange() -> Keypair {
+        keypair(2)
+    }
+
+    /// An ordinary account with no data entry
+    fn wallet() -> Keypair {
+        keypair(3)
+    }
+
+    fn build_tx(ops: Vec<stellar_baselib::xdr::Operation>, memo: Option<&str>) -> Transaction {
+        let mut account = Account::new(&source().public_key(), "1").unwrap();
+        let mut builder = TransactionBuilder::new(&mut account, Networks::testnet(), None);
+        builder.fee(100u32);
+        for op in ops {
+            builder.add_operation(op);
+        }
+        if let Some(text) = memo {
+            builder.add_memo(text);
+        }
+        builder.build()
+    }
+
+    fn pay(destination: &str) -> stellar_baselib::xdr::Operation {
+        Operation::new()
+            .payment(destination, &Asset::native(), 10_000_000)
+            .unwrap()
+    }
+
+    fn memo_required_entry(account: &Keypair, value: &[u8]) -> serde_json::Value {
+        let account_id = account.xdr_account_id();
+        let data_name = String64("config.memo_required".try_into().unwrap());
+        let key = LedgerKey::Data(LedgerKeyData {
+            account_id: account_id.clone(),
+            data_name: data_name.clone(),
+        });
+        let data = LedgerEntryData::Data(DataEntry {
+            account_id,
+            data_name,
+            data_value: DataValue(value.to_vec().try_into().unwrap()),
+            ext: DataEntryExt::V0,
+        });
+        json!({
+            "key": key.to_xdr_base64(Limits::none()).unwrap(),
+            "xdr": data.to_xdr_base64(Limits::none()).unwrap(),
+            "lastModifiedLedgerSeq": 2552504
+        })
+    }
+
+    /// Mock RPC answering `getLedgerEntries` with `entries` and `sendTransaction` with PENDING,
+    /// asserting how many times each is called when the [MockServer] is dropped.
+    async fn mock_rpc(
+        entries: Vec<serde_json::Value>,
+        ledger_entries_calls: u64,
+        send_calls: u64,
+    ) -> (Server, MockServer) {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/"))
+            .and(matchers::body_partial_json(
+                json!({ "method": "getLedgerEntries" }),
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": { "entries": entries, "latestLedger": 2552990 }
+            })))
+            .expect(ledger_entries_calls)
+            .mount(&mock_server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/"))
+            .and(matchers::body_partial_json(
+                json!({ "method": "sendTransaction" }),
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "status": "PENDING",
+                    "hash": PENDING_HASH,
+                    "latestLedger": 2553978,
+                    "latestLedgerCloseTime": "1700159337"
+                }
+            })))
+            .expect(send_calls)
+            .mount(&mock_server)
+            .await;
+        let server = Server::new(
+            &mock_server.uri(),
+            Options {
+                allow_http: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        (server, mock_server)
+    }
+
+    fn assert_requires_memo(result: Result<impl std::fmt::Debug, Error>, index: usize) {
+        match result {
+            Err(Error::AccountRequiresMemo {
+                account_id,
+                operation_index,
+            }) => {
+                assert_eq!(account_id, exchange().public_key());
+                assert_eq!(operation_index, index);
+            }
+            other => panic!("expected AccountRequiresMemo, got {other:?}"),
+        }
+    }
+
+    fn requested_keys(requests: &[Request]) -> Vec<String> {
+        requests
+            .iter()
+            .filter_map(|r| r.body_json::<serde_json::Value>().ok())
+            .filter(|body| body["method"] == "getLedgerEntries")
+            .flat_map(|body| {
+                body["params"]["keys"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|k| k.as_str().unwrap().to_string())
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn refuses_payment_to_memo_required_account() {
+        let (s, _m) = mock_rpc(vec![memo_required_entry(&exchange(), b"1")], 1, 0).await;
+        let tx = build_tx(vec![pay(&exchange().public_key())], None);
+        assert_requires_memo(s.send_transaction(tx).await, 0);
+    }
+
+    #[tokio::test]
+    async fn allows_payment_to_muxed_destination() {
+        // The muxed id identifies the recipient, so nothing is fetched.
+        let muxed =
+            encode_muxed_account_to_address(&encode_muxed_account(&exchange().public_key(), "42"));
+        assert!(muxed.starts_with('M'));
+        let (s, _m) = mock_rpc(vec![memo_required_entry(&exchange(), b"1")], 0, 1).await;
+        let tx = build_tx(vec![pay(&muxed)], None);
+        let result = s.send_transaction(tx).await.unwrap();
+        assert_eq!(result.status, SendTransactionStatus::Pending);
+    }
+
+    #[tokio::test]
+    async fn allows_payment_with_text_memo() {
+        let (s, _m) = mock_rpc(vec![memo_required_entry(&exchange(), b"1")], 0, 1).await;
+        let tx = build_tx(vec![pay(&exchange().public_key())], Some("12345"));
+        s.send_transaction(tx).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn allows_payment_with_id_memo() {
+        let (s, _m) = mock_rpc(vec![memo_required_entry(&exchange(), b"1")], 0, 1).await;
+        let mut tx = build_tx(vec![pay(&exchange().public_key())], None);
+        tx.memo = Some(Memo::Id(Uint64::from(12345u64)));
+        s.send_transaction(tx).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn allows_payment_to_account_without_data_entry() {
+        // Also covers a destination that does not exist yet: getLedgerEntries returns nothing.
+        let (s, _m) = mock_rpc(vec![], 1, 1).await;
+        let tx = build_tx(vec![pay(&wallet().public_key())], None);
+        s.send_transaction(tx).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn only_value_1_requires_memo() {
+        let (s, _m) = mock_rpc(vec![memo_required_entry(&exchange(), b"0")], 1, 1).await;
+        let tx = build_tx(vec![pay(&exchange().public_key())], None);
+        s.send_transaction(tx).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn checks_path_payments_and_account_merge() {
+        let exchange = exchange().public_key();
+        let ops = [
+            Operation::new()
+                .path_payment_strict_send(&Asset::native(), 10, &exchange, &Asset::native(), 1, &[])
+                .unwrap(),
+            Operation::new()
+                .path_payment_strict_receive(
+                    &Asset::native(),
+                    10,
+                    &exchange,
+                    &Asset::native(),
+                    1,
+                    &[],
+                )
+                .unwrap(),
+            Operation::new().account_merge(&exchange).unwrap(),
+        ];
+        for op in ops {
+            let (s, _m) = mock_rpc(
+                vec![memo_required_entry(&super::sep29::exchange(), b"1")],
+                1,
+                0,
+            )
+            .await;
+            assert_requires_memo(s.send_transaction(build_tx(vec![op], None)).await, 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn reports_first_offending_operation_with_one_batched_lookup() {
+        let exchange = exchange().public_key();
+        let wallet = wallet().public_key();
+        let ops = vec![
+            // Not a payment: ignored
+            Operation::new()
+                .create_account(&keypair(9).public_key(), 10_000_000)
+                .unwrap(),
+            pay(&wallet),
+            pay(&exchange),
+            pay(&wallet),
+            Operation::new().account_merge(&exchange).unwrap(),
+        ];
+        let (s, m) = mock_rpc(
+            vec![memo_required_entry(&super::sep29::exchange(), b"1")],
+            1,
+            0,
+        )
+        .await;
+        assert_requires_memo(s.send_transaction(build_tx(ops, None)).await, 2);
+
+        // One getLedgerEntries call for the two distinct destinations.
+        let keys = requested_keys(&m.received_requests().await.unwrap());
+        assert_eq!(keys.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn skips_lookup_for_non_payment_transactions() {
+        let (s, _m) = mock_rpc(vec![], 0, 1).await;
+        let op = Operation::new()
+            .create_account(&exchange().public_key(), 10_000_000)
+            .unwrap();
+        s.send_transaction(build_tx(vec![op], None)).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn skip_memo_required_check_option() {
+        let (s, _m) = mock_rpc(vec![memo_required_entry(&exchange(), b"1")], 0, 1).await;
+        let tx = build_tx(vec![pay(&exchange().public_key())], None);
+        s.send_transaction_with_options(
+            tx,
+            SendTransactionOptions {
+                skip_memo_required_check: true,
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn check_memo_required_standalone() {
+        let (s, _m) = mock_rpc(vec![memo_required_entry(&exchange(), b"1")], 2, 0).await;
+        let required = build_tx(vec![pay(&exchange().public_key())], None);
+        assert_requires_memo(s.check_memo_required(&required).await, 0);
+        let not_required = build_tx(vec![pay(&wallet().public_key())], None);
+        // The mock answers with the exchange entry regardless: it must be matched by account.
+        s.check_memo_required(&not_required).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn rpc_error_blocks_submission() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(matchers::body_partial_json(
+                json!({ "method": "getLedgerEntries" }),
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": { "code": -32603, "message": "internal error" }
+            })))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+        Mock::given(method("POST"))
+            .and(matchers::body_partial_json(
+                json!({ "method": "sendTransaction" }),
+            ))
+            .respond_with(ResponseTemplate::new(500))
+            .expect(0)
+            .mount(&mock_server)
+            .await;
+        let s = Server::new(
+            &mock_server.uri(),
+            Options {
+                allow_http: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let tx = build_tx(vec![pay(&exchange().public_key())], None);
+        assert!(matches!(
+            s.send_transaction(tx).await,
+            Err(Error::RPCError { code: -32603, .. })
+        ));
+    }
+}

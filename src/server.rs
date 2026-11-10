@@ -13,14 +13,63 @@ use stellar_baselib::address::{Address, AddressTrait};
 use stellar_baselib::keypair::KeypairBehavior;
 use stellar_baselib::transaction::{Transaction, TransactionBehavior};
 use stellar_baselib::xdr::{
-    ContractDataDurability, ContractExecutable, ContractExecutableExternalRef, Hash,
+    AccountId, ContractDataDurability, ContractExecutable, ContractExecutableExternalRef, Hash,
     LedgerEntryData, LedgerKey, LedgerKeyAccount, LedgerKeyContractCode, LedgerKeyContractData,
-    Limits, ScAddress, ScVal, WriteXdr,
+    LedgerKeyData, Limits, Memo, MuxedAccount, OperationBody, PublicKey, ScAddress, ScVal,
+    String64, WriteXdr,
 };
 use tokio::time::{sleep, Instant};
 
 /// The default transaction submission timeout for RPC requests, in milliseconds.
 pub const SUBMIT_TRANSACTION_TIMEOUT: u32 = 60 * 1000;
+
+/// The [SEP-29] account data entry name flagging that payments to the account need a memo.
+///
+/// [SEP-29]: https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0029.md
+pub const MEMO_REQUIRED_DATA_NAME: &str = "config.memo_required";
+
+/// The [SEP-29] data entry value (the single character `"1"`) that turns the requirement on.
+///
+/// [SEP-29]: https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0029.md
+pub const MEMO_REQUIRED_DATA_VALUE: &[u8] = b"1";
+
+/// Distinct non-muxed destinations of `PAYMENT`, `PATH_PAYMENT_STRICT_RECEIVE`,
+/// `PATH_PAYMENT_STRICT_SEND` and `ACCOUNT_MERGE` operations, each with the index of the
+/// first operation paying it, in operation order. Muxed (`M...`) destinations are skipped:
+/// the muxed id already identifies the recipient.
+fn memo_check_destinations(transaction: &Transaction) -> Vec<(AccountId, usize)> {
+    let mut destinations: Vec<(AccountId, usize)> = Vec::new();
+    let operations = transaction.operations.as_deref().unwrap_or_default();
+    for (index, operation) in operations.iter().enumerate() {
+        let destination = match &operation.body {
+            OperationBody::Payment(op) => &op.destination,
+            OperationBody::PathPaymentStrictReceive(op) => &op.destination,
+            OperationBody::PathPaymentStrictSend(op) => &op.destination,
+            OperationBody::AccountMerge(destination) => destination,
+            _ => continue,
+        };
+        let MuxedAccount::Ed25519(key) = destination else {
+            continue;
+        };
+        let account_id = AccountId(PublicKey::PublicKeyTypeEd25519(key.clone()));
+        if !destinations.iter().any(|(seen, _)| *seen == account_id) {
+            destinations.push((account_id, index));
+        }
+    }
+    destinations
+}
+
+/// Additional options for [Server::send_transaction_with_options]
+#[derive(Debug, Clone, Default)]
+pub struct SendTransactionOptions {
+    /// Skip the [SEP-29] memo-required check that runs before submitting.
+    ///
+    /// Defaults to `false` (the check runs), matching `skipMemoRequiredCheck` in
+    /// js-stellar-sdk's `submitTransaction`. See [Server::check_memo_required].
+    ///
+    /// [SEP-29]: https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0029.md
+    pub skip_memo_required_check: bool,
+}
 
 // Muxed addresses are accepted as transfer arguments, never in storage keys.
 fn contains_muxed_address(value: &ScVal) -> bool {
@@ -576,12 +625,39 @@ impl Server {
     ///
     /// This supports all transactions, not only smart contract-related transactions.
     ///
+    /// Before submitting, the transaction goes through the [SEP-29] memo-required check (see
+    /// [Server::check_memo_required]): if it has no memo and pays an account that requires one,
+    /// it is not sent and [Error::AccountRequiresMemo] is returned. Use
+    /// [Server::send_transaction_with_options] to skip the check.
+    ///
     /// [sendTransaction]: https://developers.stellar.org/docs/data/rpc/api-reference/methods/sendTransaction
+    /// [SEP-29]: https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0029.md
     ///
     pub async fn send_transaction(
         &self,
         transaction: Transaction,
     ) -> Result<SendTransactionResponse, Error> {
+        self.send_transaction_with_options(transaction, SendTransactionOptions::default())
+            .await
+    }
+
+    /// # Call to RPC method [sendTransaction], controlling the submission options
+    ///
+    /// Same as [Server::send_transaction] but with [SendTransactionOptions], for example to skip
+    /// the [SEP-29] memo-required check with
+    /// [SendTransactionOptions::skip_memo_required_check].
+    ///
+    /// [sendTransaction]: https://developers.stellar.org/docs/data/rpc/api-reference/methods/sendTransaction
+    /// [SEP-29]: https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0029.md
+    pub async fn send_transaction_with_options(
+        &self,
+        transaction: Transaction,
+        options: SendTransactionOptions,
+    ) -> Result<SendTransactionResponse, Error> {
+        if !options.skip_memo_required_check {
+            self.check_memo_required(&transaction).await?;
+        }
+
         let transaction_xdr = transaction
             .to_envelope()
             .map_err(|_| Error::TransactionError)?
@@ -648,6 +724,87 @@ impl Server {
     }
 
     // Non-RPC method implementations -------------------------------
+
+    /// # Check whether a destination of the transaction requires a memo ([SEP-29])
+    ///
+    /// Exchanges and other custodial services mark their accounts with the
+    /// `config.memo_required = "1"` data entry: a payment to them without a memo cannot be
+    /// credited to the right user and the funds are effectively lost.
+    ///
+    /// If the transaction has no memo, the destinations of its `PAYMENT`,
+    /// `PATH_PAYMENT_STRICT_RECEIVE`, `PATH_PAYMENT_STRICT_SEND` and `ACCOUNT_MERGE` operations
+    /// are checked, and [Error::AccountRequiresMemo] is returned for the first operation paying
+    /// an account that requires a memo.
+    ///
+    /// Nothing is fetched when the transaction has a memo or has none of those operations, and
+    /// muxed (`M...`) destinations are skipped since the muxed id identifies the recipient. All
+    /// remaining destinations are checked with a single [Server::get_ledger_entries] call. A
+    /// destination that does not exist yet does not require a memo.
+    ///
+    /// [Server::send_transaction] runs this check by default.
+    ///
+    /// [SEP-29]: https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0029.md
+    pub async fn check_memo_required(&self, transaction: &Transaction) -> Result<(), Error> {
+        if !matches!(transaction.memo, None | Some(Memo::None)) {
+            return Ok(());
+        }
+
+        let destinations = memo_check_destinations(transaction);
+        if destinations.is_empty() {
+            return Ok(());
+        }
+
+        let data_name = String64(
+            MEMO_REQUIRED_DATA_NAME
+                .try_into()
+                .map_err(|_| Error::XdrError)?,
+        );
+        let keys = destinations
+            .iter()
+            .map(|(account_id, _)| {
+                LedgerKey::Data(LedgerKeyData {
+                    account_id: account_id.clone(),
+                    data_name: data_name.clone(),
+                })
+            })
+            .collect();
+
+        let entries = self
+            .get_ledger_entries(keys)
+            .await?
+            .entries
+            .unwrap_or_default();
+        let requires_memo: Vec<AccountId> = entries
+            .iter()
+            .filter_map(|entry| match entry.to_data() {
+                LedgerEntryData::Data(data)
+                    if data.data_name.0.as_slice() == MEMO_REQUIRED_DATA_NAME.as_bytes()
+                        && data.data_value.0.as_slice() == MEMO_REQUIRED_DATA_VALUE =>
+                {
+                    Some(data.account_id)
+                }
+                _ => None,
+            })
+            .collect();
+
+        // Destinations are in operation order, so this reports the first offending operation.
+        match destinations
+            .into_iter()
+            .find(|(account_id, _)| requires_memo.contains(account_id))
+        {
+            Some((AccountId(PublicKey::PublicKeyTypeEd25519(key)), operation_index)) => {
+                Err(Error::AccountRequiresMemo {
+                    account_id: stellar_baselib::keypair::Keypair::new_from_public_key(
+                        key.0.to_vec(),
+                    )
+                    .map_err(|_| Error::UnexpectedError)?
+                    .public_key(),
+                    operation_index,
+                })
+            }
+            None => Ok(()),
+        }
+    }
 
     /// # Fetch an [Account] to be used to build a transaction
     ///

@@ -95,6 +95,37 @@ let op = Operation::new().create_contract_from_external_ref(
 )?;
 ```
 
+## Memo-required accounts (SEP-29) — checked by default
+
+Exchanges flag their deposit accounts with the
+[SEP-29](https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0029.md)
+data entry `config.memo_required = "1"`: a payment to them without a memo cannot
+be credited to anyone. `send_transaction` checks for this before submitting, like
+`submitTransaction` in js-stellar-sdk. A transaction with no memo that pays such an
+account (`Payment`, `PathPaymentStrictReceive`, `PathPaymentStrictSend` or
+`AccountMerge`) is not sent:
+
+```rust
+match rpc.send_transaction(tx).await {
+    Err(Error::AccountRequiresMemo { account_id, operation_index }) => {
+        // ask the user for the memo the exchange gave them
+    }
+    result => { /* ... */ }
+}
+```
+
+Transactions with a memo, transactions without those operations, and payments to
+muxed (`M...`) addresses need no lookup. Otherwise every destination is checked
+with one `getLedgerEntries` call. Run the check on its own with
+`rpc.check_memo_required(&tx)`, or skip it:
+
+```rust
+rpc.send_transaction_with_options(
+    tx,
+    SendTransactionOptions { skip_memo_required_check: true },
+).await?;
+```
+
 ## Running Examples
 
 ```bash
@@ -104,6 +135,7 @@ cargo run --example deploy
 cargo run --example authorize_entry_demo
 cargo run --example upgraded_auth_e2e   # hits testnet, funds two accounts
 cargo run --example p28_e2e             # hits testnet: CAP-71 default flip, wasm fetchers, full CAP-85 flow
+cargo run --example sep29_memo_required # hits testnet: SEP-29 refusal, memo and muxed payments
 ```
 
 ## Sample Demo of the library
