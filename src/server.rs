@@ -677,19 +677,42 @@ impl Server {
     /// This can be used to inspect the contract state without using [Server::simulate_transaction]
     /// or to fetch data not available otherwise.
     ///
+    /// Returns [Error::InvalidAddress] if `contract` cannot be parsed as an address,
+    /// [Error::AddressNotAllowed] if `contract` is not a contract address or `key`
+    /// contains a muxed address, and [Error::ContractDataNotFound] if the entry does
+    /// not exist.
+    ///
     pub async fn get_contract_data(
         &self,
         contract: &str,
         key: ScVal,
         durability: Durability,
     ) -> Result<LedgerEntryResult, Error> {
+        let invalid_contract =
+            || Error::InvalidAddress(format!("invalid contract address: {contract}"));
         let sc_address = Address::new(contract)
-            .map_err(|_| Error::ContractDataNotFound)?
+            .map_err(|_| invalid_contract())?
             .to_sc_address()
-            .map_err(|_| Error::ContractDataNotFound)?;
+            .map_err(|_| invalid_contract())?;
 
-        if !matches!(sc_address, ScAddress::Contract(_)) || contains_muxed_address(&key) {
-            return Err(Error::ContractDataNotFound);
+        match sc_address {
+            ScAddress::Contract(_) => {}
+            ScAddress::MuxedAccount(_) | ScAddress::MuxedContract(_) => {
+                return Err(Error::AddressNotAllowed(
+                    "contract data owner cannot be a muxed address (M... or W...)".into(),
+                ));
+            }
+            _ => {
+                return Err(Error::AddressNotAllowed(
+                    "contract data owner must be a contract address (C...)".into(),
+                ));
+            }
+        }
+
+        if contains_muxed_address(&key) {
+            return Err(Error::AddressNotAllowed(
+                "contract data keys cannot contain muxed addresses (M... or W...)".into(),
+            ));
         }
 
         let contract_key = LedgerKey::ContractData(LedgerKeyContractData {
