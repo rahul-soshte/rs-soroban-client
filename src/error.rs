@@ -75,6 +75,22 @@ pub enum Error {
     /// Error when a function is not implemented, you probably need to enable a feature
     #[error("NotImplemented: `{0}`")]
     NotImplemented(String),
+    /// [SEP-29]: a destination of this transaction requires a memo, but the transaction has none.
+    /// Returned by [Server::check_memo_required] and, unless skipped, by
+    /// [Server::send_transaction].
+    ///
+    /// [SEP-29]: https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0029.md
+    /// [Server::check_memo_required]: crate::Server::check_memo_required
+    /// [Server::send_transaction]: crate::Server::send_transaction
+    #[error(
+        "AccountRequiresMemo: account {account_id} (operation {operation_index}) requires a memo"
+    )]
+    AccountRequiresMemo {
+        /// The destination account (`G...`) that requires a memo
+        account_id: String,
+        /// Index of the first operation paying this account
+        operation_index: usize,
+    },
 }
 
 /// Possible  errors for invalid RPC URLs
