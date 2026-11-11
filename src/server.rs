@@ -11,6 +11,7 @@ use stellar_baselib::account::Account;
 use stellar_baselib::account::AccountBehavior;
 use stellar_baselib::address::{Address, AddressTrait};
 use stellar_baselib::keypair::KeypairBehavior;
+use stellar_baselib::fee_bump_transaction::GenericTransaction;
 use stellar_baselib::transaction::{Transaction, TransactionBehavior};
 use stellar_baselib::xdr::{
     ContractDataDurability, ContractExecutable, ContractExecutableExternalRef, Hash,
@@ -576,13 +577,18 @@ impl Server {
     ///
     /// This supports all transactions, not only smart contract-related transactions.
     ///
+    /// It takes a [`Transaction`], a [`FeeBumpTransaction`] or a [`GenericTransaction`].
+    /// For a fee bump, the hash in the response is the fee-bump hash, not the inner one.
+    ///
     /// [sendTransaction]: https://developers.stellar.org/docs/data/rpc/api-reference/methods/sendTransaction
+    /// [`FeeBumpTransaction`]: stellar_baselib::fee_bump_transaction::FeeBumpTransaction
     ///
     pub async fn send_transaction(
         &self,
-        transaction: Transaction,
+        transaction: impl Into<GenericTransaction>,
     ) -> Result<SendTransactionResponse, Error> {
         let transaction_xdr = transaction
+            .into()
             .to_envelope()
             .map_err(|_| Error::TransactionError)?
             .to_xdr_base64(Limits::none())

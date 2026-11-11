@@ -3,6 +3,7 @@ use stellar_baselib::operation::Operation;
 pub use stellar_baselib::{
     account::Account,
     account::AccountBehavior,
+    fee_bump_transaction::{FeeBumpError, FeeBumpTransaction, GenericTransaction},
     soroban_data_builder::{self, SorobanDataBuilder},
     transaction::Transaction,
     transaction::TransactionBehavior,
