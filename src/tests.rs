@@ -1904,6 +1904,64 @@ async fn get_contract_wasm_by_contract_id_external_ref() {
 }
 
 #[tokio::test]
+async fn send_fee_bump_transaction() {
+    use stellar_baselib::fee_bump_transaction::{FeeBumpTransaction, GenericTransaction};
+
+    let network = Networks::testnet();
+    let inner_kp = Keypair::from_raw_ed25519_seed(&[1u8; 32]).unwrap();
+    let fee_kp = Keypair::from_raw_ed25519_seed(&[2u8; 32]).unwrap();
+
+    let mut account = Account::new(&inner_kp.public_key(), "1234").unwrap();
+    let mut inner = stellar_baselib::transaction_builder::TransactionBuilder::new(
+        &mut account,
+        network,
+        None,
+    )
+    .fee(100_u32)
+    .add_operation(
+        stellar_baselib::operation::Operation::new()
+            .bump_sequence(0)
+            .unwrap(),
+    )
+    .build();
+    inner.sign(&[inner_kp]);
+
+    let mut fee_bump = FeeBumpTransaction::new(&fee_kp.public_key(), 1_000, &inner).unwrap();
+    fee_bump.sign(&[fee_kp]).unwrap();
+    let fee_bump_xdr = fee_bump.to_xdr_base64();
+    let hash = hex::encode(fee_bump.hash());
+
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "sendTransaction",
+        "params": { "transaction": fee_bump_xdr }
+    });
+    let response = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+            "status": "PENDING",
+            "hash": hash,
+            "latestLedger": 2553978,
+            "latestLedgerCloseTime": "1700159337"
+        }
+    });
+
+    // A FeeBumpTransaction goes out as its TxFeeBump envelope.
+    let (s, _m) = get_mocked_server(request.clone(), response.clone()).await;
+    let result = s.send_transaction(fee_bump.clone()).await.unwrap();
+    assert_eq!(result.status, SendTransactionStatus::Pending);
+    assert_eq!(result.hash, hash);
+
+    // So does a GenericTransaction parsed from the same XDR.
+    let (s, _m) = get_mocked_server(request, response).await;
+    let parsed = GenericTransaction::from_xdr_envelope(&fee_bump_xdr, network).unwrap();
+    let result = s.send_transaction(parsed).await.unwrap();
+    assert_eq!(result.hash, hash);
+}
+
+#[tokio::test]
 async fn send_transaction() {
     /*
      * Pending transaction
