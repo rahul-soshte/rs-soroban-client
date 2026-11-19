@@ -1935,7 +1935,8 @@ async fn send_transaction() {
             );
 
         let network = Networks::testnet();
-        let tx = Transaction::from_xdr_envelope(tx_xdr, network);
+        let tx = Transaction::from_xdr_envelope(tx_xdr, network)
+            .unwrap().into_transaction().unwrap();
         let xdr = tx
             .to_envelope()
             .unwrap()
@@ -1984,7 +1985,8 @@ async fn send_transaction() {
             );
 
         let network = Networks::testnet();
-        let tx = Transaction::from_xdr_envelope(tx_xdr, network);
+        let tx = Transaction::from_xdr_envelope(tx_xdr, network)
+            .unwrap().into_transaction().unwrap();
         let xdr = tx
             .to_envelope()
             .unwrap()
@@ -2032,7 +2034,8 @@ async fn send_transaction() {
             );
 
         let network = Networks::testnet();
-        let tx = Transaction::from_xdr_envelope(tx_xdr, network);
+        let tx = Transaction::from_xdr_envelope(tx_xdr, network)
+            .unwrap().into_transaction().unwrap();
         let xdr = tx
             .to_envelope()
             .unwrap()
@@ -2082,7 +2085,8 @@ async fn send_transaction() {
                     );
 
         let network = Networks::testnet();
-        let tx = Transaction::from_xdr_envelope(tx_xdr, network);
+        let tx = Transaction::from_xdr_envelope(tx_xdr, network)
+            .unwrap().into_transaction().unwrap();
         let xdr = tx
             .to_envelope()
             .unwrap()

@@ -3,9 +3,11 @@ use stellar_baselib::operation::Operation;
 pub use stellar_baselib::{
     account::Account,
     account::AccountBehavior,
+    fee_bump_transaction::FeeBumpTransaction,
     soroban_data_builder::{self, SorobanDataBuilder},
     transaction::Transaction,
     transaction::TransactionBehavior,
+    transaction::{ParsedTransaction, TransactionError},
     transaction_builder::TransactionBuilder,
     transaction_builder::TransactionBuilderBehavior,
     xdr::{
