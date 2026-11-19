@@ -1,0 +1,182 @@
+# Native contract calls
+
+## Enable the feature
+
+Enable `contract-spec` (Rust 1.93+). Add Serde if you use custom Rust structs or
+enums:
+
+```toml
+[dependencies]
+soroban-client = { version = "0.8", features = ["contract-spec"] }
+serde = { version = "1", features = ["derive"] }
+```
+
+## Without and with `contract-spec`
+
+These examples simulate a deployed function `add(a: u32, b: u32) -> u32` using an
+existing `server`, `contract_id`, `source_account`, and `network_passphrase`.
+
+### Without `contract-spec`
+
+```rust,ignore
+use soroban_client::{
+    contract::{ContractBehavior, Contracts},
+    transaction::{TransactionBuilder, TransactionBuilderBehavior},
+    xdr::ScVal,
+};
+
+let contract = Contracts::new(contract_id)?;
+let mut source = source_account.clone();
+let tx = TransactionBuilder::new(&mut source, network_passphrase, None)
+    .fee(1000u32)
+    .add_operation(contract.call(
+        "add",
+        Some(vec![ScVal::U32(2), ScVal::U32(3)]),
+    ))
+    .build();
+
+let simulation = server.simulate_transaction(&tx, None).await?;
+let (result, _) = simulation.to_result().ok_or("missing result")?;
+let value = match result {
+    ScVal::U32(value) => value,
+    _ => return Err("unexpected return type".into()),
+};
+assert_eq!(value, 5);
+```
+
+### With `contract-spec`
+
+```rust,ignore
+use soroban_client::contract_client::Client;
+
+let client = Client::new(&server, contract_id).await?;
+let value: u32 = client.call("add", &(2u32, 3u32))?
+    .simulate(&source_account, network_passphrase).await?;
+assert_eq!(value, 5);
+```
+
+The client validates argument counts and types against the contract's embedded
+interface, converts the inputs, and decodes the result. Simulation does not submit
+a transaction; use the preparation flow below to execute on-chain.
+
+## Arguments and return values
+
+Pass arguments as a positional tuple: `()` for no arguments, `(value,)` for one,
+or `(a, b)` for two. You can also pass a struct whose field names match the
+function's inputs:
+
+```rust,ignore
+#[derive(serde::Serialize)]
+struct AddArgs { a: u32, b: u32 }
+
+let call = client.call("add", &AddArgs { a: 2, b: 3 })?;
+```
+
+| Contract type | Rust representation |
+| --- | --- |
+| bool, signed/unsigned 32/64/128-bit integer | Corresponding primitive |
+| signed/unsigned 256-bit integer | `soroban_client::contract_spec::{I256, U256}` |
+| string, symbol, address | `String` / `&str`; addresses use StrKey strings |
+| bytes, bytesN | `Vec<u8>` / `[u8; N]` |
+| void | `()` |
+| timepoint, duration | `u64` seconds |
+| option, vector, tuple | `Option<T>`, `Vec<T>`, Rust tuple |
+| map | Serde map with string or integer keys |
+| struct, tuple struct | Rust struct deriving `Serialize` / `Deserialize` |
+| union | Externally tagged Serde enum with unit/newtype/tuple variants |
+| numeric enum | Serde enum; variant names map to the contract's numeric values |
+
+Use Serde rename attributes when Rust names differ from contract names. Numeric
+enums use the specification's discriminants, not Rust variant positions.
+For function outputs declared as `Result<T, E>`, request `T`; failures are returned
+through `CallError`.
+
+## Handle contract errors
+
+Derive `Deserialize` on your error enum and match the contract's variant names:
+
+```rust,ignore
+use soroban_client::contract_client::CallError;
+
+#[derive(Debug, serde::Deserialize)]
+enum ArithmeticFailure { Overflow }
+
+let call = client.call("add", &(u32::MAX, 1u32))?;
+match call.try_simulate::<u32, ArithmeticFailure>(&source_account, network_passphrase).await {
+    Ok(value) => println!("{value}"),
+    Err(CallError::Contract(ArithmeticFailure::Overflow)) => println!("overflow"),
+    Err(CallError::UnknownContract(error)) => println!("unmapped contract error {}", error.code),
+    Err(other) => return Err(other.into()),
+}
+```
+
+Unknown, ambiguous, or unmapped contract errors retain their numeric code and
+available symbolic matches. Without an application enum, `simulate::<T>` and
+`prepare::<T>` return structured `ContractFailure` values in `CallError::Contract`.
+If a failed simulation has no usable structured diagnostics, it returns
+`CallError::Simulation` instead of a typed contract variant.
+
+## Submit a transaction
+
+```rust,ignore
+use soroban_client::transaction::TransactionBehavior;
+
+let call = client.call("add", &(2u32, 3u32))?;
+let prepared = call.prepare::<u32>(&source_account, network_passphrase).await?;
+let mut transaction = prepared.transaction;
+transaction.sign(&signers);
+let sent = server.send_transaction(transaction).await?;
+let confirmed = server.wait_transaction(&sent.hash, std::time::Duration::from_secs(90))
+    .await.map_err(|(error, _)| error)?;
+let actual = call.decode_transaction::<u32, ArithmeticFailure>(&confirmed)?;
+```
+
+`prepared.simulated_value` is a prediction. Decode the confirmed response for the
+same invocation to obtain its actual result.
+
+- `try_prepare::<T, E>` and `try_simulate_with_options::<T, E>` accept
+  `InvocationOptions` for fees, timeout, and simulation/auth settings.
+- Source accounts are not advanced locally. Refresh them before sequential
+  submissions and coordinate sequence numbers for concurrent transactions.
+- Sign non-source-account authorizations yourself. Archived state returns
+  `RestorationRequired`; restoration is not automatic.
+- Use `operation()` or `transaction()` for custom transaction workflows.
+
+## Read the interface and metadata
+
+`Client::new` fetches the contract's Wasm and reads its interface (SEP-48), metadata
+(SEP-46), and declared SEP claims (SEP-47). Reuse that snapshot:
+
+```rust,ignore
+let spec = client.spec();
+let metadata = client.metadata();
+let claims = client.sep_claims()?;
+```
+
+For discovery without a client, use the server readers. Each fetches independently:
+
+```rust,ignore
+let spec = server.get_contract_spec(contract_id).await?;
+let metadata = server.get_contract_metadata(contract_id).await?;
+let claims = server.get_contract_sep_claims(contract_id).await?;
+```
+
+Metadata preserves duplicate keys. SEP claims combine all `sep` entries and
+deduplicate numbers in declaration order; malformed identifiers return an error.
+Claims are not proof that a contract implements a SEP.
+
+## Limitations
+
+- Recreate the client after a contract upgrade to refresh its interface.
+- Built-in Stellar Asset Contracts have no Wasm; discovery returns
+  `ContractCodeNotFound`. Missing or malformed interfaces also return errors.
+- Composite map keys, internally tagged/untagged enums, and union struct variants
+  are unsupported. Generic `val` requires an explicit XDR value rather than an
+  inferred native type.
+- Event definitions are available through `spec.entries()`; typed event decoding
+  is not provided.
+- The interface is a contract's self-description, not verification of its behavior.
+
+See [`examples/typed_contract.rs`](../examples/typed_contract.rs) for a runnable
+testnet example and [the testing instructions](../tests/README.md) to deploy its
+fixture.

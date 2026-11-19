@@ -2,3 +2,5 @@
 /Cargo.lock
 /sdemo/target
 /sdemo/Cargo.lock
+/tests/contracts/native/target
+/tests/contracts/native/Cargo.lock

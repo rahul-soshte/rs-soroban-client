@@ -346,6 +346,81 @@ pub struct SimulateTransactionResponse {
 }
 
 impl SimulateTransactionResponse {
+    /// Fallible restoration preamble decoding, preserving malformed RPC errors.
+    pub fn try_restore_transaction_data(
+        &self,
+    ) -> Result<Option<(i64, SorobanTransactionData)>, crate::error::Error> {
+        self.restore_preamble
+            .as_ref()
+            .map(|restore| {
+                let fee = restore
+                    .min_resource_fee
+                    .parse::<i64>()
+                    .map_err(|_| crate::error::Error::XdrError)?;
+                if fee < 0 {
+                    return Err(crate::error::Error::XdrError);
+                }
+                let data = SorobanTransactionData::from_xdr_base64(
+                    &restore.transaction_data,
+                    Limits {
+                        depth: 100,
+                        len: 0x1000000,
+                    },
+                )
+                .map_err(|_| crate::error::Error::XdrError)?;
+                Ok((fee, data))
+            })
+            .transpose()
+    }
+
+    /// Decode simulation transaction data without panicking on malformed XDR.
+    pub fn try_transaction_data(
+        &self,
+    ) -> Result<Option<SorobanTransactionData>, crate::error::Error> {
+        self.transaction_data
+            .as_ref()
+            .map(|data| {
+                SorobanTransactionData::from_xdr_base64(
+                    data,
+                    Limits {
+                        depth: 100,
+                        len: 0x1000000,
+                    },
+                )
+                .map_err(|_| crate::error::Error::XdrError)
+            })
+            .transpose()
+    }
+
+    /// Fallible result decoding for callers handling untrusted RPC responses.
+    /// Rejects unexpected result counts and malformed return/auth XDR.
+    pub fn try_result(
+        &self,
+    ) -> Result<Option<(ScVal, Vec<SorobanAuthorizationEntry>)>, crate::error::Error> {
+        let Some(results) = &self.results else {
+            return Ok(None);
+        };
+        if results.len() != 1 {
+            return Err(crate::error::Error::InvalidSorobanTransaction);
+        }
+        let limits = Limits {
+            depth: 100,
+            len: 0x1000000,
+        };
+        let result = &results[0];
+        let value = ScVal::from_xdr_base64(&result.xdr, limits.clone())
+            .map_err(|_| crate::error::Error::XdrError)?;
+        let auth = result
+            .auth
+            .iter()
+            .map(|a| {
+                SorobanAuthorizationEntry::from_xdr_base64(a, limits.clone())
+                    .map_err(|_| crate::error::Error::XdrError)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Some((value, auth)))
+    }
+
     /// (optional) - This array will only have one element: the result for the Host Function
     /// invocation.
     /// Only present on successful simulation (i.e. no error) of InvokeHostFunction op

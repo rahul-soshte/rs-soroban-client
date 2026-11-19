@@ -1,0 +1,22 @@
+[package]
+name = "native-client-fixture"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# An older supported protocol keeps the fixture deployable on testnet even
+# while the off-chain client tracks Protocol 30.
+soroban-sdk = "=23.0.0"
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+panic = "abort"
+codegen-units = 1
+lto = true
