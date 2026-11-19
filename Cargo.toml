@@ -9,6 +9,9 @@ repository = "https://github.com/rahul-soshte/rs-soroban-client"
 keywords = ["stellar", "soroban", "rust"]
 authors = ["Rahul Soshte <rahul.soshte47@gmail.com>"]
 
+[package.metadata.docs.rs]
+features = ["contract-spec"]
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -22,6 +25,10 @@ futures = "0.3"
 hex = "0.4"
 tracing = "0.1.40"
 thiserror = { version = "2.0.9" }
+soroban-spec = { version = "=30.0.0-rc.1", optional = true }
+soroban-spec-tools = { version = "=30.0.1", optional = true }
+wasmparser = { version = "0.116.1", optional = true }
+ethnum = { version = "1.3.2", features = ["serde"], optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.43.0", features = ["full", "macros"] }
@@ -31,3 +38,14 @@ wiremock = "0.6.2"
 [features]
 default = []
 cap_0083 = ["stellar-baselib/cap_0083"]
+contract-spec = [
+  "dep:soroban-spec",
+  "dep:soroban-spec-tools",
+  "dep:wasmparser",
+  "dep:ethnum",
+  "serde_json/arbitrary_precision",
+]
+
+[[example]]
+name = "typed_contract"
+required-features = ["contract-spec"]

@@ -1,0 +1,30 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        flags: ["--no-default-features", "--no-default-features --features contract-spec"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.0"
+      - run: cargo check ${{ matrix.flags }} --examples
+      - run: cargo test ${{ matrix.flags }} --lib --tests
+
+  fixture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.0"
+          targets: wasm32v1-none
+      - run: cargo build --manifest-path tests/contracts/native/Cargo.toml --target wasm32v1-none --release

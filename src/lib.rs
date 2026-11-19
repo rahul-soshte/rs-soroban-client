@@ -107,8 +107,12 @@ pub mod soroban_rpc;
 pub mod transaction;
 pub use stellar_baselib::*;
 
-// for now, not public
-//mod contract_spec;
+/// Spec-driven contract invocation with native Rust values.
+#[cfg(feature = "contract-spec")]
+pub mod contract_client;
+/// SEP-46/47/48 interface discovery and native value conversion.
+#[cfg(feature = "contract-spec")]
+pub mod contract_spec;
 mod friendbot;
 mod jsonrpc;
 mod server;
