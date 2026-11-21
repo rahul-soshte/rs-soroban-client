@@ -95,6 +95,53 @@ let op = Operation::new().create_contract_from_external_ref(
 )?;
 ```
 
+## Fee-bump submission
+
+`Server::send_transaction` accepts `Transaction`, `FeeBumpTransaction` and
+`ParsedTransaction`, either owned or by shared reference. Existing
+`send_transaction(tx)` calls continue to work. The common conversion interface is
+`transaction::TransactionEnvelopeSource`.
+
+```rust,no_run
+use soroban_client::{
+    keypair::{Keypair, KeypairBehavior},
+    network::{NetworkPassphrase, Networks},
+    transaction::{FeeBumpTransaction, Transaction, TransactionBehavior},
+    Server,
+};
+
+# async fn submit(rpc: &Server, signed_inner: Transaction, payer: &Keypair)
+#     -> Result<(), Box<dyn std::error::Error>> {
+// Example: a signed one-operation inner transaction bidding 100 stroops.
+// The payer can be a different account from the inner source.
+let mut bump = FeeBumpTransaction::new(
+    &payer.public_key(), 200, signed_inner.to_envelope()?, Networks::testnet(), 100,
+)?;
+bump.sign(std::slice::from_ref(payer))?;
+let response = rpc.send_transaction(&bump).await?;
+# Ok(())
+# }
+```
+
+The outer fee (`200` above) is a **total in stroops**, while the last argument
+(`100`) is the caller-supplied current network base fee **per operation**.
+Construction returns typed `transaction::FeeBumpError`s if the total is below
+the protocol minimum. Higher inner fees or operation counts require a higher
+outer total.
+
+For Soroban transactions, simulate and assemble the **inner** transaction first,
+complete authorization and transaction signing, then wrap it and sign the outer
+fee bump. Simulation and assembly still take ordinary transactions.
+
+To submit an envelope received as base64 XDR, pass the result of
+`Transaction::from_xdr_envelope(xdr, network)?` directly to `send_transaction`.
+Parsed fee bumps retain the outer fee source and both signature sets.
+
+Submission does not wait for confirmation. Poll `get_transaction` using the
+response's **outer transaction hash**, not `bump.inner_hash()`. A `PENDING`
+response alone is not proof of successful confirmation.
+
+
 ## Running Examples
 
 ```bash
@@ -104,6 +151,7 @@ cargo run --example deploy
 cargo run --example authorize_entry_demo
 cargo run --example upgraded_auth_e2e   # hits testnet, funds two accounts
 cargo run --example p28_e2e             # hits testnet: CAP-71 default flip, wasm fetchers, full CAP-85 flow
+cargo run --example fee_bump            # hits testnet: Alice signs, Bob sponsors the fee
 ```
 
 ## Sample Demo of the library
