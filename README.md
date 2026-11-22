@@ -17,7 +17,7 @@ Add this to your Cargo.toml:
 
 ```toml
 [dependencies]
-soroban-client = "0.7.0"
+soroban-client = "0.8.0"
 ```
 
 And this to your code:
@@ -28,8 +28,12 @@ use soroban_client::*;
 
 ## Protocol Compatibility
 
+The upcoming **0.8.0** release intentionally includes breaking transaction parsing
+and field-type corrections. See the [0.8.0 migration guide](docs/migration-0.8.0.md).
+
 | `soroban-client` version | Stellar Protocol Number | `stellar-baselib` | `stellar-xdr` |
 | ------------------------ | ----------------------- | ----------------- | ------------- |
+| `0.8.x`                  | Protocol 30             | `0.8.x`           | `30.0.0`      |
 | `0.7.x`                  | Protocol 30             | `0.7.x`           | `30.0.0`      |
 | `0.6.x`                  | Protocol 28             | `0.6.x`           | `28.0.0`      |
 
