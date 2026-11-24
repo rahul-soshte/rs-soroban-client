@@ -113,7 +113,19 @@ pub fn entries() -> Vec<ScSpecEntry> {
             name: "Changed".try_into().unwrap(),
             ..Default::default()
         }),
+        function("echo_map", &[("value", map_type())], map_type()),
     ]
+}
+
+pub fn map_type() -> ScSpecTypeDef {
+    ScSpecTypeDef::Map(Box::new(ScSpecTypeMap {
+        key_type: Box::new(ScSpecTypeDef::Tuple(Box::new(ScSpecTypeTuple {
+            value_types: vec![ScSpecTypeDef::U32, ScSpecTypeDef::U32]
+                .try_into()
+                .unwrap(),
+        }))),
+        value_type: Box::new(ScSpecTypeDef::I128),
+    }))
 }
 
 pub fn meta(key: &str, value: &str) -> Vec<u8> {

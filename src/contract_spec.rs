@@ -13,6 +13,8 @@ use stellar_baselib::xdr::{
     ScSpecUdtUnionCaseV0, ScVal,
 };
 
+mod native;
+
 /// Native 256-bit integer types, serialized losslessly as prefixed hex strings.
 pub use ethnum::{I256, U256};
 
@@ -222,19 +224,21 @@ impl ContractSpec {
         args: &A,
     ) -> Result<Vec<ScVal>, SpecError> {
         let f = self.function(function)?;
-        let value = serde_json::to_value(args).map_err(|e| conversion(e.to_string()))?;
+        let value = native::serialize(args)?;
         let values = match value {
-            Value::Null if f.inputs.is_empty() => Vec::new(),
-            Value::Array(values) if values.len() == f.inputs.len() => values,
-            Value::Object(mut values) if values.len() == f.inputs.len() => f
-                .inputs
-                .iter()
-                .map(|input| {
-                    values
-                        .remove(&input.name.to_utf8_string_lossy())
-                        .ok_or_else(|| conversion(format!("missing argument {}", input.name)))
-                })
-                .collect::<Result<Vec<_>, _>>()?,
+            native::Value::Unit if f.inputs.is_empty() => Vec::new(),
+            native::Value::Seq(values) if values.len() == f.inputs.len() => values,
+            native::Value::Map(values) if values.len() == f.inputs.len() => {
+                let mut values = native::named_fields(values)?;
+                f.inputs
+                    .iter()
+                    .map(|input| {
+                        values
+                            .remove(&input.name.to_utf8_string_lossy())
+                            .ok_or_else(|| conversion(format!("missing argument {}", input.name)))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
+            }
             _ => {
                 return Err(conversion(
                     "arguments must match the function's named inputs or positional arity",
@@ -244,16 +248,15 @@ impl ContractSpec {
         values
             .into_iter()
             .zip(f.inputs.iter())
-            .map(|(v, input)| self.encode_json(v, &input.type_))
+            .map(|(v, input)| self.encode_native(v, &input.type_, 0))
             .collect()
     }
 
     /// Convert a Rust value according to an interface type.
+    /// Native maps support composite keys, including tuples and structs, and
+    /// are sorted by encoded key order regardless of their Rust iteration order.
     pub fn encode<T: Serialize>(&self, value: &T, ty: &ScSpecTypeDef) -> Result<ScVal, SpecError> {
-        self.encode_json(
-            serde_json::to_value(value).map_err(|e| conversion(e.to_string()))?,
-            ty,
-        )
+        self.encode_native(native::serialize(value)?, ty, 0)
     }
 
     fn encode_json(&self, value: Value, ty: &ScSpecTypeDef) -> Result<ScVal, SpecError> {
@@ -270,6 +273,18 @@ impl ContractSpec {
         value: &ScVal,
         ty: &ScSpecTypeDef,
     ) -> Result<T, SpecError> {
+        let native = self.decode_native(value, ty, 0)?;
+        if self.encode_native(native::simplify(native.clone(), 0)?, ty, 0)? != *value {
+            return Err(conversion("result does not match the declared wire type"));
+        }
+        serde_content::Deserializer::new(native)
+            .human_readable()
+            .coerce_numbers()
+            .deserialize()
+            .map_err(|e| conversion(e.to_string()))
+    }
+
+    fn decode_json(&self, value: &ScVal, ty: &ScSpecTypeDef) -> Result<Value, SpecError> {
         let json = upstream(|| self.tools.xdr_to_json(value, ty))?;
         // Reject truncated containers, missing fields, invalid discriminants,
         // wrong wire tags, and other lossy upstream conversions.
@@ -277,7 +292,7 @@ impl ContractSpec {
         if self.encode_json(native.clone(), ty)? != *value {
             return Err(conversion("result does not match the declared wire type"));
         }
-        serde_json::from_value(native).map_err(|e| conversion(e.to_string()))
+        Ok(native)
     }
 
     /// Decode the successful output of a named function. Contract errors must
@@ -296,7 +311,8 @@ impl ContractSpec {
         self.decode(value, ty)
     }
 
-    // Adapt Serde shapes to upstream JSON shapes, never implement XDR packing.
+    // Adapt map-free Serde shapes to upstream JSON shapes. Native maps are
+    // handled separately so their keys never need to become JSON strings.
     fn normalize(
         &self,
         value: Value,
@@ -402,17 +418,6 @@ impl ContractSpec {
                         .zip(inner.value_types.iter())
                         .map(|(v, t)| recurse(v, t))
                         .collect::<Result<_, _>>()?,
-                ))
-            }
-            T::Map(inner) => {
-                let Value::Object(values) = value else {
-                    return Err(conversion("expected a map with JSON-compatible keys"));
-                };
-                Ok(Value::Object(
-                    values
-                        .into_iter()
-                        .map(|(k, v)| Ok((k, recurse(v, &inner.value_type)?)))
-                        .collect::<Result<_, SpecError>>()?,
                 ))
             }
             T::Bytes | T::BytesN(_) => {

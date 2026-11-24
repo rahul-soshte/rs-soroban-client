@@ -29,6 +29,7 @@ soroban-spec = { version = "=30.0.0-rc.1", optional = true }
 soroban-spec-tools = { version = "=30.0.1", optional = true }
 wasmparser = { version = "0.116.1", optional = true }
 ethnum = { version = "1.3.2", features = ["serde"], optional = true }
+serde-content = { version = "0.1.2", default-features = false, features = ["std", "serde"], optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.43.0", features = ["full", "macros"] }
@@ -43,6 +44,7 @@ contract-spec = [
   "dep:soroban-spec-tools",
   "dep:wasmparser",
   "dep:ethnum",
+  "dep:serde-content",
   "serde_json/arbitrary_precision",
 ]
 

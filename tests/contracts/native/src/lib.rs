@@ -1,7 +1,7 @@
 #![no_std]
 use soroban_sdk::{
-    contract, contracterror, contractevent, contractimpl, contractmeta, contracttype, Env, String,
-    I256, U256,
+    contract, contracterror, contractevent, contractimpl, contractmeta, contracttype, Env, Map,
+    String, Vec, I256, U256,
 };
 
 contractmeta!(key = "fixture", val = "native-client-v1");
@@ -16,6 +16,19 @@ mod additional_claims {
 pub struct Record {
     pub z: i128,
     pub a: String,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub struct MapKey {
+    pub z: u32,
+    pub a: u32,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub struct MapContainer {
+    pub values: Map<MapKey, Vec<Option<u128>>>,
 }
 
 #[contracttype]
@@ -77,6 +90,15 @@ impl NativeFixture {
         value
     }
     pub fn echo_u256(value: U256) -> U256 {
+        value
+    }
+    pub fn echo_map(value: Map<(u32, u32), i128>) -> Map<(u32, u32), i128> {
+        value
+    }
+    pub fn echo_struct_map(value: Map<MapKey, U256>) -> Map<MapKey, U256> {
+        value
+    }
+    pub fn echo_nested_map(value: MapContainer) -> MapContainer {
         value
     }
 }

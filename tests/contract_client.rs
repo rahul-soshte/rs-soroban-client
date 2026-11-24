@@ -140,6 +140,29 @@ enum ArithmeticError {
 }
 
 #[tokio::test]
+async fn native_composite_maps_through_client() {
+    use std::collections::{BTreeMap, HashMap};
+    let values = BTreeMap::from([((1u32, 2u32), i128::MIN), ((2, 1), i128::MAX)]);
+    let spec = ContractSpec::new(entries()).unwrap();
+    let wire = spec.encode(&values, &map_type()).unwrap();
+    let mut simulation = success();
+    simulation["results"][0]["xdr"] = json!(wire.to_xdr_base64(Limits::none()).unwrap());
+    let (server, _) = rpc(simulation).await;
+    let client = Client::new(&server, CONTRACT).await.unwrap();
+    let source = Account::new(ACCOUNT, "0").unwrap();
+    let call = client.call("echo_map", &(&values,)).unwrap();
+    let result: HashMap<(u32, u32), i128> = call.simulate(&source, "test").await.unwrap();
+    assert_eq!(result, values.clone().into_iter().collect());
+    assert_eq!(
+        call.prepare::<BTreeMap<(u32, u32), i128>>(&source, "test")
+            .await
+            .unwrap()
+            .simulated_value,
+        values
+    );
+}
+
+#[tokio::test]
 async fn structured_contract_error_maps_to_native_variant() {
     let (server, _) = rpc(json!({"latestLedger":100,"error":"opaque failure text",
         "events":[diagnostic(0,ScError::Contract(7))]}))

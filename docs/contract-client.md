@@ -81,7 +81,7 @@ let call = client.call("add", &AddArgs { a: 2, b: 3 })?;
 | void | `()` |
 | timepoint, duration | `u64` seconds |
 | option, vector, tuple | `Option<T>`, `Vec<T>`, Rust tuple |
-| map | Serde map with string or integer keys |
+| map | `BTreeMap<K, V>` / `HashMap<K, V>`, including tuple and struct keys |
 | struct, tuple struct | Rust struct deriving `Serialize` / `Deserialize` |
 | union | Externally tagged Serde enum with unit/newtype/tuple variants |
 | numeric enum | Serde enum; variant names map to the contract's numeric values |
@@ -90,6 +90,24 @@ Use Serde rename attributes when Rust names differ from contract names. Numeric
 enums use the specification's discriminants, not Rust variant positions.
 For function outputs declared as `Result<T, E>`, request `T`; failures are returned
 through `CallError`.
+
+### Maps with composite keys
+
+Pass a native map directly; no wrapper or manual key encoding is needed:
+
+```rust,ignore
+use std::collections::BTreeMap;
+
+let values = BTreeMap::from([((1u32, 2u32), 10i128)]);
+let result: BTreeMap<(u32, u32), i128> = client.call("echo_map", &(&values,))?
+    .simulate(&source_account, network_passphrase).await?;
+assert_eq!(result, values);
+```
+
+`HashMap` works the same way; input and output collections need not be the same
+type. Keys can use supported tuples, structs, enums, or nested containers. Maps
+also work inside arguments and return types such as structs and unions. The
+adapter sorts encoded keys in Stellar's order and rejects duplicate encoded keys.
 
 ## Handle contract errors
 
@@ -170,9 +188,8 @@ Claims are not proof that a contract implements a SEP.
 - Recreate the client after a contract upgrade to refresh its interface.
 - Built-in Stellar Asset Contracts have no Wasm; discovery returns
   `ContractCodeNotFound`. Missing or malformed interfaces also return errors.
-- Composite map keys, internally tagged/untagged enums, and union struct variants
-  are unsupported. Generic `val` requires an explicit XDR value rather than an
-  inferred native type.
+- Internally tagged/untagged enums and union struct variants are unsupported.
+  Generic `val` requires an explicit XDR value rather than an inferred native type.
 - Event definitions are available through `spec.entries()`; typed event decoding
   is not provided.
 - The interface is a contract's self-description, not verification of its behavior.

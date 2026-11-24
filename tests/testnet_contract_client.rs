@@ -18,12 +18,22 @@ use soroban_client::{
     },
     Options, Server,
 };
+use std::collections::{BTreeMap, HashMap};
 use std::time::Duration;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct Record {
     z: i128,
     a: String,
+}
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+struct MapKey {
+    z: u32,
+    a: u32,
+}
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct MapContainer {
+    values: BTreeMap<MapKey, Vec<Option<u128>>>,
 }
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 enum Choice {
@@ -160,6 +170,26 @@ async fn deploy_and_call_with_native_values() -> Result<(), Box<dyn std::error::
     echo!("echo_u128", u128::MAX, u128);
     echo!("echo_i256", I256::MIN, I256);
     echo!("echo_u256", U256::MAX, U256);
+    let values = BTreeMap::from([((2u32, 1u32), i128::MIN), ((1, 2), i128::MAX)]);
+    let call = client.call("echo_map", &(&values,))?;
+    let prepared = call
+        .prepare::<BTreeMap<(u32, u32), i128>>(&source, Networks::testnet())
+        .await?;
+    assert_eq!(prepared.simulated_value, values);
+    let confirmed = submit(&server, prepared.transaction, &key).await?;
+    assert_eq!(
+        call.decode_transaction::<HashMap<(u32, u32), i128>, ArithmeticFailure>(&confirmed)?,
+        values.into_iter().collect()
+    );
+    source = server.get_account(&key.public_key()).await?;
+    echo!("echo_struct_map",HashMap::from([(MapKey { z:0,a:9 },U256::MAX),(MapKey { z:1,a:0 },U256::ZERO)]),HashMap<MapKey,U256>);
+    echo!(
+        "echo_nested_map",
+        MapContainer {
+            values: BTreeMap::from([(MapKey { z: 7, a: 3 }, vec![None, Some(u128::MAX)])])
+        },
+        MapContainer
+    );
     // No sequence advancement occurs for these simulations.
     assert_eq!(
         source.sequence_number(),
