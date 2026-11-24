@@ -207,6 +207,35 @@ pub struct EventResponse {
 }
 
 impl EventResponse {
+    /// Decode event topics, returning an error for malformed XDR.
+    pub fn try_topic(&self) -> Result<Vec<ScVal>, crate::error::Error> {
+        self.topic
+            .iter()
+            .map(|topic| {
+                ScVal::from_xdr_base64(
+                    topic,
+                    Limits {
+                        depth: 100,
+                        len: 0x1000000,
+                    },
+                )
+                .map_err(|_| crate::error::Error::XdrError)
+            })
+            .collect()
+    }
+
+    /// Decode the event's data value, returning an error for malformed XDR.
+    pub fn try_value(&self) -> Result<ScVal, crate::error::Error> {
+        ScVal::from_xdr_base64(
+            &self.value,
+            Limits {
+                depth: 100,
+                len: 0x1000000,
+            },
+        )
+        .map_err(|_| crate::error::Error::XdrError)
+    }
+
     /// List containing the topic this event was emitted with.
     pub fn topic(&self) -> Vec<ScVal> {
         self.topic

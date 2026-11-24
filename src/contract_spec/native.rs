@@ -217,6 +217,175 @@ fn union(value: Value) -> Result<(String, Option<Value>), SpecError> {
 }
 
 impl ContractSpec {
+    // Shared-prefix event candidates routinely have different types. Reject
+    // mismatches before upstream conversion, whose panic paths would abort an
+    // application built with panic=abort rather than yield a conversion error.
+    pub(super) fn check_wire_type(
+        &self,
+        value: &ScVal,
+        ty: &T,
+        depth: usize,
+    ) -> Result<(), SpecError> {
+        use stellar_baselib::xdr::ScAddress;
+        nesting(depth)?;
+        let check = |v, t: &T| self.check_wire_type(v, t, depth + 1);
+        let mismatch = || conversion("value does not match its declared wire type");
+        match (ty, value) {
+            (T::Bool, ScVal::Bool(_))
+            | (T::Void, ScVal::Void)
+            | (T::Error, ScVal::Error(_))
+            | (T::U32, ScVal::U32(_))
+            | (T::I32, ScVal::I32(_))
+            | (T::U64, ScVal::U64(_))
+            | (T::I64, ScVal::I64(_))
+            | (T::U128, ScVal::U128(_))
+            | (T::I128, ScVal::I128(_))
+            | (T::U256, ScVal::U256(_))
+            | (T::I256, ScVal::I256(_))
+            | (T::Timepoint, ScVal::Timepoint(_))
+            | (T::Duration, ScVal::Duration(_))
+            | (T::String, ScVal::String(_))
+            | (T::Symbol, ScVal::Symbol(_))
+            | (T::Bytes, ScVal::Bytes(_)) => Ok(()),
+            (T::BytesN(t), ScVal::Bytes(bytes)) if bytes.len() == t.n as usize => Ok(()),
+            (
+                T::Address | T::MuxedAddress,
+                ScVal::Address(ScAddress::Account(_) | ScAddress::Contract(_)),
+            )
+            | (
+                T::MuxedAddress,
+                ScVal::Address(ScAddress::MuxedAccount(_) | ScAddress::MuxedContract(_)),
+            ) => Ok(()),
+            (T::Option(_), ScVal::Void) => Ok(()),
+            (T::Option(t), value) => check(value, &t.value_type),
+            (T::Result(t), value @ ScVal::Error(_)) => check(value, &t.error_type),
+            (T::Result(t), value) => check(value, &t.ok_type),
+            (T::Vec(t), ScVal::Vec(Some(values))) => {
+                values.iter().try_for_each(|v| check(v, &t.element_type))
+            }
+            (T::Tuple(t), ScVal::Vec(Some(values))) if values.len() == t.value_types.len() => {
+                values
+                    .iter()
+                    .zip(t.value_types.iter())
+                    .try_for_each(|(v, t)| check(v, t))
+            }
+            (T::Map(t), ScVal::Map(Some(values))) => {
+                values.iter().try_for_each(|v| {
+                    check(&v.key, &t.key_type)?;
+                    check(&v.val, &t.value_type)
+                })?;
+                values.validate().map_err(|e| conversion(e.to_string()))
+            }
+            (T::Udt(t), value) => match self.udt(&t.name.to_utf8_string_lossy())? {
+                ScSpecEntry::UdtEnumV0(t) => {
+                    if matches!(value,ScVal::U32(code) if t.cases.iter().any(|c| c.value == *code))
+                    {
+                        Ok(())
+                    } else {
+                        Err(mismatch())
+                    }
+                }
+                ScSpecEntry::UdtErrorEnumV0(t) => {
+                    if matches!(value, ScVal::Error(stellar_baselib::xdr::ScError::Contract(code)) if t.cases.iter().any(|c| c.value == *code))
+                    {
+                        Ok(())
+                    } else {
+                        Err(mismatch())
+                    }
+                }
+                ScSpecEntry::UdtStructV0(t)
+                    if t.fields.first().is_some_and(|f| f.name.as_slice() == b"0") =>
+                {
+                    vector(value, Some(t.fields.len()))?
+                        .iter()
+                        .zip(t.fields.iter())
+                        .try_for_each(|(v, f)| check(v, &f.type_))
+                }
+                ScSpecEntry::UdtStructV0(t) => {
+                    let ScVal::Map(Some(values)) = value else {
+                        return Err(mismatch());
+                    };
+                    if values.len() != t.fields.len() {
+                        return Err(mismatch());
+                    }
+                    t.fields.iter().try_for_each(|f| {
+                        let entry = values.iter().find(|v| {
+                            matches!(&v.key, ScVal::Symbol(name) if name.as_slice() == f.name.as_slice())
+                        }).ok_or_else(mismatch)?;
+                        check(&entry.val, &f.type_)
+                    })?;
+                    values.validate().map_err(|e| conversion(e.to_string()))
+                }
+                ScSpecEntry::UdtUnionV0(t) => {
+                    let values = vector(value, None)?;
+                    let Some(ScVal::Symbol(name)) = values.first() else {
+                        return Err(mismatch());
+                    };
+                    let case = t
+                        .cases
+                        .iter()
+                        .find(|c| match c {
+                            ScSpecUdtUnionCaseV0::VoidV0(c) => c.name.as_slice() == name.as_slice(),
+                            ScSpecUdtUnionCaseV0::TupleV0(c) => {
+                                c.name.as_slice() == name.as_slice()
+                            }
+                        })
+                        .ok_or_else(mismatch)?;
+                    match case {
+                        ScSpecUdtUnionCaseV0::VoidV0(_) if values.len() == 1 => Ok(()),
+                        ScSpecUdtUnionCaseV0::TupleV0(c) if values.len() == c.type_.len() + 1 => {
+                            values[1..]
+                                .iter()
+                                .zip(c.type_.iter())
+                                .try_for_each(|(v, t)| check(v, t))
+                        }
+                        _ => Err(mismatch()),
+                    }
+                }
+                _ => Err(mismatch()),
+            },
+            // Do not pass internal values or unsupported address variants to
+            // upstream's generic-value renderer, including inside containers.
+            (T::Val, ScVal::Vec(Some(values))) => values.iter().try_for_each(|v| check(v, &T::Val)),
+            (T::Val, ScVal::Map(Some(values))) => {
+                values.iter().try_for_each(|v| {
+                    check(&v.key, &T::Val)?;
+                    check(&v.val, &T::Val)
+                })?;
+                values.validate().map_err(|e| conversion(e.to_string()))
+            }
+            (
+                T::Val,
+                ScVal::Bool(_)
+                | ScVal::Void
+                | ScVal::Error(_)
+                | ScVal::U32(_)
+                | ScVal::I32(_)
+                | ScVal::U64(_)
+                | ScVal::I64(_)
+                | ScVal::U128(_)
+                | ScVal::I128(_)
+                | ScVal::U256(_)
+                | ScVal::I256(_)
+                | ScVal::String(_)
+                | ScVal::Symbol(_)
+                | ScVal::Bytes(_)
+                | ScVal::Timepoint(_)
+                | ScVal::Duration(_),
+            ) => Ok(()),
+            (
+                T::Val,
+                ScVal::Address(
+                    ScAddress::Account(_)
+                    | ScAddress::Contract(_)
+                    | ScAddress::MuxedAccount(_)
+                    | ScAddress::MuxedContract(_),
+                ),
+            ) => Ok(()),
+            _ => Err(mismatch()),
+        }
+    }
+
     fn contains_map(
         &self,
         ty: &T,
@@ -413,6 +582,9 @@ impl ContractSpec {
         depth: usize,
     ) -> Result<Value, SpecError> {
         nesting(depth)?;
+        if matches!(value, ScVal::Error(_)) {
+            return Err(conversion("error-valued native data is unsupported; invocation errors use the contract error boundary"));
+        }
         if !self.contains_map(ty, &mut HashSet::new(), 0)? {
             return self.restore_options(from_json(self.decode_json(value, ty)?)?, ty, depth);
         }

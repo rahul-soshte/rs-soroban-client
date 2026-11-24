@@ -12,11 +12,11 @@ use soroban_client::{
     keypair::{Keypair, KeypairBehavior},
     network::{NetworkPassphrase, Networks},
     operation::Operation,
-    soroban_rpc::{GetTransactionResponse, TransactionStatus},
+    soroban_rpc::{EventType, GetTransactionResponse, TransactionStatus},
     transaction::{
         Transaction, TransactionBehavior, TransactionBuilder, TransactionBuilderBehavior,
     },
-    Options, Server,
+    EventFilter, Options, Pagination, Server,
 };
 use std::collections::{BTreeMap, HashMap};
 use std::time::Duration;
@@ -50,6 +50,27 @@ enum Color {
 #[derive(Debug, PartialEq, Deserialize)]
 enum ArithmeticFailure {
     Overflow,
+}
+
+#[derive(Debug, PartialEq, Deserialize)]
+struct Added {
+    value: u32,
+}
+#[derive(Debug, PartialEq, Deserialize)]
+struct NativeCount {
+    owner: String,
+    value: u128,
+}
+#[derive(Debug, PartialEq, Deserialize)]
+struct NativeText {
+    owner: String,
+    text: String,
+}
+#[derive(Debug, PartialEq, Deserialize)]
+struct NativeValues {
+    owner: String,
+    count: u128,
+    values: BTreeMap<(u32, u32), i128>,
 }
 
 async fn submit(
@@ -134,6 +155,22 @@ async fn deploy_and_call_with_native_values() -> Result<(), Box<dyn std::error::
         call.decode_transaction::<u32, ArithmeticFailure>(&confirmed)?,
         5
     );
+    let (_, rows) = confirmed.to_events().ok_or("missing confirmed events")?;
+    let events: Vec<_> = rows.iter().flatten().collect();
+    assert_eq!(events.len(), 1);
+    assert_eq!(client.decode_event::<Added>(events[0])?, Added { value: 5 });
+    let response = server
+        .get_events(
+            Pagination::From(confirmed.ledger.ok_or("missing ledger")?),
+            vec![EventFilter::new(EventType::Contract).contract(&id)],
+            100,
+        )
+        .await?;
+    assert_eq!(response.events.len(), 1);
+    assert_eq!(
+        client.decode_event::<Added>(&response.events[0])?,
+        Added { value: 5 }
+    );
 
     source = server.get_account(&key.public_key()).await?;
     assert!(matches!(
@@ -197,6 +234,67 @@ async fn deploy_and_call_with_native_values() -> Result<(), Box<dyn std::error::
             .get_account(&key.public_key())
             .await?
             .sequence_number()
+    );
+    let values = BTreeMap::from([((1u32, 2u32), i128::MIN), ((2, 1), i128::MAX)]);
+    let call = client.call("emit_events", &(u128::MAX, &values))?;
+    let prepared = call.prepare::<()>(&source, Networks::testnet()).await?;
+    let confirmed = submit(&server, prepared.transaction, &key).await?;
+    call.decode_transaction::<(), ArithmeticFailure>(&confirmed)?;
+    let (_, rows) = confirmed.to_events().ok_or("missing native events")?;
+    let events: Vec<_> = rows.iter().flatten().collect();
+    assert_eq!(events.len(), 3);
+    assert_eq!(
+        client.decode_event::<NativeCount>(events[0])?,
+        NativeCount {
+            owner: id.clone(),
+            value: u128::MAX
+        }
+    );
+    assert_eq!(
+        client.decode_event::<NativeText>(events[1])?,
+        NativeText {
+            owner: id.clone(),
+            text: "hello".into()
+        }
+    );
+    assert_eq!(
+        client.decode_event::<NativeValues>(events[2])?,
+        NativeValues {
+            owner: id.clone(),
+            count: u128::MAX,
+            values: values.clone()
+        }
+    );
+    assert_eq!(
+        client.decode_event_as::<NativeCount>("NativeCount", events[0])?,
+        NativeCount {
+            owner: id.clone(),
+            value: u128::MAX
+        }
+    );
+    let response = server
+        .get_events(
+            Pagination::From(confirmed.ledger.ok_or("missing event ledger")?),
+            vec![EventFilter::new(EventType::Contract).contract(&id)],
+            100,
+        )
+        .await?;
+    assert_eq!(response.events.len(), 3);
+    assert_eq!(
+        client
+            .decode_event::<NativeCount>(&response.events[0])?
+            .value,
+        u128::MAX
+    );
+    assert_eq!(
+        client.decode_event::<NativeText>(&response.events[1])?.text,
+        "hello"
+    );
+    assert_eq!(
+        client
+            .decode_event::<NativeValues>(&response.events[2])?
+            .values,
+        values
     );
     Ok(())
 }

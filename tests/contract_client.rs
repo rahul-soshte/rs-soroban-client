@@ -6,7 +6,7 @@ use soroban_client::{
     account::{Account, AccountBehavior},
     address::{Address, AddressTrait},
     contract_client::{CallError, Client},
-    contract_spec::ContractSpec,
+    contract_spec::{ContractSpec, EventDecodeError},
     xdr::*,
     Options, Server,
 };
@@ -147,7 +147,7 @@ async fn native_composite_maps_through_client() {
     let wire = spec.encode(&values, &map_type()).unwrap();
     let mut simulation = success();
     simulation["results"][0]["xdr"] = json!(wire.to_xdr_base64(Limits::none()).unwrap());
-    let (server, _) = rpc(simulation).await;
+    let (server, _mock) = rpc(simulation).await;
     let client = Client::new(&server, CONTRACT).await.unwrap();
     let source = Account::new(ACCOUNT, "0").unwrap();
     let call = client.call("echo_map", &(&values,)).unwrap();
@@ -163,8 +163,72 @@ async fn native_composite_maps_through_client() {
 }
 
 #[tokio::test]
+async fn typed_events_validate_the_emitting_contract() {
+    #[derive(Debug, PartialEq, serde::Deserialize)]
+    struct Added {
+        value: u32,
+    }
+    let (server, _mock) = rpc(success()).await;
+    let client = Client::new(&server, CONTRACT).await.unwrap();
+    let event = ContractEvent {
+        contract_id: Some(ContractId(Hash([0; 32]))),
+        type_: ContractEventType::Contract,
+        body: ContractEventBody::V0(ContractEventV0 {
+            topics: vec![ScVal::Symbol("added".try_into().unwrap())]
+                .try_into()
+                .unwrap(),
+            data: ScVal::U32(5),
+        }),
+        ..Default::default()
+    };
+    assert_eq!(
+        client.decode_event::<Added>(&event).unwrap(),
+        Added { value: 5 }
+    );
+    assert_eq!(
+        client.decode_event_as::<Added>("Added", &event).unwrap(),
+        Added { value: 5 }
+    );
+    let rpc_event:soroban_client::soroban_rpc::EventResponse = serde_json::from_value(json!({
+        "type":"contract","contractId":CONTRACT,"ledger":100,"ledgerClosedAt":"today","id":"1-1","txHash":"test",
+        "topic":[ScVal::Symbol("added".try_into().unwrap()).to_xdr_base64(Limits::none()).unwrap()],
+        "value":ScVal::U32(5).to_xdr_base64(Limits::none()).unwrap(),
+    })).unwrap();
+    assert_eq!(
+        client.decode_event::<Added>(&rpc_event).unwrap(),
+        Added { value: 5 }
+    );
+    let other_event = ContractEvent {
+        contract_id: Some(ContractId(Hash([1; 32]))),
+        ..event.clone()
+    };
+    assert!(matches!(
+        client.decode_event::<Added>(&other_event),
+        Err(EventDecodeError::WrongContract { .. })
+    ));
+    assert!(matches!(
+        client.decode_event_as::<Added>("Added", &other_event),
+        Err(EventDecodeError::WrongContract { .. })
+    ));
+    let mut other_rpc = rpc_event;
+    other_rpc.contract_id =
+        Address::from_sc_address(&ScAddress::Contract(ContractId(Hash([1; 32]))))
+            .unwrap()
+            .to_string();
+    assert!(matches!(
+        client.decode_event::<Added>(&other_rpc),
+        Err(EventDecodeError::WrongContract { .. })
+    ));
+    // Offline spec decoding intentionally does not bind the emitter to an ID.
+    assert_eq!(
+        client.spec().decode_event::<Added>(&other_event).unwrap(),
+        Added { value: 5 }
+    );
+}
+
+#[tokio::test]
 async fn structured_contract_error_maps_to_native_variant() {
-    let (server, _) = rpc(json!({"latestLedger":100,"error":"opaque failure text",
+    let (server, _mock) = rpc(json!({"latestLedger":100,"error":"opaque failure text",
         "events":[diagnostic(0,ScError::Contract(7))]}))
     .await;
     let client = Client::new(&server, CONTRACT).await.unwrap();
@@ -187,7 +251,7 @@ async fn structured_contract_error_maps_to_native_variant() {
 #[tokio::test]
 async fn unknown_codes_and_nested_errors_are_not_misidentified() {
     let source = Account::new(ACCOUNT, "0").unwrap();
-    let (server,_) = rpc(json!({"latestLedger":100,"error":"failure","events":[diagnostic(0,ScError::Contract(99))]})).await;
+    let (server,_mock) = rpc(json!({"latestLedger":100,"error":"failure","events":[diagnostic(0,ScError::Contract(99))]})).await;
     let client = Client::new(&server, CONTRACT).await.unwrap();
     assert!(
         matches!(client.call("add",&(1,2)).unwrap().try_simulate::<u32,ArithmeticError>(&source,"test").await,Err(CallError::UnknownContract(e)) if e.code == 99)
@@ -199,7 +263,8 @@ async fn unknown_codes_and_nested_errors_are_not_misidentified() {
             diagnostic(0, ScError::WasmVm(ScErrorCode::InvalidAction)),
         ],
     ] {
-        let (server, _) = rpc(json!({"latestLedger":100,"error":"failure","events":events})).await;
+        let (server, _mock) =
+            rpc(json!({"latestLedger":100,"error":"failure","events":events})).await;
         let client = Client::new(&server, CONTRACT).await.unwrap();
         assert!(matches!(
             client
@@ -216,7 +281,7 @@ async fn unknown_codes_and_nested_errors_are_not_misidentified() {
 async fn malformed_rpc_results_are_fallible() {
     let source = Account::new(ACCOUNT, "0").unwrap();
     for results in [json!([]), json!([{"auth":[],"xdr":"bad"}])] {
-        let (server, _) = rpc(json!({"latestLedger":100,"results":results})).await;
+        let (server, _mock) = rpc(json!({"latestLedger":100,"results":results})).await;
         let client = Client::new(&server, CONTRACT).await.unwrap();
         assert!(client
             .call("add", &(1, 2))
@@ -228,7 +293,7 @@ async fn malformed_rpc_results_are_fallible() {
     for data in [serde_json::Value::Null, json!("bad")] {
         let mut simulation = success();
         simulation["transactionData"] = data;
-        let (server, _) = rpc(simulation).await;
+        let (server, _mock) = rpc(simulation).await;
         let client = Client::new(&server, CONTRACT).await.unwrap();
         assert!(client
             .call("add", &(1, 2))

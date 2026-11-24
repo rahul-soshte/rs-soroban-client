@@ -160,6 +160,37 @@ same invocation to obtain its actual result.
   `RestorationRequired`; restoration is not automatic.
 - Use `operation()` or `transaction()` for custom transaction workflows.
 
+## Decode contract events
+
+For the `Added { value: u32 }` event emitted by the fixture's `add` function:
+
+```rust,ignore
+#[derive(Debug, serde::Deserialize)]
+struct Added { value: u32 }
+
+let (_, rows) = confirmed.to_events().ok_or("missing events")?;
+for event in rows.iter().flatten() {
+    let added: Added = client.decode_event(event)?;
+    println!("{}", added.value);
+}
+```
+
+Pass an `EventResponse` from `Server::get_events` the same way. Successful
+simulation contract events are also accepted, but do not represent confirmed
+emissions. Topic and data parameters are combined into the Rust struct, using
+the native types listed above, including composite-key maps and large integers.
+
+The client checks the emitting contract ID and matches the complete payload, not
+just its topic prefix. If multiple definitions match, it returns
+`EventDecodeError::Ambiguous`. Select a definition explicitly when needed:
+
+```rust,ignore
+let added: Added = client.decode_event_as("Added", event)?;
+```
+
+Explicit selection still validates the prefix and parameter types. Malformed
+payloads, system/diagnostic events, and events marked as unsuccessful are rejected.
+
 ## Read the interface and metadata
 
 `Client::new` fetches the contract's Wasm and reads its interface (SEP-48), metadata
@@ -189,9 +220,8 @@ Claims are not proof that a contract implements a SEP.
 - Built-in Stellar Asset Contracts have no Wasm; discovery returns
   `ContractCodeNotFound`. Missing or malformed interfaces also return errors.
 - Internally tagged/untagged enums and union struct variants are unsupported.
-  Generic `val` requires an explicit XDR value rather than an inferred native type.
-- Event definitions are available through `spec.entries()`; typed event decoding
-  is not provided.
+- Generic `val` arguments require explicit XDR values. Native decoding of generic
+  `val` and error-valued event parameters is not supported.
 - The interface is a contract's self-description, not verification of its behavior.
 
 See [`examples/typed_contract.rs`](../examples/typed_contract.rs) for a runnable

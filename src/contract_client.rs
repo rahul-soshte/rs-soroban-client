@@ -6,6 +6,9 @@
 //! separately after signing, sending and waiting with the existing server APIs.
 
 use serde::{de::DeserializeOwned, Serialize};
+
+/// Typed event decoding errors and supported event inputs.
+pub use crate::contract_spec::{EventDecodeError, EventRef};
 use stellar_baselib::{
     account::Account,
     address::{Address, AddressTrait},

@@ -1,7 +1,7 @@
 #![no_std]
 use soroban_sdk::{
-    contract, contracterror, contractevent, contractimpl, contractmeta, contracttype, Env, Map,
-    String, Vec, I256, U256,
+    contract, contracterror, contractevent, contractimpl, contractmeta, contracttype, Address, Env,
+    Map, String, Vec, I256, U256,
 };
 
 contractmeta!(key = "fixture", val = "native-client-v1");
@@ -60,6 +60,28 @@ pub struct Added {
     pub value: u32,
 }
 
+#[contractevent(topics = ["shared"], data_format = "single-value")]
+pub struct NativeCount {
+    #[topic]
+    pub owner: Address,
+    pub value: u128,
+}
+
+#[contractevent(topics = ["shared"], data_format = "single-value")]
+pub struct NativeText {
+    #[topic]
+    pub owner: Address,
+    pub text: String,
+}
+
+#[contractevent(data_format = "vec")]
+pub struct NativeValues {
+    #[topic]
+    pub owner: Address,
+    pub count: u128,
+    pub values: Map<(u32, u32), i128>,
+}
+
 #[contract]
 pub struct NativeFixture;
 
@@ -100,5 +122,24 @@ impl NativeFixture {
     }
     pub fn echo_nested_map(value: MapContainer) -> MapContainer {
         value
+    }
+    pub fn emit_events(env: Env, count: u128, values: Map<(u32, u32), i128>) {
+        let owner = env.current_contract_address();
+        NativeCount {
+            owner: owner.clone(),
+            value: count,
+        }
+        .publish(&env);
+        NativeText {
+            owner: owner.clone(),
+            text: String::from_str(&env, "hello"),
+        }
+        .publish(&env);
+        NativeValues {
+            owner,
+            count,
+            values,
+        }
+        .publish(&env);
     }
 }

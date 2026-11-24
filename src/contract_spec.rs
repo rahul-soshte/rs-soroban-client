@@ -13,7 +13,10 @@ use stellar_baselib::xdr::{
     ScSpecUdtUnionCaseV0, ScVal,
 };
 
+mod events;
 mod native;
+
+pub use events::{EventDecodeError, EventRef};
 
 /// Native 256-bit integer types, serialized losslessly as prefixed hex strings.
 pub use ethnum::{I256, U256};
@@ -273,15 +276,25 @@ impl ContractSpec {
         value: &ScVal,
         ty: &ScSpecTypeDef,
     ) -> Result<T, SpecError> {
-        let native = self.decode_native(value, ty, 0)?;
-        if self.encode_native(native::simplify(native.clone(), 0)?, ty, 0)? != *value {
-            return Err(conversion("result does not match the declared wire type"));
-        }
+        let native = self.checked_native(value, ty)?;
         serde_content::Deserializer::new(native)
             .human_readable()
             .coerce_numbers()
             .deserialize()
             .map_err(|e| conversion(e.to_string()))
+    }
+
+    fn checked_native(
+        &self,
+        value: &ScVal,
+        ty: &ScSpecTypeDef,
+    ) -> Result<native::Value, SpecError> {
+        self.check_wire_type(value, ty, 0)?;
+        let native = self.decode_native(value, ty, 0)?;
+        if self.encode_native(native::simplify(native.clone(), 0)?, ty, 0)? != *value {
+            return Err(conversion("result does not match the declared wire type"));
+        }
+        Ok(native)
     }
 
     fn decode_json(&self, value: &ScVal, ty: &ScSpecTypeDef) -> Result<Value, SpecError> {

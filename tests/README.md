@@ -21,7 +21,9 @@ NATIVE_FIXTURE_WASM=tests/contracts/native/target/wasm32v1-none/release/native_c
 
 The test funds a disposable account, deploys the fixture, confirms a native call,
 checks typed errors and metadata, and round-trips user-defined types, composite-key
-maps, and 128/256-bit integers. It requires access to public testnet RPC and Friendbot.
+maps, and 128/256-bit integers. It also decodes confirmed and RPC events in all
+three SEP-48 data formats, including events with shared topic prefixes. It requires
+access to public testnet RPC and Friendbot.
 
 Use the printed contract ID to run the example:
 

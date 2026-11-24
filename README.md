@@ -144,8 +144,8 @@ assert_eq!(value, 5);
 
 The client reads the contract's embedded interface to validate and convert values.
 Both examples simulate only; use `prepare` to build a transaction for signing and
-submission. See [the client guide](docs/contract-client.md) for setup, typed errors,
-metadata, and limitations.
+submission. See [the client guide](docs/contract-client.md) for setup, typed errors
+and events, metadata, and limitations.
 
 ## Running Examples
 

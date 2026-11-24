@@ -114,6 +114,20 @@ pub fn entries() -> Vec<ScSpecEntry> {
             ..Default::default()
         }),
         function("echo_map", &[("value", map_type())], map_type()),
+        ScSpecEntry::EventV0(ScSpecEventV0 {
+            name: "Added".try_into().unwrap(),
+            prefix_topics: vec!["added".try_into().unwrap()].try_into().unwrap(),
+            params: vec![ScSpecEventParamV0 {
+                name: "value".try_into().unwrap(),
+                type_: ScSpecTypeDef::U32,
+                location: ScSpecEventParamLocationV0::Data,
+                doc: Default::default(),
+            }]
+            .try_into()
+            .unwrap(),
+            data_format: ScSpecEventDataFormat::SingleValue,
+            ..Default::default()
+        }),
     ]
 }
 
