@@ -34,7 +34,7 @@ pub use stellar_baselib::{
 /// #     -> Result<(), Box<dyn std::error::Error>> {
 /// // Example: a signed one-operation inner transaction bidding 100 stroops.
 /// let mut bump = FeeBumpTransaction::new(
-///     &payer.public_key(), 200, signed_inner.to_envelope()?, Networks::testnet(), 100,
+///     &payer.public_key(), 100, signed_inner.to_envelope()?, Networks::testnet(), 100,
 /// )?;
 /// bump.sign(std::slice::from_ref(payer))?;
 /// let response = rpc.send_transaction(&bump).await?;

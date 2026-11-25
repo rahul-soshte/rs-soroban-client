@@ -119,7 +119,7 @@ use soroban_client::{
 // Example: a signed one-operation inner transaction bidding 100 stroops.
 // The payer can be a different account from the inner source.
 let mut bump = FeeBumpTransaction::new(
-    &payer.public_key(), 200, signed_inner.to_envelope()?, Networks::testnet(), 100,
+    &payer.public_key(), 100, signed_inner.to_envelope()?, Networks::testnet(), 100,
 )?;
 bump.sign(std::slice::from_ref(payer))?;
 let response = rpc.send_transaction(&bump).await?;
@@ -127,11 +127,21 @@ let response = rpc.send_transaction(&bump).await?;
 # }
 ```
 
-The outer fee (`200` above) is a **total in stroops**, while the last argument
-(`100`) is the caller-supplied current network base fee **per operation**.
-Construction returns typed `transaction::FeeBumpError`s if the total is below
-the protocol minimum. Higher inner fees or operation counts require a higher
-outer total.
+The second argument (`100` above) is the maximum inclusion-fee bid in **stroops
+per operation**. The last
+argument is the caller-supplied current **network minimum per operation**.
+The constructor computes the total stored in XDR:
+
+```text
+total = base_fee * (inner_operation_count + 1) + soroban_resource_fee
+```
+
+The one-operation classic example therefore offers **200 stroops total**.
+Construction returns typed `transaction::FeeBumpError`s if the per-operation bid
+is below the network minimum or the rounded-up inner inclusion-fee rate.
+`InsufficientFee { fee, minimum }` reports **per-operation** values. Resource fees
+are added once, never multiplied by the operation count. The offered total is a
+maximum bid; the fee actually charged can be lower.
 
 For Soroban transactions, simulate and assemble the **inner** transaction first,
 complete authorization and transaction signing, then wrap it and sign the outer

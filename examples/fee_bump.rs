@@ -5,7 +5,9 @@
 use std::time::Duration;
 
 use soroban_client::{
+    account::Account,
     asset::{Asset, AssetBehavior},
+    error::Error,
     keypair::{Keypair, KeypairBehavior},
     network::{NetworkPassphrase, Networks},
     operation::{Operation, ONE},
@@ -18,8 +20,6 @@ use soroban_client::{
         InnerTransactionResultResult, Limits, OperationResult, OperationResultTr, PaymentResult,
         TransactionResultResult, WriteXdr,
     },
-    account::Account,
-    error::Error,
     Options, Pagination, Server,
 };
 
@@ -27,7 +27,6 @@ use tokio::time::{sleep, timeout};
 
 pub type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 pub const TESTNET_RPC: &str = "https://soroban-testnet.stellar.org";
-
 
 pub async fn connect_testnet() -> Result<(Server, i64)> {
     let rpc = Server::new(
@@ -56,10 +55,7 @@ pub async fn connect_testnet() -> Result<(Server, i64)> {
         return Err("RPC returned an unexpected ledger or a zero base fee".into());
     }
     let base = i64::from(header.base_fee);
-    Ok((
-        rpc,
-        base
-    ))
+    Ok((rpc, base))
 }
 
 pub async fn fund_account(rpc: &Server, key: &Keypair) -> Result<Account> {
@@ -84,7 +80,7 @@ pub async fn fund_account(rpc: &Server, key: &Keypair) -> Result<Account> {
 }
 
 async fn sponsor_payment() -> Result {
-    let (rpc, base_fee) = connect_testnet().await?;
+    let (rpc, network_base_fee) = connect_testnet().await?;
     let alice = Keypair::random()?;
     let bob = Keypair::random()?;
     println!("Alice (payment source): {}", alice.public_key());
@@ -92,7 +88,7 @@ async fn sponsor_payment() -> Result {
     let mut alice_account = fund_account(&rpc, &alice).await?;
     fund_account(&rpc, &bob).await?;
 
-    // Alice signs a 1 XLM payment with no fee. 
+    // Alice signs a 1 XLM payment with no fee.
     let payment = Operation::new()
         .payment(&bob.public_key(), &Asset::native(), ONE)
         .map_err(|error| format!("cannot build payment: {error:?}"))?;
@@ -109,21 +105,22 @@ async fn sponsor_payment() -> Result {
         hex::encode(inner_hash)
     );
 
-    // Bob supplies the TOTAL outer fee and signs only
+    // Bob supplies an inclusion-fee bid PER OPERATION and signs only
     // the outer transaction. Alice's signed envelope is preserved.
-    let offered = base_fee * 2; // Remove one and get an error
+    let offered_base_fee = network_base_fee; // Subtract one to get InsufficientFee.
     let mut bump = FeeBumpTransaction::new(
         &bob.public_key(),
-        offered,
+        offered_base_fee,
         signed_inner.clone(),
         Networks::testnet(),
-        base_fee,
+        network_base_fee,
     )?;
     bump.sign(std::slice::from_ref(&bob))?;
     let outer_hash = bump.hash()?;
     println!(
-        "Bob signed the fee bump.  {} stroops",
-        offered
+        "Bob signed the fee bump. Bid: {} stroops per operation; total offered: {} stroops",
+        offered_base_fee,
+        bump.envelope().tx.fee
     );
     println!("Outer hash: {}", hex::encode(outer_hash));
 

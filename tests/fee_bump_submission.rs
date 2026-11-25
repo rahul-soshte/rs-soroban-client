@@ -35,7 +35,7 @@ fn signed_transactions() -> (Transaction, FeeBumpTransaction) {
     inner.sign(&[source]);
     let mut bump = FeeBumpTransaction::new(
         &payer.public_key(),
-        i64::from(u32::MAX) + 1,
+        (i64::from(u32::MAX) + 1) / 2,
         inner.to_envelope().unwrap(),
         Networks::testnet(),
         100,
@@ -237,12 +237,13 @@ async fn submits_fee_bump_with_soroban_data_and_v2_preconditions_intact() {
     let payer = Keypair::from_raw_ed25519_seed(&[20; 32]).unwrap();
     let mut bump = FeeBumpTransaction::new(
         &payer.public_key(),
-        resource_fee + 200,
+        100,
         inner.to_envelope().unwrap(),
         Networks::testnet(),
         100,
     )
     .unwrap();
+    assert_eq!(bump.envelope().tx.fee, resource_fee + 200);
     bump.sign(&[payer]).unwrap();
     let expected = bump.to_envelope();
     let hash = hex::encode(bump.hash().unwrap());
@@ -282,14 +283,14 @@ fn exposes_typed_fee_construction_errors_through_the_client() {
     assert!(matches!(
         FeeBumpTransaction::new(
             &payer.public_key(),
-            199,
+            99,
             inner.to_envelope().unwrap(),
             Networks::testnet(),
             100,
         ),
         Err(FeeBumpError::InsufficientFee {
-            fee: 199,
-            minimum: 200
+            fee: 99,
+            minimum: 100
         })
     ));
 }
