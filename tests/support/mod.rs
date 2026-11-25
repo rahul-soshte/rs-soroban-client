@@ -128,7 +128,30 @@ pub fn entries() -> Vec<ScSpecEntry> {
             data_format: ScSpecEventDataFormat::SingleValue,
             ..Default::default()
         }),
+        function(
+            "echo_val",
+            &[("value", ScSpecTypeDef::Val)],
+            ScSpecTypeDef::Val,
+        ),
     ]
+}
+
+/// Heterogeneous data whose tags must survive a generic Val round trip.
+pub fn generic_val_value() -> ScVal {
+    let key = ScVal::Vec(Some(vec![ScVal::U32(1), ScVal::U32(2)].try_into().unwrap()));
+    let map = ScMap::sorted_from_pairs([(key, ScVal::from(u128::MAX))].into_iter()).unwrap();
+    ScVal::Vec(Some(
+        vec![
+            ScVal::String(ScString("same".try_into().unwrap())),
+            ScVal::Symbol("same".try_into().unwrap()),
+            ScVal::U32(7),
+            ScVal::I32(7),
+            ScVal::Bytes(vec![0u8, 255].try_into().unwrap()),
+            ScVal::Map(Some(map)),
+        ]
+        .try_into()
+        .unwrap(),
+    ))
 }
 
 pub fn map_type() -> ScSpecTypeDef {

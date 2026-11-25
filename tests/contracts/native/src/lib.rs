@@ -1,7 +1,7 @@
 #![no_std]
 use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, contractmeta, contracttype, Address, Env,
-    Map, String, Vec, I256, U256,
+    Map, String, Val, Vec, I256, U256,
 };
 
 contractmeta!(key = "fixture", val = "native-client-v1");
@@ -33,6 +33,22 @@ pub struct MapContainer {
 
 #[contracttype]
 #[derive(Clone)]
+pub struct ValRecord {
+    pub value: Val,
+    pub values: Vec<Val>,
+    pub keyed: Map<Val, Val>,
+    pub optional: Option<Val>,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub enum ValChoice {
+    One(Val),
+    Many(Vec<Val>),
+}
+
+#[contracttype]
+#[derive(Clone)]
 pub enum Choice {
     Empty,
     One(u128),
@@ -58,6 +74,11 @@ pub enum ArithmeticFailure {
 #[contractevent]
 pub struct Added {
     pub value: u32,
+}
+
+#[contractevent(data_format = "single-value")]
+pub struct GenericChanged {
+    pub value: Val,
 }
 
 #[contractevent(topics = ["shared"], data_format = "single-value")]
@@ -121,6 +142,25 @@ impl NativeFixture {
         value
     }
     pub fn echo_nested_map(value: MapContainer) -> MapContainer {
+        value
+    }
+    pub fn echo_val(env: Env, value: Val) -> Val {
+        GenericChanged { value }.publish(&env);
+        value
+    }
+    pub fn echo_vals(value: Vec<Val>) -> Vec<Val> {
+        value
+    }
+    pub fn echo_val_map(value: Map<Val, Val>) -> Map<Val, Val> {
+        value
+    }
+    pub fn echo_option_val(value: Option<Val>) -> Option<Val> {
+        value
+    }
+    pub fn echo_val_record(value: ValRecord) -> ValRecord {
+        value
+    }
+    pub fn echo_val_choice(value: ValChoice) -> ValChoice {
         value
     }
     pub fn emit_events(env: Env, count: u128, values: Map<(u32, u32), i128>) {

@@ -163,6 +163,49 @@ async fn native_composite_maps_through_client() {
 }
 
 #[tokio::test]
+async fn generic_val_simulation_returns_explicit_scval() {
+    let expected = generic_val_value();
+    let mut simulation = success();
+    simulation["results"][0]["xdr"] = json!(expected.to_xdr_base64(Limits::none()).unwrap());
+    let (server, _mock) = rpc(simulation).await;
+    let client = Client::new(&server, CONTRACT).await.unwrap();
+    let source = Account::new(ACCOUNT, "0").unwrap();
+    let call = client
+        .call("echo_val", &(&expected,))
+        .expect("explicit ScVal arguments should already encode for generic Val");
+    let OperationBody::InvokeHostFunction(InvokeHostFunctionOp {
+        host_function: HostFunction::InvokeContract(args),
+        ..
+    }) = call.operation().body
+    else {
+        panic!("expected a contract invocation");
+    };
+    assert_eq!(args.args.as_slice(), std::slice::from_ref(&expected));
+    let actual: ScVal = call
+        .simulate(&source, "test")
+        .await
+        .expect("a generic Val simulation result should retain its explicit ScVal");
+    assert_eq!(actual, expected);
+}
+
+#[tokio::test]
+async fn generic_val_preparation_preserves_the_simulated_scval() {
+    let expected = generic_val_value();
+    let mut simulation = success();
+    simulation["results"][0]["xdr"] = json!(expected.to_xdr_base64(Limits::none()).unwrap());
+    let (server, _mock) = rpc(simulation).await;
+    let client = Client::new(&server, CONTRACT).await.unwrap();
+    let source = Account::new(ACCOUNT, "0").unwrap();
+    let prepared = client
+        .call("echo_val", &(&expected,))
+        .unwrap()
+        .prepare::<ScVal>(&source, "test")
+        .await
+        .expect("preparation should retain a generic Val result as ScVal");
+    assert_eq!(prepared.simulated_value, expected);
+}
+
+#[tokio::test]
 async fn typed_events_validate_the_emitting_contract() {
     #[derive(Debug, PartialEq, serde::Deserialize)]
     struct Added {
