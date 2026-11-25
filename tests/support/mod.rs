@@ -34,7 +34,7 @@ pub fn function(
 
 pub fn entries() -> Vec<ScSpecEntry> {
     use ScSpecTypeDef as T;
-    vec![
+    let mut entries = vec![
         function(
             "add",
             &[("a", T::U32), ("b", T::U32)],
@@ -133,7 +133,126 @@ pub fn entries() -> Vec<ScSpecEntry> {
             &[("value", ScSpecTypeDef::Val)],
             ScSpecTypeDef::Val,
         ),
+    ];
+    entries.extend(error_data_entries());
+    entries
+}
+
+pub fn error_vec_type() -> ScSpecTypeDef {
+    ScSpecTypeDef::Vec(Box::new(ScSpecTypeVec {
+        element_type: Box::new(ScSpecTypeDef::Error),
+    }))
+}
+
+pub fn error_map_type() -> ScSpecTypeDef {
+    ScSpecTypeDef::Map(Box::new(ScSpecTypeMap {
+        key_type: Box::new(ScSpecTypeDef::U32),
+        value_type: Box::new(ScSpecTypeDef::Error),
+    }))
+}
+
+pub fn error_option_type() -> ScSpecTypeDef {
+    ScSpecTypeDef::Option(Box::new(ScSpecTypeOption {
+        value_type: Box::new(ScSpecTypeDef::Error),
+    }))
+}
+
+pub fn error_data_entries() -> Vec<ScSpecEntry> {
+    use ScSpecTypeDef as T;
+    let record = ScSpecEntry::UdtStructV0(ScSpecUdtStructV0 {
+        name: "ErrorRecord".try_into().unwrap(),
+        fields: [
+            ("typed", udt("ArithmeticFailure")),
+            ("generic", T::Error),
+            ("values", error_vec_type()),
+            ("keyed", error_map_type()),
+            ("optional", error_option_type()),
+        ]
+        .into_iter()
+        .map(|(name, type_)| ScSpecUdtStructFieldV0 {
+            name: name.try_into().unwrap(),
+            type_,
+            doc: Default::default(),
+        })
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap(),
+        ..Default::default()
+    });
+    let event = |name: &str, prefix: &str, parameter: &str, ty| {
+        ScSpecEntry::EventV0(ScSpecEventV0 {
+            name: name.try_into().unwrap(),
+            prefix_topics: vec![prefix.try_into().unwrap()].try_into().unwrap(),
+            params: vec![ScSpecEventParamV0 {
+                name: parameter.try_into().unwrap(),
+                type_: ty,
+                location: ScSpecEventParamLocationV0::Data,
+                doc: Default::default(),
+            }]
+            .try_into()
+            .unwrap(),
+            data_format: ScSpecEventDataFormat::SingleValue,
+            ..Default::default()
+        })
+    };
+    vec![
+        record,
+        function(
+            "accept_error",
+            &[("value", udt("ArithmeticFailure"))],
+            T::U32,
+        ),
+        function("accept_generic_error", &[("value", T::Error)], T::U32),
+        function("wrap_error", &[("value", T::Error)], error_vec_type()),
+        function(
+            "echo_errors",
+            &[("value", error_vec_type())],
+            error_vec_type(),
+        ),
+        function(
+            "echo_error_map",
+            &[("value", error_map_type())],
+            error_map_type(),
+        ),
+        function(
+            "echo_error_record",
+            &[("value", udt("ErrorRecord"))],
+            udt("ErrorRecord"),
+        ),
+        function("error_record", &[], udt("ErrorRecord")),
+        function(
+            "publish_errors",
+            &[("typed", udt("ArithmeticFailure")), ("generic", T::Error)],
+            T::Void,
+        ),
+        event("ErrorDatum", "error_datum", "value", T::Error),
+        event(
+            "TypedErrorDatum",
+            "typed_error_datum",
+            "value",
+            udt("ArithmeticFailure"),
+        ),
+        event("ErrorReport", "error_report", "record", udt("ErrorRecord")),
     ]
+}
+
+pub fn error_record_value() -> ScVal {
+    let unknown = ScVal::Error(ScError::Contract(99));
+    let known = ScVal::Error(ScError::Contract(7));
+    let keyed = ScMap::sorted_from_pairs([(ScVal::U32(1), unknown.clone())].into_iter()).unwrap();
+    let fields = [
+        ("typed", known.clone()),
+        ("generic", unknown.clone()),
+        (
+            "values",
+            ScVal::Vec(Some(vec![unknown, known.clone()].try_into().unwrap())),
+        ),
+        ("keyed", ScVal::Map(Some(keyed))),
+        ("optional", known),
+    ]
+    .into_iter()
+    .map(|(name, val)| (ScVal::Symbol(name.try_into().unwrap()), val));
+    ScVal::Map(Some(ScMap::sorted_from_pairs(fields).unwrap()))
 }
 
 /// Heterogeneous data whose tags must survive a generic Val round trip.

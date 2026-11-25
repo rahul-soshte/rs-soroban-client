@@ -18,6 +18,18 @@ cargo test --features contract-spec --test generic_val
 cargo test --features contract-spec --test contract_client generic_val
 ```
 
+## Errors as ordinary data: red-phase tests
+
+These tests distinguish error-valued arguments, fields, containers and events
+from invocation failures. They require no new public API and intentionally fail
+where native error-data conversion is missing. Existing invocation-error tests
+remain unchanged.
+
+```sh
+cargo test --features contract-spec --test error_data
+cargo test --features contract-spec --test contract_client error_data
+```
+
 ## Testnet deployment test
 
 Build the contract fixture, then run the opt-in deployment test:
@@ -52,4 +64,13 @@ exercises the currently failing typed-client decoding:
 ```sh
 GENERIC_VAL_CONTRACT_ID=CONTRACT_ID \
     cargo test --features contract-spec --test testnet_generic_val -- --ignored --nocapture
+```
+
+For error-valued data, use the updated fixture's contract ID. Each test first
+checks the raw RPC result, then exercises native conversion with an explicit
+failure message:
+
+```sh
+ERROR_DATA_CONTRACT_ID=CONTRACT_ID \
+    cargo test --features contract-spec --test testnet_error_data -- --ignored --nocapture
 ```

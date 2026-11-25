@@ -134,9 +134,80 @@ async fn discovery_native_simulation_and_single_simulation_preparation() {
     );
 }
 
-#[derive(Debug, PartialEq, serde::Deserialize)]
+#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 enum ArithmeticError {
     Overflow,
+}
+
+#[tokio::test]
+async fn error_data_contract_enum_is_an_ordinary_argument() {
+    let mut simulation = success();
+    simulation["results"][0]["xdr"] = json!(ScVal::U32(7).to_xdr_base64(Limits::none()).unwrap());
+    let (server, _mock) = rpc(simulation).await;
+    let client = Client::new(&server, CONTRACT).await.unwrap();
+    let source = Account::new(ACCOUNT, "0").unwrap();
+    let call = client
+        .call("accept_error", &(ArithmeticError::Overflow,))
+        .expect("a declared error enum should be usable as an ordinary argument");
+    assert_eq!(call.simulate::<u32>(&source, "test").await.unwrap(), 7);
+}
+
+#[tokio::test]
+async fn error_data_nested_values_do_not_become_invocation_failures() {
+    let errors = vec![
+        ScError::Contract(7),
+        ScError::Storage(ScErrorCode::MissingValue),
+    ];
+    let raw_values: Vec<_> = errors.iter().cloned().map(ScVal::Error).collect();
+    let raw = ScVal::Vec(Some(raw_values.clone().try_into().unwrap()));
+    let mut simulation = success();
+    simulation["results"][0]["xdr"] = json!(raw.to_xdr_base64(Limits::none()).unwrap());
+    let (server, _mock) = rpc(simulation).await;
+    let client = Client::new(&server, CONTRACT).await.unwrap();
+    let source = Account::new(ACCOUNT, "0").unwrap();
+    let actual = client
+        .call("echo_errors", &(&raw_values,))
+        .expect("the existing raw ScVal error argument escape hatch must remain usable")
+        .try_simulate::<Vec<ScError>, ArithmeticError>(&source, "test")
+        .await
+        .expect(
+            "errors inside a successful result vector must decode as data, not CallError::Contract",
+        );
+    assert_eq!(actual, errors);
+}
+
+#[tokio::test]
+async fn error_data_record_is_a_successful_function_result() {
+    #[derive(Debug, PartialEq, serde::Deserialize)]
+    struct ErrorRecord {
+        typed: ArithmeticError,
+        generic: ScError,
+        values: Vec<ScError>,
+        keyed: std::collections::BTreeMap<u32, ScError>,
+        optional: Option<ScError>,
+    }
+    let mut simulation = success();
+    simulation["results"][0]["xdr"] =
+        json!(error_record_value().to_xdr_base64(Limits::none()).unwrap());
+    let (server, _mock) = rpc(simulation).await;
+    let client = Client::new(&server, CONTRACT).await.unwrap();
+    let source = Account::new(ACCOUNT, "0").unwrap();
+    let actual = client
+        .call("error_record", &())
+        .unwrap()
+        .try_simulate::<ErrorRecord, ArithmeticError>(&source, "test")
+        .await
+        .expect("a successful record containing error values must remain a successful result");
+    assert_eq!(
+        actual,
+        ErrorRecord {
+            typed: ArithmeticError::Overflow,
+            generic: ScError::Contract(99),
+            values: vec![ScError::Contract(99), ScError::Contract(7)],
+            keyed: std::collections::BTreeMap::from([(1, ScError::Contract(99))]),
+            optional: Some(ScError::Contract(7)),
+        }
+    );
 }
 
 #[tokio::test]

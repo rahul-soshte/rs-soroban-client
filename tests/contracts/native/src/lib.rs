@@ -1,7 +1,7 @@
 #![no_std]
 use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, contractmeta, contracttype, Address, Env,
-    Map, String, Val, Vec, I256, U256,
+    Error, Map, String, Val, Vec, I256, U256,
 };
 
 contractmeta!(key = "fixture", val = "native-client-v1");
@@ -69,6 +69,31 @@ pub enum Color {
 #[repr(u32)]
 pub enum ArithmeticFailure {
     Overflow = 7,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub struct ErrorRecord {
+    pub typed: ArithmeticFailure,
+    pub generic: Error,
+    pub values: Vec<Error>,
+    pub keyed: Map<u32, Error>,
+    pub optional: Option<Error>,
+}
+
+#[contractevent(data_format = "single-value")]
+pub struct ErrorDatum {
+    pub value: Error,
+}
+
+#[contractevent(data_format = "single-value")]
+pub struct TypedErrorDatum {
+    pub value: ArithmeticFailure,
+}
+
+#[contractevent(data_format = "single-value")]
+pub struct ErrorReport {
+    pub record: ErrorRecord,
 }
 
 #[contractevent]
@@ -162,6 +187,46 @@ impl NativeFixture {
     }
     pub fn echo_val_choice(value: ValChoice) -> ValChoice {
         value
+    }
+    pub fn accept_error(value: ArithmeticFailure) -> u32 {
+        match value {
+            ArithmeticFailure::Overflow => 7,
+        }
+    }
+    pub fn accept_generic_error(value: Error) -> u32 {
+        value.get_code()
+    }
+    pub fn wrap_error(env: Env, value: Error) -> Vec<Error> {
+        Vec::from_array(&env, [value])
+    }
+    pub fn echo_errors(value: Vec<Error>) -> Vec<Error> {
+        value
+    }
+    pub fn echo_error_map(value: Map<u32, Error>) -> Map<u32, Error> {
+        value
+    }
+    pub fn echo_error_record(value: ErrorRecord) -> ErrorRecord {
+        value
+    }
+    pub fn error_record(env: Env) -> ErrorRecord {
+        let generic = Error::from_contract_error(99);
+        let known = Error::from_contract_error(7);
+        let record = ErrorRecord {
+            typed: ArithmeticFailure::Overflow,
+            generic,
+            values: Vec::from_array(&env, [generic, known]),
+            keyed: Map::from_array(&env, [(1, generic)]),
+            optional: Some(known),
+        };
+        ErrorReport {
+            record: record.clone(),
+        }
+        .publish(&env);
+        record
+    }
+    pub fn publish_errors(env: Env, typed: ArithmeticFailure, generic: Error) {
+        TypedErrorDatum { value: typed }.publish(&env);
+        ErrorDatum { value: generic }.publish(&env);
     }
     pub fn emit_events(env: Env, count: u128, values: Map<(u32, u32), i128>) {
         let owner = env.current_contract_address();
