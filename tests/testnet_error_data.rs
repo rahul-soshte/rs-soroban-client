@@ -1,6 +1,6 @@
-//! Red-phase tests for actual error-valued arguments, nested results and events.
+//! Tests for actual error-valued arguments, nested results and events.
 //! Raw RPC assertions establish which values the contract accepts before the
-//! currently missing native conversion is exercised.
+//! native conversion is exercised.
 #![cfg(feature = "contract-spec")]
 mod support;
 

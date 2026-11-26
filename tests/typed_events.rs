@@ -321,7 +321,7 @@ fn native_conversion_capabilities_do_not_resolve_wildcard_ambiguity() {
 }
 
 #[test]
-fn unsupported_native_error_values_still_participate_in_wire_matching() {
+fn error_values_participate_in_wire_matching_before_native_deserialization() {
     let spec = spec(vec![
         single("Generic", ScSpecTypeDef::Val),
         single("Error", ScSpecTypeDef::Error),
@@ -333,8 +333,18 @@ fn unsupported_native_error_values_still_participate_in_wire_matching() {
     ));
     assert!(matches!(
         spec.decode_event_as::<Changed>("Error", &raw),
-        Err(EventDecodeError::InvalidValue { .. })
+        Err(EventDecodeError::Deserialize(_))
     ));
+    #[derive(Debug, PartialEq, Deserialize)]
+    struct ErrorDatum {
+        value: ScError,
+    }
+    assert_eq!(
+        spec.decode_event_as::<ErrorDatum>("Error", &raw).unwrap(),
+        ErrorDatum {
+            value: ScError::Contract(7)
+        }
+    );
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]

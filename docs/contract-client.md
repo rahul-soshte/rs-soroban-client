@@ -134,6 +134,12 @@ available symbolic matches. Without an application enum, `simulate::<T>` and
 If a failed simulation has no usable structured diagnostics, it returns
 `CallError::Simulation` instead of a typed contract variant.
 
+For errors used as ordinary arguments, fields, containers, or event parameters,
+use `xdr::ScError` for a generic `Error` type. For a declared contract-error enum,
+derive `Serialize`/`Deserialize` on your matching Rust enum. Generic errors retain
+unknown contract codes and host error classes; declared enums reject unknown
+codes. These values are data, not `CallError::Contract`.
+
 ## Submit a transaction
 
 ```rust,ignore
@@ -221,7 +227,7 @@ Claims are not proof that a contract implements a SEP.
   `ContractCodeNotFound`. Missing or malformed interfaces also return errors.
 - Internally tagged/untagged enums and union struct variants are unsupported.
 - Generic `val` arguments require explicit XDR values. Native decoding of generic
-  `val` and error-valued event parameters is not supported.
+  `val` is not supported.
 - The interface is a contract's self-description, not verification of its behavior.
 
 See [`examples/typed_contract.rs`](../examples/typed_contract.rs) for a runnable

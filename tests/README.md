@@ -18,12 +18,11 @@ cargo test --features contract-spec --test generic_val
 cargo test --features contract-spec --test contract_client generic_val
 ```
 
-## Errors as ordinary data: red-phase tests
+## Errors as ordinary data
 
 These tests distinguish error-valued arguments, fields, containers and events
-from invocation failures. They require no new public API and intentionally fail
-where native error-data conversion is missing. Existing invocation-error tests
-remain unchanged.
+from invocation failures. Generic `ScError` values preserve their type and code;
+declared contract errors map to caller-defined Serde enums.
 
 ```sh
 cargo test --features contract-spec --test error_data
@@ -103,8 +102,7 @@ GENERIC_VAL_CONTRACT_ID=CONTRACT_ID \
 ```
 
 For error-valued data, use the updated fixture's contract ID. Each test first
-checks the raw RPC result, then exercises native conversion with an explicit
-failure message:
+checks the raw RPC result, then verifies native conversion:
 
 ```sh
 ERROR_DATA_CONTRACT_ID=CONTRACT_ID \

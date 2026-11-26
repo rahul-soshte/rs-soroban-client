@@ -1,11 +1,11 @@
-//! Preserve native map keys at the Serde boundary. Upstream JSON conversion is
-//! retained for map-free subtrees; only map-containing containers need bridging.
+//! Preserve native maps and error data at the Serde boundary. Subtrees that
+//! need neither are delegated to upstream JSON conversion.
 
 use std::collections::{BTreeMap, HashSet};
 
 use serde::Serialize;
 use serde_content::{Data, Number};
-use stellar_baselib::xdr::{ScMap, ScMapEntry, ScSpecTypeDef as T, Validate};
+use stellar_baselib::xdr::{ScError, ScMap, ScMapEntry, ScSpecTypeDef as T, Validate};
 
 use super::{conversion, ContractSpec, ScSpecEntry, ScSpecUdtUnionCaseV0, ScVal, SpecError};
 
@@ -386,7 +386,7 @@ impl ContractSpec {
         }
     }
 
-    fn contains_map(
+    fn needs_native_bridge(
         &self,
         ty: &T,
         seen: &mut HashSet<String>,
@@ -394,14 +394,14 @@ impl ContractSpec {
     ) -> Result<bool, SpecError> {
         nesting(depth)?;
         Ok(match ty {
-            T::Map(_) => true,
-            T::Option(t) => self.contains_map(&t.value_type, seen, depth + 1)?,
-            T::Result(t) => self.contains_map(&t.ok_type, seen, depth + 1)?,
-            T::Vec(t) => self.contains_map(&t.element_type, seen, depth + 1)?,
+            T::Map(_) | T::Error => true,
+            T::Option(t) => self.needs_native_bridge(&t.value_type, seen, depth + 1)?,
+            T::Result(t) => self.needs_native_bridge(&t.ok_type, seen, depth + 1)?,
+            T::Vec(t) => self.needs_native_bridge(&t.element_type, seen, depth + 1)?,
             T::Tuple(t) => {
                 let mut found = false;
                 for t in t.value_types.iter() {
-                    found |= self.contains_map(t, seen, depth + 1)?;
+                    found |= self.needs_native_bridge(t, seen, depth + 1)?;
                 }
                 found
             }
@@ -414,7 +414,7 @@ impl ContractSpec {
                     ScSpecEntry::UdtStructV0(s) => {
                         let mut found = false;
                         for f in s.fields.iter() {
-                            found |= self.contains_map(&f.type_, seen, depth + 1)?;
+                            found |= self.needs_native_bridge(&f.type_, seen, depth + 1)?;
                         }
                         found
                     }
@@ -423,12 +423,13 @@ impl ContractSpec {
                         for c in u.cases.iter() {
                             if let ScSpecUdtUnionCaseV0::TupleV0(c) = c {
                                 for t in c.type_.iter() {
-                                    found |= self.contains_map(t, seen, depth + 1)?;
+                                    found |= self.needs_native_bridge(t, seen, depth + 1)?;
                                 }
                             }
                         }
                         found
                     }
+                    ScSpecEntry::UdtErrorEnumV0(_) => true,
                     _ => false,
                 };
                 seen.remove(&name);
@@ -445,11 +446,22 @@ impl ContractSpec {
         depth: usize,
     ) -> Result<ScVal, SpecError> {
         nesting(depth)?;
-        if !self.contains_map(ty, &mut HashSet::new(), 0)? {
+        if !self.needs_native_bridge(ty, &mut HashSet::new(), 0)? {
             return self.encode_json(to_json(value, depth)?, ty);
         }
         let encode = |v, t: &T| self.encode_native(v, t, depth + 1);
         match ty {
+            T::Error => {
+                let json = to_json(value, depth)?;
+                // Preserve the existing explicit ScVal escape hatch as well as
+                // accepting the human-readable ScError representation.
+                if let Ok(ScVal::Error(error)) = serde_json::from_value::<ScVal>(json.clone()) {
+                    return Ok(ScVal::Error(error));
+                }
+                serde_json::from_value::<ScError>(json)
+                    .map(ScVal::Error)
+                    .map_err(|e| conversion(format!("invalid error value: {e}")))
+            }
             T::Map(t) => {
                 let Value::Map(values) = value else {
                     return Err(conversion("expected a Rust map"));
@@ -493,6 +505,17 @@ impl ContractSpec {
                     .collect::<Result<_, _>>()?,
             ),
             T::Udt(t) => match self.udt(&t.name.to_utf8_string_lossy())? {
+                ScSpecEntry::UdtErrorEnumV0(e) => {
+                    let Value::String(name) = value else {
+                        return Err(conversion("expected a declared error variant name"));
+                    };
+                    let case = e
+                        .cases
+                        .iter()
+                        .find(|c| c.name.as_slice() == name.as_bytes())
+                        .ok_or_else(|| conversion("unknown error enum variant"))?;
+                    Ok(ScVal::Error(ScError::Contract(case.value)))
+                }
                 ScSpecEntry::UdtStructV0(s) => {
                     if s.fields.first().is_some_and(|f| f.name.as_slice() == b"0") {
                         let values = if s.fields.len() == 1 {
@@ -582,14 +605,22 @@ impl ContractSpec {
         depth: usize,
     ) -> Result<Value, SpecError> {
         nesting(depth)?;
-        if matches!(value, ScVal::Error(_)) {
-            return Err(conversion("error-valued native data is unsupported; invocation errors use the contract error boundary"));
-        }
-        if !self.contains_map(ty, &mut HashSet::new(), 0)? {
+        if !self.needs_native_bridge(ty, &mut HashSet::new(), 0)? {
+            if matches!(value, ScVal::Error(_)) {
+                return Err(conversion(
+                    "error-valued native data requires an Error or declared error enum type",
+                ));
+            }
             return self.restore_options(from_json(self.decode_json(value, ty)?)?, ty, depth);
         }
         let decode = |v, t: &T| self.decode_native(v, t, depth + 1);
         match ty {
+            T::Error => {
+                let ScVal::Error(error) = value else {
+                    return Err(conversion("expected an error value"));
+                };
+                from_json(serde_json::to_value(error).map_err(|e| conversion(e.to_string()))?)
+            }
             T::Map(t) => {
                 let ScVal::Map(Some(values)) = value else {
                     return Err(conversion("expected a contract map"));
@@ -624,6 +655,17 @@ impl ContractSpec {
                     .collect::<Result<_, _>>()?,
             )),
             T::Udt(t) => match self.udt(&t.name.to_utf8_string_lossy())? {
+                ScSpecEntry::UdtErrorEnumV0(e) => {
+                    let ScVal::Error(ScError::Contract(code)) = value else {
+                        return Err(conversion("expected a contract error value"));
+                    };
+                    let case = e
+                        .cases
+                        .iter()
+                        .find(|c| c.value == *code)
+                        .ok_or_else(|| conversion("unknown error enum code"))?;
+                    Ok(Value::String(case.name.to_utf8_string_lossy().into()))
+                }
                 ScSpecEntry::UdtStructV0(s) => {
                     if s.fields.first().is_some_and(|f| f.name.as_slice() == b"0") {
                         let mut values = vector(value, Some(s.fields.len()))?
@@ -720,7 +762,7 @@ impl ContractSpec {
     }
 
     // JSON null is ambiguous to a general Serde buffer. Restore Option(None)
-    // using the spec, including when it occurs in a map-free struct/union leaf.
+    // using the spec, including in struct/union leaves delegated to JSON.
     fn restore_options(&self, value: Value, ty: &T, depth: usize) -> Result<Value, SpecError> {
         nesting(depth)?;
         let restore = |v, t: &T| self.restore_options(v, t, depth + 1);

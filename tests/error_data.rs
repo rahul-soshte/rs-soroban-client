@@ -1,5 +1,5 @@
 //! Errors used as ordinary values, not as top-level invocation failures.
-//! These are red-phase tests; no converter implementation is changed here.
+//! Generic ScError and declared contract-error enums retain their wire identity.
 #![cfg(feature = "contract-spec")]
 mod support;
 
@@ -464,4 +464,135 @@ fn error_record_event_decodes_nested_error_data() {
         .decode_event_as("ErrorReport", &event("error_report", error_record_value()))
         .expect("nested event errors should be ordinary data");
     assert_eq!(actual, ErrorReport { record: record() });
+}
+
+#[test]
+fn all_host_error_classes_and_codes_round_trip() {
+    let spec = spec();
+    for code in ScErrorCode::VARIANTS {
+        for error in [
+            ScError::WasmVm(code),
+            ScError::Context(code),
+            ScError::Storage(code),
+            ScError::Object(code),
+            ScError::Crypto(code),
+            ScError::Events(code),
+            ScError::Budget(code),
+            ScError::Value(code),
+            ScError::Auth(code),
+        ] {
+            let raw = ScVal::Error(error.clone());
+            assert_eq!(spec.encode(&error, &ScSpecTypeDef::Error).unwrap(), raw);
+            assert_eq!(
+                spec.decode::<ScError>(&raw, &ScSpecTypeDef::Error).unwrap(),
+                error
+            );
+        }
+    }
+}
+
+#[test]
+fn errors_inside_tuples_and_union_payloads_use_native_conversion() {
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    enum ErrorChoice {
+        One(ArithmeticFailure),
+        Pair(u32, ScError),
+    }
+    let mut entries = entries();
+    entries.push(ScSpecEntry::UdtUnionV0(ScSpecUdtUnionV0 {
+        name: "ErrorChoice".try_into().unwrap(),
+        cases: [
+            ("One", vec![udt("ArithmeticFailure")]),
+            ("Pair", vec![ScSpecTypeDef::U32, ScSpecTypeDef::Error]),
+        ]
+        .into_iter()
+        .map(|(name, types)| {
+            ScSpecUdtUnionCaseV0::TupleV0(ScSpecUdtUnionCaseTupleV0 {
+                name: name.try_into().unwrap(),
+                type_: types.try_into().unwrap(),
+                doc: Default::default(),
+            })
+        })
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap(),
+        ..Default::default()
+    }));
+    let spec = ContractSpec::new(entries).unwrap();
+    for (value, raw) in [
+        (
+            ErrorChoice::One(ArithmeticFailure::Overflow),
+            vector(vec![
+                ScVal::Symbol("One".try_into().unwrap()),
+                ScVal::Error(ScError::Contract(7)),
+            ]),
+        ),
+        (
+            ErrorChoice::Pair(42, ScError::Contract(99)),
+            vector(vec![
+                ScVal::Symbol("Pair".try_into().unwrap()),
+                ScVal::U32(42),
+                ScVal::Error(ScError::Contract(99)),
+            ]),
+        ),
+    ] {
+        assert_eq!(spec.encode(&value, &udt("ErrorChoice")).unwrap(), raw);
+        assert_eq!(
+            spec.decode::<ErrorChoice>(&raw, &udt("ErrorChoice"))
+                .unwrap(),
+            value
+        );
+    }
+    let ty = ScSpecTypeDef::Tuple(Box::new(ScSpecTypeTuple {
+        value_types: vec![ScSpecTypeDef::U32, ScSpecTypeDef::Error]
+            .try_into()
+            .unwrap(),
+    }));
+    let value = (42u32, ScError::Contract(99));
+    let raw = vector(vec![ScVal::U32(42), ScVal::Error(ScError::Contract(99))]);
+    assert_eq!(spec.encode(&value, &ty).unwrap(), raw);
+    assert_eq!(spec.decode::<(u32, ScError)>(&raw, &ty).unwrap(), value);
+}
+
+#[test]
+fn typed_error_map_keys_support_btree_and_hash_maps() {
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+    enum Key {
+        Overflow,
+    }
+    let ty = ScSpecTypeDef::Map(Box::new(ScSpecTypeMap {
+        key_type: Box::new(udt("ArithmeticFailure")),
+        value_type: Box::new(ScSpecTypeDef::U32),
+    }));
+    let raw = ScVal::Map(Some(
+        ScMap::sorted_from_pairs(
+            [(ScVal::Error(ScError::Contract(7)), ScVal::U32(42))].into_iter(),
+        )
+        .unwrap(),
+    ));
+    let spec = spec();
+    let btree = BTreeMap::from([(Key::Overflow, 42u32)]);
+    let hash = std::collections::HashMap::from([(Key::Overflow, 42u32)]);
+    assert_eq!(spec.encode(&btree, &ty).unwrap(), raw);
+    assert_eq!(spec.encode(&hash, &ty).unwrap(), raw);
+    assert_eq!(spec.decode::<BTreeMap<Key, u32>>(&raw, &ty).unwrap(), btree);
+    assert_eq!(
+        spec.decode::<std::collections::HashMap<Key, u32>>(&raw, &ty)
+            .unwrap(),
+        hash
+    );
+}
+
+#[test]
+fn malformed_error_representations_are_rejected_without_panicking() {
+    let spec = spec();
+    for value in [
+        serde_json::json!({"contract": -1}),
+        serde_json::json!({"contract": 4294967296u64}),
+        serde_json::json!({"storage": "not_a_code"}),
+        serde_json::json!({"contract": 7, "storage": "missing_value"}),
+        serde_json::json!({"error": {"u32": 7}}),
+    ] {
+        assert!(spec.encode(&value, &ScSpecTypeDef::Error).is_err());
+    }
 }

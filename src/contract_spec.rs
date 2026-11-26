@@ -324,8 +324,8 @@ impl ContractSpec {
         self.decode(value, ty)
     }
 
-    // Adapt map-free Serde shapes to upstream JSON shapes. Native maps are
-    // handled separately so their keys never need to become JSON strings.
+    // Adapt delegated Serde shapes to upstream JSON shapes. Native maps and
+    // error data are handled separately by the recursive native bridge.
     fn normalize(
         &self,
         value: Value,
