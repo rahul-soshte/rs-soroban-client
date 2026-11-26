@@ -30,6 +30,26 @@ cargo test --features contract-spec --test error_data
 cargo test --features contract-spec --test contract_client error_data
 ```
 
+## Input and nested `Result`: red-phase tests
+
+These tests cover native `Ok`/`Err` inputs and results inside records, vectors,
+map values, options and events. The SDK encodes `Ok` as its payload and `Err` as
+an error value, without an extra tag. Ambiguous `Ok(error)` and `Ok(Err(...))`
+round trips are not required. Top-level invocation errors keep their existing API.
+
+```sh
+cargo test --features contract-spec --test result_data
+cargo test --features contract-spec --test contract_client result_data
+```
+
+After deploying the updated fixture, run the live checks. Each verifies raw RPC
+behavior before exercising the currently missing native conversion:
+
+```sh
+RESULT_DATA_CONTRACT_ID=CONTRACT_ID \
+    cargo test --features contract-spec --test testnet_result_data -- --ignored --nocapture
+```
+
 ## Testnet deployment test
 
 Build the contract fixture, then run the opt-in deployment test:

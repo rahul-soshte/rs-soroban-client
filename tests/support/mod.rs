@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+pub mod result_data;
 use soroban_client::xdr::*;
 
 pub const CONTRACT: &str = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
@@ -135,6 +136,7 @@ pub fn entries() -> Vec<ScSpecEntry> {
         ),
     ];
     entries.extend(error_data_entries());
+    entries.extend(result_data::entries());
     entries
 }
 

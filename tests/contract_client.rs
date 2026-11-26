@@ -140,6 +140,61 @@ enum ArithmeticError {
 }
 
 #[tokio::test]
+async fn result_data_ok_argument_is_unwrapped_on_the_wire() {
+    use support::result_data::Failure;
+    let mut simulation = success();
+    simulation["results"][0]["xdr"] = json!(ScVal::U32(42).to_xdr_base64(Limits::none()).unwrap());
+    let (server, _mock) = rpc(simulation).await;
+    let client = Client::new(&server, CONTRACT).await.unwrap();
+    let source = Account::new(ACCOUNT, "0").unwrap();
+    let call = client
+        .call("accept_result", &(Ok::<u32, Failure>(42),))
+        .expect("Result::Ok input should encode without a Serde wrapper");
+    let OperationBody::InvokeHostFunction(InvokeHostFunctionOp {
+        host_function: HostFunction::InvokeContract(args),
+        ..
+    }) = call.operation().body
+    else {
+        panic!("expected contract invocation");
+    };
+    assert_eq!(args.args.as_slice(), &[ScVal::U32(42)]);
+    assert_eq!(call.simulate::<u32>(&source, "test").await.unwrap(), 42);
+}
+
+#[tokio::test]
+async fn result_data_err_argument_is_not_an_invocation_failure() {
+    use support::result_data::Failure;
+    let mut simulation = success();
+    simulation["results"][0]["xdr"] = json!(ScVal::U32(7).to_xdr_base64(Limits::none()).unwrap());
+    let (server, _mock) = rpc(simulation).await;
+    let client = Client::new(&server, CONTRACT).await.unwrap();
+    let source = Account::new(ACCOUNT, "0").unwrap();
+    let call = client
+        .call("accept_result", &(Err::<u32, _>(Failure::Overflow),))
+        .expect("Result::Err input should encode as ordinary error-valued input");
+    assert_eq!(call.simulate::<u32>(&source, "test").await.unwrap(), 7);
+}
+
+#[tokio::test]
+async fn result_data_nested_err_remains_a_successful_result() {
+    use support::result_data::{self, ResultRecord};
+    let mut simulation = success();
+    simulation["results"][0]["xdr"] = json!(result_data::record_value()
+        .to_xdr_base64(Limits::none())
+        .unwrap());
+    let (server, _mock) = rpc(simulation).await;
+    let client = Client::new(&server, CONTRACT).await.unwrap();
+    let source = Account::new(ACCOUNT, "0").unwrap();
+    let actual = client
+        .call("result_record", &())
+        .unwrap()
+        .try_simulate::<ResultRecord, ArithmeticError>(&source, "test")
+        .await
+        .expect("nested Err values should decode inside a successful function result");
+    assert_eq!(actual, result_data::record());
+}
+
+#[tokio::test]
 async fn error_data_contract_enum_is_an_ordinary_argument() {
     let mut simulation = success();
     simulation["results"][0]["xdr"] = json!(ScVal::U32(7).to_xdr_base64(Limits::none()).unwrap());

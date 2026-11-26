@@ -96,6 +96,25 @@ pub struct ErrorReport {
     pub record: ErrorRecord,
 }
 
+#[contracttype]
+#[derive(Clone)]
+pub struct ResultRecord {
+    pub value: Result<u32, ArithmeticFailure>,
+    pub values: Vec<Result<u32, ArithmeticFailure>>,
+    pub keyed: Map<u32, Result<u32, ArithmeticFailure>>,
+    pub optional: Option<Result<u32, ArithmeticFailure>>,
+}
+
+#[contractevent(data_format = "single-value")]
+pub struct ResultDatum {
+    pub value: Result<u32, ArithmeticFailure>,
+}
+
+#[contractevent(data_format = "single-value")]
+pub struct ResultReport {
+    pub value: ResultRecord,
+}
+
 #[contractevent]
 pub struct Added {
     pub value: u32,
@@ -192,6 +211,42 @@ impl NativeFixture {
         match value {
             ArithmeticFailure::Overflow => 7,
         }
+    }
+    pub fn accept_result(value: Result<u32, ArithmeticFailure>) -> u32 {
+        match value {
+            Ok(value) => value,
+            Err(ArithmeticFailure::Overflow) => 7,
+        }
+    }
+    pub fn accept_any_result(value: Result<u32, Error>) -> u32 {
+        match value {
+            Ok(value) => value,
+            Err(error) => error.get_code(),
+        }
+    }
+    pub fn echo_results(
+        value: Vec<Result<u32, ArithmeticFailure>>,
+    ) -> Vec<Result<u32, ArithmeticFailure>> {
+        value
+    }
+    pub fn echo_result_record(value: ResultRecord) -> ResultRecord {
+        value
+    }
+    pub fn result_record(env: Env) -> ResultRecord {
+        let record = ResultRecord {
+            value: Ok(42),
+            values: Vec::from_array(&env, [Ok(42), Err(ArithmeticFailure::Overflow)]),
+            keyed: Map::from_array(&env, [(1, Ok(42)), (2, Err(ArithmeticFailure::Overflow))]),
+            optional: Some(Err(ArithmeticFailure::Overflow)),
+        };
+        ResultReport {
+            value: record.clone(),
+        }
+        .publish(&env);
+        record
+    }
+    pub fn publish_result(env: Env, value: Result<u32, ArithmeticFailure>) {
+        ResultDatum { value }.publish(&env);
     }
     pub fn accept_generic_error(value: Error) -> u32 {
         value.get_code()
