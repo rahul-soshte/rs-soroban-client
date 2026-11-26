@@ -29,7 +29,7 @@ cargo test --features contract-spec --test error_data
 cargo test --features contract-spec --test contract_client error_data
 ```
 
-## Input and nested `Result`: red-phase tests
+## Input and nested `Result`
 
 These tests cover native `Ok`/`Err` inputs and results inside records, vectors,
 map values, options and events. The SDK encodes `Ok` as its payload and `Err` as
@@ -42,7 +42,7 @@ cargo test --features contract-spec --test contract_client result_data
 ```
 
 After deploying the updated fixture, run the live checks. Each verifies raw RPC
-behavior before exercising the currently missing native conversion:
+behavior before verifying native conversion:
 
 ```sh
 RESULT_DATA_CONTRACT_ID=CONTRACT_ID \
@@ -80,7 +80,9 @@ NATIVE_FIXTURE_WASM=tests/contracts/native/target/wasm32v1-none/release/native_c
 The test funds a disposable account, deploys the fixture, confirms a native call,
 checks typed errors and metadata, and round-trips user-defined types, composite-key
 maps, and 128/256-bit integers. It also decodes confirmed and RPC events in all
-three SEP-48 data formats, including events with shared topic prefixes. It requires
+three SEP-48 data formats, including events with shared topic prefixes. Submitted
+calls also verify an `Err` argument/event and an error-valued return record/event.
+It requires
 access to public testnet RPC and Friendbot.
 
 Use the printed contract ID to run the example:

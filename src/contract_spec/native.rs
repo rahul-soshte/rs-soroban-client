@@ -1,5 +1,5 @@
-//! Preserve native maps and error data at the Serde boundary. Subtrees that
-//! need neither are delegated to upstream JSON conversion.
+//! Preserve native maps, results and error data at the Serde boundary.
+//! Other subtrees are delegated to upstream JSON conversion.
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -394,9 +394,8 @@ impl ContractSpec {
     ) -> Result<bool, SpecError> {
         nesting(depth)?;
         Ok(match ty {
-            T::Map(_) | T::Error => true,
+            T::Map(_) | T::Error | T::Result(_) => true,
             T::Option(t) => self.needs_native_bridge(&t.value_type, seen, depth + 1)?,
-            T::Result(t) => self.needs_native_bridge(&t.ok_type, seen, depth + 1)?,
             T::Vec(t) => self.needs_native_bridge(&t.element_type, seen, depth + 1)?,
             T::Tuple(t) => {
                 let mut found = false;
@@ -485,7 +484,21 @@ impl ContractSpec {
                     encode(value, &t.value_type)
                 }
             }
-            T::Result(t) => encode(value, &t.ok_type),
+            T::Result(t) => {
+                let (name, payload) = union(value)?;
+                let payload = payload.ok_or_else(|| conversion("expected a Result payload"))?;
+                match name.as_str() {
+                    "Ok" => encode(payload, &t.ok_type),
+                    "Err" => {
+                        let error = encode(payload, &t.error_type)?;
+                        if !matches!(error, ScVal::Error(_)) {
+                            return Err(conversion("Result::Err must encode as an error value"));
+                        }
+                        Ok(error)
+                    }
+                    _ => Err(conversion("expected a Result Ok or Err variant")),
+                }
+            }
             T::Vec(t) => {
                 let Value::Seq(values) = value else {
                     return Err(conversion("expected a vector"));
@@ -640,7 +653,17 @@ impl ContractSpec {
             } else {
                 Some(Box::new(decode(value, &t.value_type)?))
             })),
-            T::Result(t) => decode(value, &t.ok_type),
+            T::Result(t) => {
+                let (name, ty) = if matches!(value, ScVal::Error(_)) {
+                    ("Err", &t.error_type)
+                } else {
+                    ("Ok", &t.ok_type)
+                };
+                Ok(Value::Map(vec![(
+                    Value::String(name.into()),
+                    decode(value, ty)?,
+                )]))
+            }
             T::Vec(t) => Ok(Value::Seq(
                 vector(value, None)?
                     .iter()

@@ -16,6 +16,7 @@ use soroban_client::{
     transaction::{
         Transaction, TransactionBehavior, TransactionBuilder, TransactionBuilderBehavior,
     },
+    xdr::ScError,
     EventFilter, Options, Pagination, Server,
 };
 use std::collections::{BTreeMap, HashMap};
@@ -47,7 +48,7 @@ enum Color {
     Green,
     Blue,
 }
-#[derive(Debug, PartialEq, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 enum ArithmeticFailure {
     Overflow,
 }
@@ -71,6 +72,25 @@ struct NativeValues {
     owner: String,
     count: u128,
     values: BTreeMap<(u32, u32), i128>,
+}
+
+#[derive(Debug, PartialEq, Deserialize)]
+struct ResultDatum {
+    value: Result<u32, ArithmeticFailure>,
+}
+
+#[derive(Debug, PartialEq, Deserialize)]
+struct ErrorRecord {
+    typed: ArithmeticFailure,
+    generic: ScError,
+    values: Vec<ScError>,
+    keyed: BTreeMap<u32, ScError>,
+    optional: Option<ScError>,
+}
+
+#[derive(Debug, PartialEq, Deserialize)]
+struct ErrorReport {
+    record: ErrorRecord,
 }
 
 async fn submit(
@@ -295,6 +315,64 @@ async fn deploy_and_call_with_native_values() -> Result<(), Box<dyn std::error::
             .decode_event::<NativeValues>(&response.events[2])?
             .values,
         values
+    );
+
+    // An Err argument and event payload are data: the transaction must succeed.
+    source = server.get_account(&key.public_key()).await?;
+    let call = client.call(
+        "publish_result",
+        &(Err::<u32, _>(ArithmeticFailure::Overflow),),
+    )?;
+    let prepared = call.prepare::<()>(&source, Networks::testnet()).await?;
+    let confirmed = submit(&server, prepared.transaction, &key).await?;
+    call.decode_transaction::<(), ArithmeticFailure>(&confirmed)?;
+    let (_, rows) = confirmed
+        .to_events()
+        .ok_or("missing confirmed Result events")?;
+    let events: Vec<_> = rows.iter().flatten().collect();
+    assert_eq!(events.len(), 1);
+    assert_eq!(
+        client.decode_event::<ResultDatum>(events[0])?,
+        ResultDatum {
+            value: Err(ArithmeticFailure::Overflow)
+        }
+    );
+    eprintln!(
+        "Confirmed Result argument and event at ledger {:?}",
+        confirmed.ledger
+    );
+
+    // Nested error values must not turn a successful result into CallError.
+    source = server.get_account(&key.public_key()).await?;
+    let expected = ErrorRecord {
+        typed: ArithmeticFailure::Overflow,
+        generic: ScError::Contract(99),
+        values: vec![ScError::Contract(99), ScError::Contract(7)],
+        keyed: BTreeMap::from([(1, ScError::Contract(99))]),
+        optional: Some(ScError::Contract(7)),
+    };
+    let call = client.call("error_record", &())?;
+    let prepared = call
+        .prepare::<ErrorRecord>(&source, Networks::testnet())
+        .await?;
+    assert_eq!(prepared.simulated_value, expected);
+    let confirmed = submit(&server, prepared.transaction, &key).await?;
+    assert_eq!(
+        call.decode_transaction::<ErrorRecord, ArithmeticFailure>(&confirmed)?,
+        expected
+    );
+    let (_, rows) = confirmed
+        .to_events()
+        .ok_or("missing confirmed error-data events")?;
+    let events: Vec<_> = rows.iter().flatten().collect();
+    assert_eq!(events.len(), 1);
+    assert_eq!(
+        client.decode_event::<ErrorReport>(events[0])?,
+        ErrorReport { record: expected }
+    );
+    eprintln!(
+        "Confirmed error-valued record and event at ledger {:?}",
+        confirmed.ledger
     );
     Ok(())
 }

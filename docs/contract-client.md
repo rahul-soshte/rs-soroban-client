@@ -140,6 +140,13 @@ derive `Serialize`/`Deserialize` on your matching Rust enum. Generic errors reta
 unknown contract codes and host error classes; declared enums reject unknown
 codes. These values are data, not `CallError::Contract`.
 
+Use ordinary Rust `Result<T, E>` for `Result` arguments and nested fields,
+containers, or event parameters. `Ok` encodes as its payload; `Err` encodes as
+an error value, with `E` using `ScError` or a matching declared error enum.
+Top-level invocation outputs still return `T` on success and `CallError` on
+failure. Because the wire has no extra `Result` tag, `Ok(error)` and
+`Ok(Err(...))` cannot round-trip distinctly from `Err(...)`.
+
 ## Submit a transaction
 
 ```rust,ignore

@@ -1,4 +1,4 @@
-//! Red-phase tests for native Result inputs and nested data, not invocation errors.
+//! Native Result inputs and nested data, distinct from invocation errors.
 #![cfg(feature = "contract-spec")]
 mod support;
 
@@ -10,7 +10,7 @@ fn spec() -> ContractSpec {
     ContractSpec::new(support::entries()).unwrap()
 }
 
-// Separate encode/decode tests keep one unsupported direction from masking the other.
+// Test each conversion direction separately.
 macro_rules! round_trip {
     ($encode:ident, $decode:ident, $rust:ty, $value:expr, $wire:expr, $ty:expr) => {
         #[test]
@@ -200,6 +200,96 @@ fn record_event_parameter() {
         .decode_event_as("ResultReport", &event("result_report", record_value()))
         .expect("nested Result event fields should decode");
     assert_eq!(actual.value, record());
+}
+
+#[test]
+fn result_ok_payload_preserves_composite_maps() {
+    let spec = spec();
+    let ty = ScSpecTypeDef::Result(Box::new(ScSpecTypeResult {
+        ok_type: Box::new(support::map_type()),
+        error_type: Box::new(support::udt("ArithmeticFailure")),
+    }));
+    let values = BTreeMap::from([((1u32, 2u32), i128::MIN), ((2, 1), i128::MAX)]);
+    let raw = spec.encode(&values, &support::map_type()).unwrap();
+    let value: Result<_, Failure> = Ok(values);
+    assert_eq!(spec.encode(&value, &ty).unwrap(), raw);
+    assert_eq!(
+        spec.decode::<Result<BTreeMap<(u32, u32), i128>, Failure>>(&raw, &ty)
+            .unwrap(),
+        value
+    );
+}
+
+#[test]
+fn result_ok_unit_and_optional_payloads_preserve_void() {
+    let spec = spec();
+    let unit = ScSpecTypeDef::Result(Box::new(ScSpecTypeResult {
+        ok_type: Box::new(ScSpecTypeDef::Void),
+        error_type: Box::new(ScSpecTypeDef::Error),
+    }));
+    assert_eq!(
+        spec.encode(&Ok::<(), ScError>(()), &unit).unwrap(),
+        ScVal::Void
+    );
+    assert_eq!(
+        spec.decode::<Result<(), ScError>>(&ScVal::Void, &unit)
+            .unwrap(),
+        Ok(())
+    );
+    let optional = ScSpecTypeDef::Result(Box::new(ScSpecTypeResult {
+        ok_type: Box::new(ScSpecTypeDef::Option(Box::new(ScSpecTypeOption {
+            value_type: Box::new(ScSpecTypeDef::U32),
+        }))),
+        error_type: Box::new(ScSpecTypeDef::Error),
+    }));
+    assert_eq!(
+        spec.encode(&Ok::<Option<u32>, ScError>(None), &optional)
+            .unwrap(),
+        ScVal::Void
+    );
+    assert_eq!(
+        spec.decode::<Result<Option<u32>, ScError>>(&ScVal::Void, &optional)
+            .unwrap(),
+        Ok(None)
+    );
+}
+
+#[test]
+fn result_nested_directly_in_ok_handles_unambiguous_values() {
+    let ty = ScSpecTypeDef::Result(Box::new(ScSpecTypeResult {
+        ok_type: Box::new(result_type()),
+        error_type: Box::new(ScSpecTypeDef::Error),
+    }));
+    let spec = spec();
+    for (value, raw) in [
+        (Ok(Ok(42)), ScVal::U32(42)),
+        (
+            Err(ScError::Contract(99)),
+            ScVal::Error(ScError::Contract(99)),
+        ),
+    ] {
+        assert_eq!(spec.encode(&value, &ty).unwrap(), raw);
+        assert_eq!(
+            spec.decode::<Result<Result<u32, Failure>, ScError>>(&raw, &ty)
+                .unwrap(),
+            value
+        );
+    }
+}
+
+#[test]
+fn result_rejects_malformed_wrappers_and_nonerror_err_payloads() {
+    let spec = spec();
+    for value in [
+        serde_json::json!({"Neither": 42}),
+        serde_json::json!({"Ok": 42, "Err": "Overflow"}),
+        serde_json::json!("Ok"),
+        serde_json::json!({"Err": 7}),
+    ] {
+        assert!(spec.encode(&value, &result_type()).is_err());
+    }
+    let invalid = result_with(ScSpecTypeDef::U32);
+    assert!(spec.encode(&Err::<u32, u32>(7), &invalid).is_err());
 }
 
 // Result is untagged on the wire: Ok(error) and Ok(Err(...)) cannot be
