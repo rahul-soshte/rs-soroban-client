@@ -233,8 +233,9 @@ Claims are not proof that a contract implements a SEP.
 - Built-in Stellar Asset Contracts have no Wasm; discovery returns
   `ContractCodeNotFound`. Missing or malformed interfaces also return errors.
 - Internally tagged/untagged enums and union struct variants are unsupported.
-- Generic `val` arguments require explicit XDR values. Native decoding of generic
-  `val` is not supported.
+- Generic `val` uses explicit `xdr::ScVal` for arguments, results and event
+  parameters, including inside containers. Primitive types are not inferred:
+  `ScVal::String` and `ScVal::Symbol`, for example, keep distinct wire tags.
 - The interface is a contract's self-description, not verification of its behavior.
 
 See [`examples/typed_contract.rs`](../examples/typed_contract.rs) for a runnable

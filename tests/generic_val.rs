@@ -118,6 +118,14 @@ macro_rules! val_decode {
     };
 }
 val_decode!(decode_void, ScVal::Void);
+val_decode!(
+    decode_contract_error_data,
+    ScVal::Error(ScError::Contract(99))
+);
+val_decode!(
+    decode_host_error_data,
+    ScVal::Error(ScError::Storage(ScErrorCode::MissingValue))
+);
 val_decode!(decode_bool, ScVal::Bool(true));
 val_decode!(decode_u32, ScVal::U32(7));
 val_decode!(decode_i32, ScVal::I32(-7));
@@ -369,4 +377,71 @@ fn generic_event_parameter_decodes_as_scval() {
         .decode_event_as("GenericChanged", &event)
         .expect("a generic Val event parameter should decode as ScVal");
     assert_eq!(actual, GenericChanged { value });
+}
+
+#[test]
+fn generic_val_can_contain_nested_error_data() {
+    let spec = spec();
+    let value = vector(vec![ScVal::Error(ScError::Contract(7)), raw_map()]);
+    assert_eq!(spec.encode(&value, &ScSpecTypeDef::Val).unwrap(), value);
+    assert_eq!(
+        spec.decode::<ScVal>(&value, &ScSpecTypeDef::Val).unwrap(),
+        value
+    );
+}
+
+#[test]
+fn hash_maps_preserve_generic_val_keys_and_values() {
+    let values = std::collections::HashMap::from([
+        (
+            ScVal::String(ScString("same".try_into().unwrap())),
+            ScVal::U32(7),
+        ),
+        (ScVal::Symbol("same".try_into().unwrap()), ScVal::I32(7)),
+    ]);
+    let expected = ScVal::Map(Some(
+        ScMap::sorted_from_pairs(values.clone().into_iter()).unwrap(),
+    ));
+    let spec = spec();
+    assert_eq!(spec.encode(&values, &map_type()).unwrap(), expected);
+    assert_eq!(
+        spec.decode::<std::collections::HashMap<ScVal, ScVal>>(&expected, &map_type())
+            .unwrap(),
+        values
+    );
+}
+
+#[test]
+fn malformed_and_internal_generic_values_are_rejected() {
+    let spec = spec();
+    for value in [
+        ScVal::LedgerKeyContractInstance,
+        vector(vec![ScVal::LedgerKeyContractInstance]),
+        ScVal::Vec(None),
+        ScVal::Map(None),
+    ] {
+        assert!(spec.encode(&value, &ScSpecTypeDef::Val).is_err());
+        assert!(spec.decode::<ScVal>(&value, &ScSpecTypeDef::Val).is_err());
+    }
+}
+
+#[test]
+fn generic_val_maps_must_be_canonical_even_when_nested() {
+    let spec = spec();
+    for keys in [[2u32, 1u32], [1, 1]] {
+        let raw = ScVal::Map(Some(
+            keys.into_iter()
+                .map(|key| ScMapEntry {
+                    key: ScVal::U32(key),
+                    val: ScVal::Void,
+                })
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+        ));
+        for value in [raw.clone(), vector(vec![raw])] {
+            assert!(spec.encode(&value, &ScSpecTypeDef::Val).is_err());
+            assert!(spec.decode::<ScVal>(&value, &ScSpecTypeDef::Val).is_err());
+        }
+    }
 }

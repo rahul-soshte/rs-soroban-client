@@ -1,4 +1,4 @@
-//! Preserve native maps, results and error data at the Serde boundary.
+//! Preserve native maps, results, errors and explicit ScVal tags at the Serde boundary.
 //! Other subtrees are delegated to upstream JSON conversion.
 
 use std::collections::{BTreeMap, HashSet};
@@ -344,8 +344,7 @@ impl ContractSpec {
                 }
                 _ => Err(mismatch()),
             },
-            // Do not pass internal values or unsupported address variants to
-            // upstream's generic-value renderer, including inside containers.
+            // Generic Val supports contract values, not internal ledger values.
             (T::Val, ScVal::Vec(Some(values))) => values.iter().try_for_each(|v| check(v, &T::Val)),
             (T::Val, ScVal::Map(Some(values))) => {
                 values.iter().try_for_each(|v| {
@@ -394,7 +393,7 @@ impl ContractSpec {
     ) -> Result<bool, SpecError> {
         nesting(depth)?;
         Ok(match ty {
-            T::Map(_) | T::Error | T::Result(_) => true,
+            T::Map(_) | T::Error | T::Result(_) | T::Val => true,
             T::Option(t) => self.needs_native_bridge(&t.value_type, seen, depth + 1)?,
             T::Vec(t) => self.needs_native_bridge(&t.element_type, seen, depth + 1)?,
             T::Tuple(t) => {
@@ -450,6 +449,14 @@ impl ContractSpec {
         }
         let encode = |v, t: &T| self.encode_native(v, t, depth + 1);
         match ty {
+            T::Val => {
+                // Use XDR's tagged Serde representation, not upstream's lossy
+                // generic JSON renderer (which merges string/symbol, etc.).
+                let value: ScVal = serde_json::from_value(to_json(value, depth)?)
+                    .map_err(|e| conversion(format!("expected an explicit ScVal: {e}")))?;
+                self.check_wire_type(&value, ty, depth)?;
+                Ok(value)
+            }
             T::Error => {
                 let json = to_json(value, depth)?;
                 // Preserve the existing explicit ScVal escape hatch as well as
@@ -619,15 +626,13 @@ impl ContractSpec {
     ) -> Result<Value, SpecError> {
         nesting(depth)?;
         if !self.needs_native_bridge(ty, &mut HashSet::new(), 0)? {
-            if matches!(value, ScVal::Error(_)) {
-                return Err(conversion(
-                    "error-valued native data requires an Error or declared error enum type",
-                ));
-            }
             return self.restore_options(from_json(self.decode_json(value, ty)?)?, ty, depth);
         }
         let decode = |v, t: &T| self.decode_native(v, t, depth + 1);
         match ty {
+            T::Val => {
+                from_json(serde_json::to_value(value).map_err(|e| conversion(e.to_string()))?)
+            }
             T::Error => {
                 let ScVal::Error(error) = value else {
                     return Err(conversion("expected an error value"));

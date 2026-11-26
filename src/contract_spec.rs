@@ -325,7 +325,7 @@ impl ContractSpec {
     }
 
     // Adapt delegated Serde shapes to upstream JSON shapes. Native maps,
-    // results and error data use the recursive native bridge.
+    // results, error data and explicit generic values use the native bridge.
     fn normalize(
         &self,
         value: Value,

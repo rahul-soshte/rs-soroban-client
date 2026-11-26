@@ -1,4 +1,4 @@
-//! Opt-in red-phase check against a deployed native fixture. The low-level RPC
+//! Opt-in generic Val check against a deployed native fixture. The low-level RPC
 //! result must be correct before the typed-client round trip is tested.
 #![cfg(feature = "contract-spec")]
 mod support;
@@ -41,7 +41,10 @@ async fn deployed_generic_val_round_trips_as_explicit_scval(
         "the contract itself must echo the original wire value"
     );
 
-    let actual: ScVal = call.simulate(&source, Networks::testnet()).await?;
+    let actual: ScVal = call
+        .simulate(&source, Networks::testnet())
+        .await
+        .expect("raw RPC round trip passed, but typed generic Val decoding failed");
 
     assert_eq!(actual, expected);
     Ok(())

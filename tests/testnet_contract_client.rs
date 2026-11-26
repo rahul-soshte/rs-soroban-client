@@ -1,6 +1,6 @@
 //! Opt-in live acceptance test; see docs/contract-client.md for fixture build.
-//! All invocation inputs and outputs are native values. Deployment reuses the
-//! existing upload/create APIs and does not construct any ScVal either.
+//! Invocation inputs and outputs are native values, except generic Val uses
+//! explicit ScVal to preserve wire tags. Deployment uses the upload/create APIs.
 #![cfg(feature = "contract-spec")]
 
 use serde::{Deserialize, Serialize};
@@ -16,7 +16,7 @@ use soroban_client::{
     transaction::{
         Transaction, TransactionBehavior, TransactionBuilder, TransactionBuilderBehavior,
     },
-    xdr::ScError,
+    xdr::{ScError, ScMap, ScString, ScVal},
     EventFilter, Options, Pagination, Server,
 };
 use std::collections::{BTreeMap, HashMap};
@@ -91,6 +91,11 @@ struct ErrorRecord {
 #[derive(Debug, PartialEq, Deserialize)]
 struct ErrorReport {
     record: ErrorRecord,
+}
+
+#[derive(Debug, PartialEq, Deserialize)]
+struct GenericChanged {
+    value: ScVal,
 }
 
 async fn submit(
@@ -372,6 +377,43 @@ async fn deploy_and_call_with_native_values() -> Result<(), Box<dyn std::error::
     );
     eprintln!(
         "Confirmed error-valued record and event at ledger {:?}",
+        confirmed.ledger
+    );
+
+    // Generic Val must retain tags, including inside composite map keys.
+    source = server.get_account(&key.public_key()).await?;
+    let composite_key = ScVal::Vec(Some(vec![ScVal::U32(1), ScVal::U32(2)].try_into()?));
+    let map = ScMap::sorted_from_pairs([(composite_key, ScVal::from(u128::MAX))].into_iter())?;
+    let expected = ScVal::Vec(Some(
+        vec![
+            ScVal::String(ScString("same".try_into()?)),
+            ScVal::Symbol("same".try_into().expect("valid fixture symbol")),
+            ScVal::U32(7),
+            ScVal::I32(7),
+            ScVal::Map(Some(map)),
+            ScVal::Error(ScError::Contract(99)),
+        ]
+        .try_into()?,
+    ));
+    let call = client.call("echo_val", &(&expected,))?;
+    let prepared = call.prepare::<ScVal>(&source, Networks::testnet()).await?;
+    assert_eq!(prepared.simulated_value, expected);
+    let confirmed = submit(&server, prepared.transaction, &key).await?;
+    assert_eq!(
+        call.decode_transaction::<ScVal, ArithmeticFailure>(&confirmed)?,
+        expected
+    );
+    let (_, rows) = confirmed
+        .to_events()
+        .ok_or("missing confirmed generic Val events")?;
+    let events: Vec<_> = rows.iter().flatten().collect();
+    assert_eq!(events.len(), 1);
+    assert_eq!(
+        client.decode_event::<GenericChanged>(events[0])?,
+        GenericChanged { value: expected }
+    );
+    eprintln!(
+        "Confirmed generic Val result and event at ledger {:?}",
         confirmed.ledger
     );
     Ok(())

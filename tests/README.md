@@ -7,11 +7,11 @@ cargo test --features contract-spec --lib --tests
 cargo check --no-default-features
 ```
 
-## Generic `Val` red-phase tests
+## Generic `Val`
 
 These tests specify explicit `ScVal` round trips through generic `Val`, including
-structs, unions, containers, and event parameters. They intentionally fail until
-generic-value decoding is implemented; the converter is unchanged.
+structs, unions, containers, and event parameters. XDR tags are preserved rather
+than inferred from native primitives.
 
 ```sh
 cargo test --features contract-spec --test generic_val
@@ -81,7 +81,8 @@ The test funds a disposable account, deploys the fixture, confirms a native call
 checks typed errors and metadata, and round-trips user-defined types, composite-key
 maps, and 128/256-bit integers. It also decodes confirmed and RPC events in all
 three SEP-48 data formats, including events with shared topic prefixes. Submitted
-calls also verify an `Err` argument/event and an error-valued return record/event.
+calls also verify an `Err` argument/event, an error-valued return record/event,
+and a generic `Val` return/event with explicit XDR tags.
 It requires
 access to public testnet RPC and Friendbot.
 
@@ -96,7 +97,7 @@ interface.
 
 After deploying the updated fixture, use its printed contract ID to check generic
 `Val` against testnet. This opt-in test first verifies the raw RPC result, then
-exercises the currently failing typed-client decoding:
+verifies typed-client decoding:
 
 ```sh
 GENERIC_VAL_CONTRACT_ID=CONTRACT_ID \

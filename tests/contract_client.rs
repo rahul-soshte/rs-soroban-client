@@ -332,6 +332,27 @@ async fn generic_val_preparation_preserves_the_simulated_scval() {
 }
 
 #[tokio::test]
+async fn generic_val_root_contract_error_still_uses_invocation_error_boundary() {
+    let mut simulation = success();
+    simulation["results"][0]["xdr"] = json!(ScVal::Error(ScError::Contract(7))
+        .to_xdr_base64(Limits::none())
+        .unwrap());
+    let (server, _mock) = rpc(simulation).await;
+    let client = Client::new(&server, CONTRACT).await.unwrap();
+    let source = Account::new(ACCOUNT, "0").unwrap();
+    let value = ScVal::U32(42);
+    let result = client
+        .call("echo_val", &(&value,))
+        .unwrap()
+        .try_simulate::<ScVal, ArithmeticError>(&source, "test")
+        .await;
+    assert!(matches!(
+        result,
+        Err(CallError::Contract(ArithmeticError::Overflow))
+    ));
+}
+
+#[tokio::test]
 async fn typed_events_validate_the_emitting_contract() {
     #[derive(Debug, PartialEq, serde::Deserialize)]
     struct Added {
