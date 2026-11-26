@@ -71,6 +71,4 @@ Simulation, preparation and assembly remain ordinary-transaction APIs. For
 Soroban, simulate/assemble, finish authorization and sign the inner transaction
 before wrapping and signing the fee bump. Poll the **outer hash** for confirmation.
 
-See `examples/fee_bump.rs` for the full positive testnet flow. Publication order
-and local dependency handling are covered by the
-[release checklist](release-0.8.0.md).
+See `examples/fee_bump.rs` for the full positive testnet flow.
