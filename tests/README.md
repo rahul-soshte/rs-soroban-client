@@ -49,11 +49,11 @@ RESULT_DATA_CONTRACT_ID=CONTRACT_ID \
     cargo test --features contract-spec --test testnet_result_data -- --ignored --nocapture
 ```
 
-## Zero-element tuples: red-phase tests
+## Zero-element tuples
 
 An explicit SDK `()` can have spec type `Tuple([])` while using `Void` on the
-wire. These tests cover inputs, outputs, record fields and event parameters,
-without changing the converter. `Option<()>` cannot distinguish `Some(())`
+wire. These tests cover inputs, outputs, record fields and event parameters.
+`Option<()>` cannot distinguish `Some(())`
 from `None` on the wire, so a lossless round trip is not required.
 
 ```sh
@@ -82,7 +82,8 @@ checks typed errors and metadata, and round-trips user-defined types, composite-
 maps, and 128/256-bit integers. It also decodes confirmed and RPC events in all
 three SEP-48 data formats, including events with shared topic prefixes. Submitted
 calls also verify an `Err` argument/event, an error-valued return record/event,
-and a generic `Val` return/event with explicit XDR tags.
+and a generic `Val` return/event with explicit XDR tags. A submitted unit call
+verifies a zero-element tuple argument, return value and event parameter.
 It requires
 access to public testnet RPC and Friendbot.
 

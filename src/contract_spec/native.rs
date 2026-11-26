@@ -263,7 +263,10 @@ impl ContractSpec {
             (T::Vec(t), ScVal::Vec(Some(values))) => {
                 values.iter().try_for_each(|v| check(v, &t.element_type))
             }
-            (T::Tuple(t), ScVal::Vec(Some(values))) if values.len() == t.value_types.len() => {
+            (T::Tuple(t), ScVal::Void) if t.value_types.is_empty() => Ok(()),
+            (T::Tuple(t), ScVal::Vec(Some(values)))
+                if !t.value_types.is_empty() && values.len() == t.value_types.len() =>
+            {
                 values
                     .iter()
                     .zip(t.value_types.iter())
@@ -397,7 +400,7 @@ impl ContractSpec {
             T::Option(t) => self.needs_native_bridge(&t.value_type, seen, depth + 1)?,
             T::Vec(t) => self.needs_native_bridge(&t.element_type, seen, depth + 1)?,
             T::Tuple(t) => {
-                let mut found = false;
+                let mut found = t.value_types.is_empty();
                 for t in t.value_types.iter() {
                     found |= self.needs_native_bridge(t, seen, depth + 1)?;
                 }
@@ -516,6 +519,12 @@ impl ContractSpec {
                         .map(|v| encode(v, &t.element_type))
                         .collect::<Result<_, _>>()?,
                 )
+            }
+            T::Tuple(t) if t.value_types.is_empty() => {
+                if value != Value::Unit {
+                    return Err(conversion("expected unit for a zero-element tuple"));
+                }
+                Ok(ScVal::Void)
             }
             T::Tuple(t) => wire_vec(
                 sequence(value, t.value_types.len())?
@@ -675,6 +684,12 @@ impl ContractSpec {
                     .map(|v| decode(v, &t.element_type))
                     .collect::<Result<_, _>>()?,
             )),
+            T::Tuple(t) if t.value_types.is_empty() => {
+                if *value != ScVal::Void {
+                    return Err(conversion("expected Void for a zero-element tuple"));
+                }
+                Ok(Value::Unit)
+            }
             T::Tuple(t) => Ok(Value::Seq(
                 vector(value, Some(t.value_types.len()))?
                     .iter()

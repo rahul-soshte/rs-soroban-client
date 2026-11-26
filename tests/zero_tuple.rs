@@ -115,8 +115,62 @@ fn zero_tuple_rejects_nonunit_payloads() {
     for raw in [
         ScVal::U32(0),
         ScVal::Bool(false),
+        ScVal::Vec(Some(Default::default())),
         ScVal::Vec(Some(vec![ScVal::U32(0)].try_into().unwrap())),
     ] {
         assert!(spec.decode::<()>(&raw, &tuple_type()).is_err());
     }
+}
+
+#[test]
+fn zero_tuple_rejects_nonunit_rust_values() {
+    let spec = spec();
+    assert!(spec.encode(&Vec::<u32>::new(), &tuple_type()).is_err());
+    assert!(spec.encode(&0u32, &tuple_type()).is_err());
+}
+
+#[test]
+fn zero_tuples_nested_in_containers_round_trip() {
+    use std::{collections::BTreeMap, fmt::Debug};
+    fn round_trip<T: serde::Serialize + serde::de::DeserializeOwned + PartialEq + Debug>(
+        value: T,
+        raw: ScVal,
+        ty: ScSpecTypeDef,
+    ) {
+        let spec = spec();
+        assert_eq!(spec.encode(&value, &ty).unwrap(), raw);
+        assert_eq!(spec.decode::<T>(&raw, &ty).unwrap(), value);
+    }
+    round_trip(
+        vec![(), ()],
+        ScVal::Vec(Some(vec![ScVal::Void, ScVal::Void].try_into().unwrap())),
+        ScSpecTypeDef::Vec(Box::new(ScSpecTypeVec {
+            element_type: Box::new(tuple_type()),
+        })),
+    );
+    round_trip(
+        ((), 42u32),
+        ScVal::Vec(Some(vec![ScVal::Void, ScVal::U32(42)].try_into().unwrap())),
+        ScSpecTypeDef::Tuple(Box::new(ScSpecTypeTuple {
+            value_types: vec![tuple_type(), ScSpecTypeDef::U32].try_into().unwrap(),
+        })),
+    );
+    round_trip(
+        BTreeMap::from([((), 42u32)]),
+        ScVal::Map(Some(
+            ScMap::sorted_from_pairs([(ScVal::Void, ScVal::U32(42))].into_iter()).unwrap(),
+        )),
+        ScSpecTypeDef::Map(Box::new(ScSpecTypeMap {
+            key_type: Box::new(tuple_type()),
+            value_type: Box::new(ScSpecTypeDef::U32),
+        })),
+    );
+    round_trip(
+        Ok::<(), ScError>(()),
+        ScVal::Void,
+        ScSpecTypeDef::Result(Box::new(ScSpecTypeResult {
+            ok_type: Box::new(tuple_type()),
+            error_type: Box::new(ScSpecTypeDef::Error),
+        })),
+    );
 }

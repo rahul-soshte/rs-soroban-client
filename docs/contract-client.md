@@ -227,6 +227,10 @@ Metadata preserves duplicate keys. SEP claims combine all `sep` entries and
 deduplicate numbers in declaration order; malformed identifiers return an error.
 Claims are not proof that a contract implements a SEP.
 
+Unit `()` uses `Void` on the wire, including when the spec declares `Tuple([])`.
+Pass a single unit argument as `&((),)`, not `&()` (which means no arguments).
+`Option<()>` cannot distinguish `Some(())` from `None` on the wire.
+
 ## Limitations
 
 - Recreate the client after a contract upgrade to refresh its interface.

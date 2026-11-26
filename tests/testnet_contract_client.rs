@@ -98,6 +98,11 @@ struct GenericChanged {
     value: ScVal,
 }
 
+#[derive(Debug, PartialEq, Deserialize)]
+struct UnitDatum {
+    value: (),
+}
+
 async fn submit(
     server: &Server,
     mut tx: Transaction,
@@ -414,6 +419,25 @@ async fn deploy_and_call_with_native_values() -> Result<(), Box<dyn std::error::
     );
     eprintln!(
         "Confirmed generic Val result and event at ledger {:?}",
+        confirmed.ledger
+    );
+
+    source = server.get_account(&key.public_key()).await?;
+    let call = client.call("publish_unit", &((),))?;
+    let prepared = call.prepare::<()>(&source, Networks::testnet()).await?;
+    let confirmed = submit(&server, prepared.transaction, &key).await?;
+    call.decode_transaction::<(), ArithmeticFailure>(&confirmed)?;
+    let (_, rows) = confirmed
+        .to_events()
+        .ok_or("missing confirmed unit events")?;
+    let events: Vec<_> = rows.iter().flatten().collect();
+    assert_eq!(events.len(), 1);
+    assert_eq!(
+        client.decode_event::<UnitDatum>(events[0])?,
+        UnitDatum { value: () }
+    );
+    eprintln!(
+        "Confirmed zero-element tuple argument, result and event at ledger {:?}",
         confirmed.ledger
     );
     Ok(())
