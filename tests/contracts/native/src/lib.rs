@@ -150,8 +150,29 @@ pub struct NativeValues {
 #[contract]
 pub struct NativeFixture;
 
+#[contracttype]
+#[derive(Clone)]
+pub struct UnitRecord {
+    pub value: (),
+}
+
+#[contractevent(data_format = "single-value")]
+pub struct UnitDatum {
+    pub value: (),
+}
+
 #[contractimpl]
 impl NativeFixture {
+    pub fn echo_unit(value: ()) -> () {
+        value
+    }
+    pub fn unit_output() -> () {}
+    pub fn unit_record() -> UnitRecord {
+        UnitRecord { value: () }
+    }
+    pub fn publish_unit(env: Env, value: ()) -> () {
+        UnitDatum { value }.publish(&env);
+    }
     /// Add two integers, returning a typed error on overflow.
     pub fn add(env: Env, a: u32, b: u32) -> Result<u32, ArithmeticFailure> {
         let value = a.checked_add(b).ok_or(ArithmeticFailure::Overflow)?;

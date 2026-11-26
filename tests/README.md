@@ -50,6 +50,22 @@ RESULT_DATA_CONTRACT_ID=CONTRACT_ID \
     cargo test --features contract-spec --test testnet_result_data -- --ignored --nocapture
 ```
 
+## Zero-element tuples: red-phase tests
+
+An explicit SDK `()` can have spec type `Tuple([])` while using `Void` on the
+wire. These tests cover inputs, outputs, record fields and event parameters,
+without changing the converter. `Option<()>` cannot distinguish `Some(())`
+from `None` on the wire, so a lossless round trip is not required.
+
+```sh
+cargo test --features contract-spec --test zero_tuple
+ZERO_TUPLE_CONTRACT_ID=CONTRACT_ID \
+    cargo test --features contract-spec --test testnet_zero_tuple -- --ignored --nocapture
+```
+
+Use the contract ID printed after deploying the updated fixture below. Live tests
+verify its SDK-generated spec and raw RPC values before native conversion.
+
 ## Testnet deployment test
 
 Build the contract fixture, then run the opt-in deployment test:
