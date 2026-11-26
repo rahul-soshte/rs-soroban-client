@@ -3,9 +3,11 @@ use stellar_baselib::operation::Operation;
 pub use stellar_baselib::{
     account::Account,
     account::AccountBehavior,
+    fee_bump_transaction::{FeeBumpError, FeeBumpTransaction},
     soroban_data_builder::{self, SorobanDataBuilder},
     transaction::Transaction,
     transaction::TransactionBehavior,
+    transaction::{ParsedTransaction, TransactionError},
     transaction_builder::TransactionBuilder,
     transaction_builder::TransactionBuilderBehavior,
     xdr::{
@@ -13,6 +15,72 @@ pub use stellar_baselib::{
         ScVal, SorobanAuthorizationEntry, VecM,
     },
 };
+
+/// A transaction that can provide its complete envelope for RPC submission.
+///
+/// Implemented for ordinary transactions, fee bumps, parsed transactions and
+/// references to them. A parsed fee bump retains its outer envelope; it is never
+/// silently submitted as just its inner transaction.
+///
+/// ```no_run
+/// use soroban_client::{
+///     keypair::{Keypair, KeypairBehavior},
+///     network::{NetworkPassphrase, Networks},
+///     transaction::{FeeBumpTransaction, Transaction, TransactionBehavior},
+///     Server,
+/// };
+///
+/// # async fn submit(rpc: &Server, signed_inner: Transaction, payer: &Keypair)
+/// #     -> Result<(), Box<dyn std::error::Error>> {
+/// // Example: a signed one-operation inner transaction bidding 100 stroops.
+/// let mut bump = FeeBumpTransaction::new(
+///     &payer.public_key(), 100, signed_inner.to_envelope()?, Networks::testnet(), 100,
+/// )?;
+/// bump.sign(std::slice::from_ref(payer))?;
+/// let response = rpc.send_transaction(&bump).await?;
+/// // Submission enqueues the transaction; poll get_transaction(&response.hash)
+/// // to find out whether the outer fee bump has been confirmed.
+/// # Ok(())
+/// # }
+/// ```
+pub trait TransactionEnvelopeSource {
+    /// Convert to the complete signed envelope, returning typed conversion errors.
+    fn to_transaction_envelope(
+        &self,
+    ) -> Result<stellar_baselib::xdr::TransactionEnvelope, TransactionError>;
+}
+
+impl TransactionEnvelopeSource for Transaction {
+    fn to_transaction_envelope(
+        &self,
+    ) -> Result<stellar_baselib::xdr::TransactionEnvelope, TransactionError> {
+        self.try_to_envelope()
+    }
+}
+
+impl TransactionEnvelopeSource for FeeBumpTransaction {
+    fn to_transaction_envelope(
+        &self,
+    ) -> Result<stellar_baselib::xdr::TransactionEnvelope, TransactionError> {
+        Ok(self.to_envelope())
+    }
+}
+
+impl TransactionEnvelopeSource for ParsedTransaction {
+    fn to_transaction_envelope(
+        &self,
+    ) -> Result<stellar_baselib::xdr::TransactionEnvelope, TransactionError> {
+        self.to_envelope()
+    }
+}
+
+impl<T: TransactionEnvelopeSource + ?Sized> TransactionEnvelopeSource for &T {
+    fn to_transaction_envelope(
+        &self,
+    ) -> Result<stellar_baselib::xdr::TransactionEnvelope, TransactionError> {
+        T::to_transaction_envelope(*self)
+    }
+}
 
 /// Assemble a [transaction](Transaction) with a [simulation](SimulateTransactionResponse)
 pub fn assemble_transaction(

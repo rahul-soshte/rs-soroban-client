@@ -1,5 +1,5 @@
 use crate::jsonrpc::{JsonRpc, Response};
-use crate::transaction::assemble_transaction;
+use crate::transaction::{assemble_transaction, TransactionEnvelopeSource};
 use crate::{error, soroban_rpc::*};
 use crate::{error::*, friendbot};
 use futures::TryFutureExt;
@@ -575,15 +575,21 @@ impl Server {
     /// success/failure.
     ///
     /// This supports all transactions, not only smart contract-related transactions.
+    /// Accepts ordinary, fee-bump and parsed transactions, either owned or borrowed.
+    /// Existing `send_transaction(tx)` calls remain valid. Fee bumps submit the
+    /// complete outer envelope, including both sets of signatures.
+    ///
+    /// For Soroban, simulate and assemble the inner transaction first, sign it,
+    /// then wrap it in a fee bump and sign with the fee payer before submitting.
     ///
     /// [sendTransaction]: https://developers.stellar.org/docs/data/rpc/api-reference/methods/sendTransaction
     ///
     pub async fn send_transaction(
         &self,
-        transaction: Transaction,
+        transaction: impl TransactionEnvelopeSource,
     ) -> Result<SendTransactionResponse, Error> {
         let transaction_xdr = transaction
-            .to_envelope()
+            .to_transaction_envelope()
             .map_err(|_| Error::TransactionError)?
             .to_xdr_base64(Limits::none())
             .map_err(|_| Error::XdrError)?;
