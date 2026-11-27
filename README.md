@@ -99,6 +99,58 @@ let op = Operation::new().create_contract_from_external_ref(
 )?;
 ```
 
+## Native contract calls (SEP-46, SEP-47, SEP-48)
+
+Call contracts using native Rust arguments and return values. These examples
+simulate `add(a: u32, b: u32) -> u32` using an existing `server`, `contract_id`,
+`source_account`, and `network_passphrase`.
+
+### Without `contract-spec`: handle contract values yourself
+
+```rust
+use soroban_client::{
+    contract::{ContractBehavior, Contracts},
+    transaction::{TransactionBuilder, TransactionBuilderBehavior},
+    xdr::ScVal,
+};
+
+let contract = Contracts::new(contract_id)?;
+let mut source = source_account.clone();
+let tx = TransactionBuilder::new(&mut source, network_passphrase, None)
+    .fee(1000u32)
+    .add_operation(contract.call(
+        "add",
+        Some(vec![ScVal::U32(2), ScVal::U32(3)]),
+    ))
+    .build();
+
+let simulation = server.simulate_transaction(&tx, None).await?;
+let (result, _) = simulation.to_result().ok_or("missing result")?;
+let value = match result {
+    ScVal::U32(value) => value,
+    _ => return Err("unexpected return type".into()),
+};
+assert_eq!(value, 5);
+```
+
+### With `contract-spec`: pass and receive native Rust values
+
+Enable `contract-spec` in your dependency's `features` list:
+
+```rust
+use soroban_client::contract_client::Client;
+
+let client = Client::new(&server, contract_id).await?;
+let value: u32 = client.call("add", &(2u32, 3u32))?
+    .simulate(&source_account, network_passphrase).await?;
+assert_eq!(value, 5);
+```
+
+The client reads the contract's embedded interface to validate and convert values.
+Both examples simulate only; use `prepare` to build a transaction for signing and
+submission. See [the client guide](docs/contract-client.md) for setup, typed errors
+and events, metadata, and limitations.
+
 ## Fee-bump submission
 
 `Server::send_transaction` accepts `Transaction`, `FeeBumpTransaction` and
