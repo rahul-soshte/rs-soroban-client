@@ -498,7 +498,13 @@ impl ContractSpec {
                 let (name, payload) = union(value)?;
                 let payload = payload.ok_or_else(|| conversion("expected a Result payload"))?;
                 match name.as_str() {
-                    "Ok" => encode(payload, &t.ok_type),
+                    "Ok" => {
+                        let value = encode(payload, &t.ok_type)?;
+                        if matches!(value, ScVal::Error(_)) {
+                            return Err(conversion("Result::Ok must not encode as an error value"));
+                        }
+                        Ok(value)
+                    }
                     "Err" => {
                         let error = encode(payload, &t.error_type)?;
                         if !matches!(error, ScVal::Error(_)) {

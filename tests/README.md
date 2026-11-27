@@ -33,8 +33,9 @@ cargo test --features contract-spec --test contract_client error_data
 
 These tests cover native `Ok`/`Err` inputs and results inside records, vectors,
 map values, options and events. The SDK encodes `Ok` as its payload and `Err` as
-an error value, without an extra tag. Ambiguous `Ok(error)` and `Ok(Err(...))`
-round trips are not required. Top-level invocation errors keep their existing API.
+an error value, without an extra tag. `Ok` payloads that encode directly as an
+error, such as `Ok(error)` and `Ok(Err(...))`, are rejected. Top-level invocation
+errors keep their existing API.
 
 ```sh
 cargo test --features contract-spec --test result_data

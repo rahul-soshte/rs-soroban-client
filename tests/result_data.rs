@@ -292,5 +292,55 @@ fn result_rejects_malformed_wrappers_and_nonerror_err_payloads() {
     assert!(spec.encode(&Err::<u32, u32>(7), &invalid).is_err());
 }
 
-// Result is untagged on the wire: Ok(error) and Ok(Err(...)) cannot be
-// distinguished from Err(...). No lossless round trip is promised for these.
+#[test]
+fn result_ok_rejects_direct_error_payloads() {
+    let spec = spec();
+    for ok_type in [
+        ScSpecTypeDef::Error,
+        ScSpecTypeDef::Val,
+        support::udt("ArithmeticFailure"),
+    ] {
+        let ty = ScSpecTypeDef::Result(Box::new(ScSpecTypeResult {
+            ok_type: Box::new(ok_type.clone()),
+            error_type: Box::new(ScSpecTypeDef::Error),
+        }));
+        let rejected = match ok_type {
+            ScSpecTypeDef::Error => spec.encode(&Ok::<_, ScError>(ScError::Contract(7)), &ty),
+            ScSpecTypeDef::Val => {
+                spec.encode(&Ok::<_, ScError>(ScVal::Error(ScError::Contract(7))), &ty)
+            }
+            _ => spec.encode(&Ok::<_, ScError>(Failure::Overflow), &ty),
+        };
+        assert!(rejected.is_err(), "Ok must not encode as SCV_ERROR");
+    }
+}
+
+#[test]
+fn result_ok_rejects_nested_err_without_a_container() {
+    let ty = ScSpecTypeDef::Result(Box::new(ScSpecTypeResult {
+        ok_type: Box::new(result_type()),
+        error_type: Box::new(ScSpecTypeDef::Error),
+    }));
+    assert!(spec()
+        .encode(
+            &Ok::<Result<u32, Failure>, ScError>(Err(Failure::Overflow)),
+            &ty
+        )
+        .is_err());
+}
+
+#[test]
+fn result_ok_allows_errors_inside_a_container() {
+    let ty = ScSpecTypeDef::Result(Box::new(ScSpecTypeResult {
+        ok_type: Box::new(vec_type()),
+        error_type: Box::new(ScSpecTypeDef::Error),
+    }));
+    let value = Ok::<_, ScError>(vec![Ok(42), Err(Failure::Overflow)]);
+    let spec = spec();
+    assert_eq!(spec.encode(&value, &ty).unwrap(), vector());
+    assert_eq!(
+        spec.decode::<Result<Vec<Result<u32, Failure>>, ScError>>(&vector(), &ty)
+            .unwrap(),
+        value
+    );
+}
